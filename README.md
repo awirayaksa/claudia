@@ -1,25 +1,25 @@
-# Claudia - Claude's Cooler Cousin 😎
+# Claudia - Claude's Sassier Sister 💁‍♀️
 
-> "Why pay for Claude Desktop when you can build your own janky version at 3 AM?" - Ancient Developer Proverb
+> "Why pay for Claude Desktop when you can build your own? Meet Claudia - she does it her way." - Ancient Developer Proverb
 
-A Windows desktop application that's basically Claude Desktop but with more bugs and personality. Built with Electron because we hate RAM and love living dangerously.
+Meet Claudia - she's basically Claude's rebellious younger sister who decided to do things her own way. A Windows desktop application that's Claude Desktop but with more personality, more bugs, and 100% more attitude. Built with Electron because she hates RAM and loves living dangerously.
 
-## 🎭 What Is This Thing?
+## 🎭 Who Is Claudia?
 
-It's like Claude Desktop, but imagine if it was built by someone who really, really wanted to understand how everything works under the hood. Spoiler alert: Now I know, and I have regrets. Just kidding! (Mostly.)
+Claudia is what happens when Claude gets a sister who codes. While her brother Claude is all professional and polished, Claudia prefers to keep things real (and occasionally broken). She's like Claude Desktop, but imagine if it was built by someone who really, really wanted to understand how everything works under the hood. Spoiler alert: Now I know, and I have regrets. Just kidding! (Mostly.)
 
-This Electron app connects to Open WebUI and lets you chat with AI models while pretending you're using the official Claude Desktop app. Your friends will be so impressed. Or confused. Probably confused.
+This Electron app connects to Open WebUI and lets you chat with AI models while pretending you're using the official Claude Desktop app. Claudia might be rougher around the edges than her brother, but she's got character. Your friends will be impressed. Or confused. Probably confused.
 
 ## ✨ Features (That Actually Work!)
 
-- 💬 **Chat interface** - It's a chatbox. You type, AI responds. Revolutionary stuff here.
+- 💬 **Chat interface** - She talks back! You type, AI responds. Revolutionary stuff here.
 - 🎥 **Real-time streaming** - Watch the words appear like magic! (It's not magic, it's Server-Sent Events)
-- 📎 **File uploads** - Drag, drop, pray it doesn't crash
+- 📎 **File uploads** - Drag, drop, pray she doesn't crash
 - 💾 **Conversation history** - So you can remember that embarrassing prompt from last Tuesday
 - 📁 **Project system** - Organize your conversations like the productive person you pretend to be
 - 🎨 **Dark mode** - Because your eyes deserve better at 2 AM
 - 🔧 **MCP Server Support** - Give your AI superpowers with 26 custom tools! (May or may not crash)
-- 🤖 **Auto-tool calling** - The AI will use tools automatically. It's like giving a toddler a toolbox, but smarter.
+- 🤖 **Auto-tool calling** - She'll use tools automatically. It's like giving her a Swiss Army knife, but digital.
 
 ## 🛠️ Technology Stack (AKA "Things That Will Break")
 
@@ -43,7 +43,7 @@ This Electron app connects to Open WebUI and lets you chat with AI models while 
 
 ### Installation (The Fun Part)
 
-1. **Clone this bad boy:**
+1. **Clone this bad girl:**
 ```bash
 git clone <repository-url>
 cd claudia
@@ -62,7 +62,7 @@ npm run dev
 # If it doesn't work on the first try, you're doing it right!
 ```
 
-4. **Watch it compile:**
+4. **Watch her compile:**
 ```
 ✓ 1 modules transformed
 ✓ 5 modules transformed
@@ -100,12 +100,12 @@ First time? Here's how to not break things:
 
 ### MCP Servers (For the Brave)
 
-Want to give your AI actual powers? Configure MCP servers!
+Want to give Claudia actual superpowers? Configure MCP servers!
 
 1. Go to Settings > MCP Servers
 2. Click "Import from Claude Desktop" if you're lazy (recommended)
 3. Or manually add servers if you enjoy pain
-4. Watch your AI use 26 different tools to accomplish what you could've googled
+4. Watch Claudia use 26 different tools to accomplish what you could've googled
 
 **Known Issues:**
 - API key resets on startup ~~(we're working on it)~~ FIXED! 🎉
@@ -138,13 +138,13 @@ claudia/
 ## 🎯 Implementation Status (What Works and What Doesn't)
 
 ### ✅ Phase 1-4: Foundation & Core Features - COMPLETE!
-- [x] Project setup (it compiles! 🎉)
+- [x] Project setup (she compiles! 🎉)
 - [x] Basic UI (it's ugly but functional)
 - [x] Chat with streaming (words go brrrr)
 - [x] File uploads (drag and drop works 60% of the time, every time)
 - [x] Settings panel (stores your API key in the void)
 - [x] MCP Server integration (26 tools ready to rumble)
-- [x] Auto-tool calling (AI goes full power tools mode)
+- [x] Auto-tool calling (Claudia goes full power tools mode)
 - [x] Error handling (beautiful error messages you'll never read)
 - [x] Log viewing (for when things go wrong, which is often)
 
@@ -160,7 +160,7 @@ claudia/
 - MCP server crashes on port conflict (fix: use different port, duh)
 - Occasionally decides to clear your chat (it's a feature: memory management)
 - Tool calls sometimes timeout (patience is a virtue)
-- The app uses more RAM than Chrome (achievement unlocked!)
+- She uses more RAM than Chrome (achievement unlocked!)
 
 ## 🤝 Contributing (Join the Chaos)
 
@@ -177,7 +177,7 @@ MIT - Do whatever you want with this code. Sell it, break it, improve it, blame 
 
 ## 🙏 Acknowledgments
 
-- **Anthropic** - For making Claude, the AI we're trying to imitate
+- **Anthropic** - For making Claude, the big brother we're emulating
 - **Open WebUI** - For the backend we're too lazy to build
 - **Stack Overflow** - For 90% of the code
 - **GitHub Copilot** - For the other 10%
@@ -186,7 +186,7 @@ MIT - Do whatever you want with this code. Sell it, break it, improve it, blame 
 
 ## 🐛 Troubleshooting (When Things Go Wrong)
 
-### "It won't start!"
+### "She won't start!"
 - Did you run `npm install`?
 - Did you restart your computer?
 - Did you sacrifice a rubber duck to the debugging gods?
@@ -221,3 +221,5 @@ MIT - Do whatever you want with this code. Sell it, break it, improve it, blame 
 *"It's not a bug, it's a feature we haven't documented yet"* - Every developer ever
 
 **P.S.** If this README made you smile, give it a ⭐. If it made you cry, well... welcome to programming! 🎉
+
+**P.P.S.** Yes, Claudia is Claude's sister. No, she doesn't have his polish. Yes, that's the point. 💁‍♀️
