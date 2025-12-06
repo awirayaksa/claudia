@@ -3,11 +3,15 @@ import { useDropzone } from 'react-dropzone';
 import { Button } from '../common/Button';
 import { Attachment } from '../../types/message.types';
 import { useFileUpload } from '../../hooks/useFileUpload';
+import { CompactModelSelector } from './CompactModelSelector';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
   disabled?: boolean;
   placeholder?: string;
+  selectedModel?: string;
+  availableModels?: string[];
+  onModelChange?: (model: string) => void;
 }
 
 export interface ChatInputRef {
@@ -18,6 +22,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   onSend,
   disabled = false,
   placeholder = 'Type your message...',
+  selectedModel,
+  availableModels,
+  onModelChange,
 }, ref) => {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -198,6 +205,16 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           className="flex-1 resize-none rounded border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           style={{ maxHeight: '200px' }}
         />
+
+        {/* Model selector */}
+        {selectedModel && availableModels && onModelChange && (
+          <CompactModelSelector
+            value={selectedModel}
+            models={availableModels}
+            onChange={onModelChange}
+            disabled={disabled || uploading}
+          />
+        )}
 
         {/* Send button */}
         <Button

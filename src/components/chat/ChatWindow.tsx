@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
@@ -9,6 +9,7 @@ import { useProjects } from '../../hooks/useProjects';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { Attachment } from '../../types/message.types';
 import { clearMessages, addMessage } from '../../store/slices/chatSlice';
+import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
 
 export function ChatWindow() {
@@ -39,7 +40,8 @@ export function ChatWindow() {
 
   const { currentProjectId } = useProjects();
 
-  const { selectedModel, baseUrl, apiKey } = useAppSelector((state) => state.settings.api);
+  const { selectedModel, baseUrl, apiKey, availableModels } = useAppSelector((state) => state.settings.api);
+  const [pendingModel, setPendingModel] = useState<string | null>(null);
 
   const isConfigured = baseUrl && apiKey && selectedModel;
 
@@ -132,11 +134,35 @@ export function ChatWindow() {
     };
   }, [messages, currentConversationId, currentConversation, saveConversation, updateConversation]);
 
+  const handleModelChange = async (newModel: string) => {
+    try {
+      // Update global default
+      dispatch(setApiConfig({ selectedModel: newModel }));
+
+      // Persist to Electron store
+      await window.electron.config.set({
+        api: { baseUrl, apiKey, selectedModel: newModel, availableModels },
+      });
+
+      // Update current conversation if it exists
+      if (currentConversationId) {
+        await updateConversation(currentConversationId, { model: newModel });
+      } else {
+        // Store for when conversation is created
+        setPendingModel(newModel);
+      }
+    } catch (error) {
+      console.error('Failed to update model:', error);
+    }
+  };
+
   const handleSend = async (content: string, attachments?: Attachment[]) => {
     try {
       // Create new conversation if none exists
       if (!currentConversationId) {
-        await createConversation();
+        const modelToUse = pendingModel || selectedModel;
+        await createConversation('New Conversation', modelToUse);
+        setPendingModel(null);
       }
 
       await sendMessage(content, attachments);
@@ -277,7 +303,10 @@ export function ChatWindow() {
         ref={chatInputRef}
         onSend={handleSend}
         disabled={isLoading || isStreaming}
-        placeholder={`Message ${selectedModel}...`}
+        placeholder={`Message ${currentConversation?.model || pendingModel || selectedModel}...`}
+        selectedModel={currentConversation?.model || pendingModel || selectedModel}
+        availableModels={availableModels}
+        onModelChange={handleModelChange}
       />
     </div>
   );

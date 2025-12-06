@@ -34,8 +34,9 @@ export function useConversations() {
 
   // Create a new conversation
   const create = useCallback(
-    async (title?: string) => {
-      if (!selectedModel) {
+    async (title?: string, model?: string) => {
+      const modelToUse = model || selectedModel;
+      if (!modelToUse) {
         throw new Error('Please select a model in settings');
       }
 
@@ -43,7 +44,7 @@ export function useConversations() {
         createConversation({
           projectId: currentProjectId,
           title: title || 'New Conversation',
-          model: selectedModel,
+          model: modelToUse,
         })
       );
 
