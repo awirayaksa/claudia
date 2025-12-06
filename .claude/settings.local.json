@@ -7,7 +7,11 @@
       "Bash(npm run dev:*)",
       "Bash(timeout /t 15)",
       "Bash(ping:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(where:*)",
+      "Bash(where convert:*)",
+      "Bash(node scripts/create-icon.js:*)",
+      "Bash(copy \"c:\\Workspace\\Claude\\claudia\\src\\assets\\icons\\Claudio_icon.ico\" \"c:\\Workspace\\Claude\\claudia\\build\\icon.ico\" /Y)"
     ],
     "deny": [],
     "ask": []

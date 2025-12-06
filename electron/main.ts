@@ -99,6 +99,11 @@ function createWindow() {
     height: 800,
   }) as { width: number; height: number; x?: number; y?: number };
 
+  // Get icon path - works for both dev and production
+  const iconPath = isDevelopment
+    ? path.join(__dirname, '..', 'build', 'icon.ico')
+    : path.join(__dirname, '..', 'build', 'icon.ico');
+
   mainWindow = new BrowserWindow({
     width: windowState.width,
     height: windowState.height,
@@ -106,6 +111,7 @@ function createWindow() {
     y: windowState.y,
     minWidth: 800,
     minHeight: 600,
+    icon: iconPath,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
