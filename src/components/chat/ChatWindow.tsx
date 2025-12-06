@@ -268,7 +268,7 @@ export function ChatWindow() {
       {/* Error display */}
       {error && (
         <div className="border-t border-error bg-error bg-opacity-10 px-4 py-2">
-          <p className="text-sm text-error">{error}</p>
+          <p className="text-sm text-error" style={{ color: 'white' }}>{error}</p>
         </div>
       )}
 

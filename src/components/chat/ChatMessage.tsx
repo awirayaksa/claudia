@@ -53,7 +53,7 @@ export const ChatMessage = React.memo(function ChatMessage({ message }: ChatMess
         {/* Message content */}
         <div className={`text-sm ${isUser ? 'text-white' : 'text-text-primary'}`}>
           {isUser ? (
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            <div className="whitespace-pre-wrap selection:bg-white selection:text-accent">{message.content}</div>
           ) : (
             <MarkdownRenderer content={message.content} isUser={isUser} />
           )}
