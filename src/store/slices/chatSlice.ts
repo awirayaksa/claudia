@@ -390,7 +390,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
               model,
               messages,
               tools: openAITools,
-              tool_choice: iteration >= MAX_TOOL_ITERATIONS - 1 ? 'none' : 'auto',
+              tool_choice: !hasTools ? 'none' : (iteration >= MAX_TOOL_ITERATIONS - 1 ? 'none' : 'auto'),
             },
             {
               onChunk: (chunk) => {

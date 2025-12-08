@@ -11,8 +11,10 @@ export class OpenWebUIService {
   private axiosInstance: AxiosInstance;
 
   constructor(baseUrl: string, apiKey: string) {
+    // Normalize baseUrl - remove trailing slash to prevent double slashes
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
     this.axiosInstance = axios.create({
-      baseURL: baseUrl,
+      baseURL: normalizedBaseUrl,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,
@@ -25,8 +27,10 @@ export class OpenWebUIService {
    * Update the API configuration
    */
   updateConfig(baseUrl: string, apiKey: string): void {
+    // Normalize baseUrl - remove trailing slash to prevent double slashes
+    const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
     this.axiosInstance = axios.create({
-      baseURL: baseUrl,
+      baseURL: normalizedBaseUrl,
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${apiKey}`,

@@ -21,8 +21,11 @@ export async function streamChatCompletion(
 ): Promise<void> {
   const { onChunk, onComplete, onError, onToolCalls } = callbacks;
 
+  // Normalize baseUrl - remove trailing slash to prevent double slashes
+  const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
+
   try {
-    const response = await fetch(`${baseUrl}/api/chat/completions`, {
+    const response = await fetch(`${normalizedBaseUrl}/api/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
