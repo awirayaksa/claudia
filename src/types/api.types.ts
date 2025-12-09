@@ -1,6 +1,41 @@
 // Open WebUI API Types
 import { ToolCall } from './message.types';
 
+// Provider Types
+export type ProviderType = 'openwebui' | 'openrouter';
+
+export interface ProviderCapabilities {
+  supportsFileUpload: boolean;
+  supportsToolCalling: boolean;
+  supportsStreaming: boolean;
+  requiresCustomHeaders: boolean;
+}
+
+// Provider-specific Configuration Types
+export interface OpenWebUIConfig {
+  baseUrl: string;
+  apiKey: string;
+  selectedModel: string;
+}
+
+export interface OpenRouterConfig {
+  apiKey: string;
+  selectedModel: string;
+  siteUrl?: string;
+  siteName?: string;
+}
+
+// Union type for all provider configs
+export type ProviderConfig = OpenWebUIConfig | OpenRouterConfig;
+
+// API Configuration with Provider Selection
+export interface APIConfig {
+  provider: ProviderType;
+  openwebui?: OpenWebUIConfig;
+  openrouter?: OpenRouterConfig;
+  availableModels: string[];
+}
+
 export interface Model {
   id: string;
   name: string;

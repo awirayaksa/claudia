@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Modal } from '../common/Modal';
 import { Button } from '../common/Button';
-import { ApiSettings } from './ApiSettings';
+import { ApiSettings } from './APISettings';
 import { MCPSettings } from './MCPSettings';
 import { ThemeSettings } from './ThemeSettings';
 import { PluginSettings } from './PluginSettings';

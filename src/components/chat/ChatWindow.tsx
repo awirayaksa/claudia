@@ -40,10 +40,32 @@ export function ChatWindow() {
 
   const { currentProjectId: _currentProjectId } = useProjects();
 
-  const { selectedModel, baseUrl, apiKey, availableModels } = useAppSelector((state) => state.settings.api);
+  const apiConfig = useAppSelector((state) => state.settings.api);
   const [pendingModel, setPendingModel] = useState<string | null>(null);
 
-  const isConfigured = baseUrl && apiKey && selectedModel;
+  // Get the selected model and check if configured based on current provider
+  const getProviderConfig = () => {
+    if (apiConfig.provider === 'openwebui') {
+      return apiConfig.openwebui;
+    } else if (apiConfig.provider === 'openrouter') {
+      return apiConfig.openrouter;
+    }
+    return null;
+  };
+
+  const providerConfig = getProviderConfig();
+  const selectedModel = providerConfig?.selectedModel || '';
+  const availableModels = apiConfig.availableModels || [];
+
+  // Check if configured based on provider type
+  const isConfigured = (() => {
+    if (apiConfig.provider === 'openwebui') {
+      return !!(apiConfig.openwebui?.baseUrl && apiConfig.openwebui?.apiKey && apiConfig.openwebui?.selectedModel);
+    } else if (apiConfig.provider === 'openrouter') {
+      return !!(apiConfig.openrouter?.apiKey && apiConfig.openrouter?.selectedModel);
+    }
+    return false;
+  })();
 
   // Auto-scroll to bottom when new messages arrive or streaming content changes
   useEffect(() => {
@@ -59,6 +81,16 @@ export function ChatWindow() {
       }, 100);
     }
   }, [isLoading, isStreaming, messages.length]);
+
+  // Auto-focus input when a new conversation is created (no messages yet)
+  useEffect(() => {
+    if (currentConversationId && messages.length === 0 && !isLoading && !isStreaming) {
+      // Use setTimeout to ensure the DOM is ready
+      setTimeout(() => {
+        chatInputRef.current?.focus();
+      }, 100);
+    }
+  }, [currentConversationId, messages.length, isLoading, isStreaming]);
 
   // Track if we've loaded this conversation before to avoid clearing messages on create
   const loadedConversationRef = useRef<string | null>(null);
@@ -137,12 +169,21 @@ export function ChatWindow() {
 
   const handleModelChange = async (newModel: string) => {
     try {
+      // Update the provider-specific config
+      const updatedConfig = { ...apiConfig };
+
+      if (apiConfig.provider === 'openwebui' && updatedConfig.openwebui) {
+        updatedConfig.openwebui = { ...updatedConfig.openwebui, selectedModel: newModel };
+      } else if (apiConfig.provider === 'openrouter' && updatedConfig.openrouter) {
+        updatedConfig.openrouter = { ...updatedConfig.openrouter, selectedModel: newModel };
+      }
+
       // Update global default
-      dispatch(setApiConfig({ selectedModel: newModel }));
+      dispatch(setApiConfig(updatedConfig));
 
       // Persist to Electron store
       await window.electron.config.set({
-        api: { baseUrl, apiKey, selectedModel: newModel, availableModels },
+        api: updatedConfig,
       });
 
       // Update current conversation if it exists
@@ -204,7 +245,7 @@ export function ChatWindow() {
             Configuration Required
           </h2>
           <p className="mb-4 text-text-secondary">
-            Please configure your Open WebUI connection and select a model to start chatting.
+            Please configure your API provider and select a model to start chatting.
           </p>
           <p className="text-sm text-text-secondary">
             Click the <span className="font-semibold">Settings</span> button in the top-right to get started.

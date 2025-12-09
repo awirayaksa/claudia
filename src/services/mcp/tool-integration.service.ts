@@ -18,7 +18,7 @@ export class ToolIntegrationService {
       type: 'function' as const,
       function: {
         name: tool.name,
-        description: tool.description,
+        description: tool.description || '', // Provide empty string as fallback
         parameters: tool.inputSchema,
       },
     }));

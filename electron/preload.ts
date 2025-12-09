@@ -72,6 +72,16 @@ contextBridge.exposeInMainWorld('electron', {
     callTool: (serverId: string, toolName: string, args: any) =>
       ipcRenderer.invoke('mcp:tools:call', serverId, toolName, args),
 
+    // Resources
+    listResources: (serverId: string) => ipcRenderer.invoke('mcp:resources:list', serverId),
+    readResource: (serverId: string, uri: string) =>
+      ipcRenderer.invoke('mcp:resources:read', serverId, uri),
+
+    // Prompts
+    listPrompts: (serverId: string) => ipcRenderer.invoke('mcp:prompts:list', serverId),
+    getPrompt: (serverId: string, promptName: string, args?: Record<string, string>) =>
+      ipcRenderer.invoke('mcp:prompts:get', serverId, promptName, args),
+
     // Import
     importClaudeDesktop: () => ipcRenderer.invoke('mcp:import:claudeDesktop'),
 
@@ -83,6 +93,14 @@ contextBridge.exposeInMainWorld('electron', {
     onServerToolsUpdated: (callback: (event: any) => void) => {
       ipcRenderer.on('mcp:server:toolsUpdated', (_event, data) => callback(data));
       return () => ipcRenderer.removeListener('mcp:server:toolsUpdated', callback);
+    },
+    onServerResourcesUpdated: (callback: (event: any) => void) => {
+      ipcRenderer.on('mcp:server:resourcesUpdated', (_event, data) => callback(data));
+      return () => ipcRenderer.removeListener('mcp:server:resourcesUpdated', callback);
+    },
+    onServerPromptsUpdated: (callback: (event: any) => void) => {
+      ipcRenderer.on('mcp:server:promptsUpdated', (_event, data) => callback(data));
+      return () => ipcRenderer.removeListener('mcp:server:promptsUpdated', callback);
     },
     onServerError: (callback: (event: any) => void) => {
       ipcRenderer.on('mcp:server:error', (_event, data) => callback(data));
@@ -185,11 +203,19 @@ export interface ElectronAPI {
     // Tools
     listTools: (serverId: string) => Promise<any>;
     callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
+    // Resources
+    listResources: (serverId: string) => Promise<any>;
+    readResource: (serverId: string, uri: string) => Promise<any>;
+    // Prompts
+    listPrompts: (serverId: string) => Promise<any>;
+    getPrompt: (serverId: string, promptName: string, args?: Record<string, string>) => Promise<any>;
     // Import
     importClaudeDesktop: () => Promise<any>;
     // Event listeners
     onServerStatusChanged: (callback: (event: any) => void) => () => void;
     onServerToolsUpdated: (callback: (event: any) => void) => () => void;
+    onServerResourcesUpdated: (callback: (event: any) => void) => () => void;
+    onServerPromptsUpdated: (callback: (event: any) => void) => () => void;
     onServerError: (callback: (event: any) => void) => () => void;
   };
   plugins: {

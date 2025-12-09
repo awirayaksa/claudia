@@ -6,9 +6,23 @@ import { PluginConfig } from '../../src/types/plugin.types';
 interface StoreSchema {
   config: {
     api: {
-      baseUrl: string;
-      apiKey: string;
-      selectedModel: string;
+      provider: 'openwebui' | 'openrouter';
+      openwebui?: {
+        baseUrl: string;
+        apiKey: string;
+        selectedModel: string;
+      };
+      openrouter?: {
+        apiKey: string;
+        selectedModel: string;
+        siteUrl?: string;
+        siteName?: string;
+      };
+      availableModels: string[];
+      // Legacy fields for backward compatibility
+      baseUrl?: string;
+      apiKey?: string;
+      selectedModel?: string;
     };
     appearance: {
       theme: 'light' | 'dark' | 'system';
@@ -37,6 +51,11 @@ interface StoreSchema {
     settings: Record<string, Record<string, unknown>>;
     data: Record<string, Record<string, unknown>>;
   };
+  // Provider-specific encrypted API keys
+  encryptedApiKeys?: {
+    openwebui?: string;
+    openrouter?: string;
+  };
 }
 
 export const store = new Store<StoreSchema>({
@@ -44,9 +63,8 @@ export const store = new Store<StoreSchema>({
   defaults: {
     config: {
       api: {
-        baseUrl: '',
-        apiKey: '',
-        selectedModel: '',
+        provider: 'openwebui',
+        availableModels: [],
       },
       appearance: {
         theme: 'system',
@@ -76,77 +94,98 @@ export const store = new Store<StoreSchema>({
 });
 
 // Helper functions for secure API key storage
-export function saveApiKey(apiKey: string): void {
-  console.log('[Store] saveApiKey called, key length:', apiKey?.length || 0);
+export function saveApiKey(provider: 'openwebui' | 'openrouter', apiKey: string): void {
+  console.log(`[Store] saveApiKey called for ${provider}, key length:`, apiKey?.length || 0);
   try {
     if (safeStorage.isEncryptionAvailable()) {
-      console.log('[Store] Encrypting API key using safeStorage');
+      console.log(`[Store] Encrypting ${provider} API key using safeStorage`);
       const encrypted = safeStorage.encryptString(apiKey);
       const base64Key = encrypted.toString('base64');
 
-      // Save to a separate top-level key to avoid conflicts
-      store.set('encryptedApiKey', base64Key);
-      console.log('[Store] Encrypted API key saved to "encryptedApiKey", length:', base64Key.length);
+      // Get existing encrypted keys or create new object
+      const encryptedKeys = store.get('encryptedApiKeys', {}) as Record<string, string>;
+      encryptedKeys[provider] = base64Key;
 
-      // Also verify it was saved
-      const verification = store.get('encryptedApiKey');
-      console.log('[Store] Verification: key exists after save:', !!verification);
+      // Save to encrypted keys object
+      store.set('encryptedApiKeys', encryptedKeys);
+      console.log(`[Store] Encrypted ${provider} API key saved, length:`, base64Key.length);
 
-      // Clear the plain key if it exists
-      store.delete('config.api.apiKey' as any);
+      // Verify it was saved
+      const verification = store.get('encryptedApiKeys') as Record<string, string>;
+      console.log(`[Store] Verification: ${provider} key exists:`, !!verification[provider]);
     } else {
       console.warn('[Store] Encryption not available, storing API key in plain text');
-      // Fallback to plain storage if encryption is not available
-      store.set('plainApiKey', apiKey);
-      console.log('[Store] Plain API key saved to "plainApiKey"');
+      // Fallback to plain storage
+      store.set(`plainApiKey_${provider}`, apiKey);
+      console.log(`[Store] Plain ${provider} API key saved`);
     }
   } catch (error) {
-    console.error('[Store] Failed to save API key:', error);
+    console.error(`[Store] Failed to save ${provider} API key:`, error);
     // Fallback to plain storage on error
-    store.set('plainApiKey', apiKey);
-    console.log('[Store] Fallback: Plain API key saved to "plainApiKey"');
+    store.set(`plainApiKey_${provider}`, apiKey);
+    console.log(`[Store] Fallback: Plain ${provider} API key saved`);
   }
 }
 
-export function getApiKey(): string {
+export function getApiKey(provider: 'openwebui' | 'openrouter'): string {
   try {
     if (safeStorage.isEncryptionAvailable()) {
-      const encrypted = store.get('encryptedApiKey') as string;
-      console.log('[Store] Looking for encrypted key, found:', !!encrypted);
+      const encryptedKeys = store.get('encryptedApiKeys', {}) as Record<string, string>;
+      const encrypted = encryptedKeys[provider];
+      console.log(`[Store] Looking for encrypted ${provider} key, found:`, !!encrypted);
       if (encrypted) {
         const buffer = Buffer.from(encrypted, 'base64');
         const decrypted = safeStorage.decryptString(buffer);
-        console.log('[Store] Successfully decrypted API key, length:', decrypted?.length || 0);
+        console.log(`[Store] Successfully decrypted ${provider} API key, length:`, decrypted?.length || 0);
         return decrypted;
       }
     }
     // Fallback to plain storage
-    const plainKey = store.get('plainApiKey', '') as string;
+    const plainKey = store.get(`plainApiKey_${provider}`, '') as string;
     if (plainKey) {
-      console.log('[Store] Retrieved plain text API key, length:', plainKey.length);
+      console.log(`[Store] Retrieved plain text ${provider} API key, length:`, plainKey.length);
     }
     return plainKey;
   } catch (error) {
-    console.error('[Store] Failed to get API key:', error);
+    console.error(`[Store] Failed to get ${provider} API key:`, error);
     return '';
   }
 }
 
 export function getConfig() {
   const config = store.get('config');
-  const apiKey = getApiKey();
 
   console.log('[Store] getConfig: Loading configuration');
-  console.log('[Store] getConfig: API key retrieved, length:', apiKey?.length || 0);
+  console.log('[Store] getConfig: Provider:', config.api.provider);
 
-  // Replace the stored API key with the decrypted one
-  return {
-    ...config,
-    api: {
-      ...config.api,
-      apiKey,
-    },
-  };
+  // Decrypt provider-specific API keys
+  const decryptedConfig = { ...config };
+
+  if (config.api.openwebui) {
+    const openwebuiKey = getApiKey('openwebui');
+    console.log('[Store] getConfig: OpenWebUI key retrieved, length:', openwebuiKey?.length || 0);
+    decryptedConfig.api = {
+      ...decryptedConfig.api,
+      openwebui: {
+        ...config.api.openwebui,
+        apiKey: openwebuiKey,
+      },
+    };
+  }
+
+  if (config.api.openrouter) {
+    const openrouterKey = getApiKey('openrouter');
+    console.log('[Store] getConfig: OpenRouter key retrieved, length:', openrouterKey?.length || 0);
+    decryptedConfig.api = {
+      ...decryptedConfig.api,
+      openrouter: {
+        ...config.api.openrouter,
+        apiKey: openrouterKey,
+      },
+    };
+  }
+
+  return decryptedConfig;
 }
 
 export function setConfig(config: Partial<StoreSchema['config']>) {
@@ -155,20 +194,37 @@ export function setConfig(config: Partial<StoreSchema['config']>) {
   console.log('[Store] setConfig called with:', JSON.stringify(config, null, 2));
   console.log('[Store] Current config.api:', JSON.stringify(currentConfig.api, null, 2));
 
-  // Handle API key separately for encryption
-  if (config.api?.apiKey) {
-    console.log('[Store] Saving encrypted API key, length:', config.api.apiKey.length);
-    saveApiKey(config.api.apiKey);
-    // Remove apiKey from config object before saving
-    const { apiKey, ...apiRest } = config.api;
-    config.api = apiRest as any;
+  // Handle provider-specific API keys separately for encryption
+  if (config.api) {
+    // Handle OpenWebUI API key
+    if (config.api.openwebui?.apiKey) {
+      console.log('[Store] Saving encrypted OpenWebUI API key, length:', config.api.openwebui.apiKey.length);
+      saveApiKey('openwebui', config.api.openwebui.apiKey);
+      // Remove apiKey from config object before saving
+      const { apiKey, ...openwebuiRest } = config.api.openwebui;
+      config.api.openwebui = openwebuiRest as any;
+    }
+
+    // Handle OpenRouter API key
+    if (config.api.openrouter?.apiKey) {
+      console.log('[Store] Saving encrypted OpenRouter API key, length:', config.api.openrouter.apiKey.length);
+      saveApiKey('openrouter', config.api.openrouter.apiKey);
+      // Remove apiKey from config object before saving
+      const { apiKey, ...openrouterRest } = config.api.openrouter;
+      config.api.openrouter = openrouterRest as any;
+    }
   }
 
   // Deep merge to preserve existing fields
   const mergedConfig = {
     ...currentConfig,
     ...config,
-    api: config.api ? { ...currentConfig.api, ...config.api } : currentConfig.api,
+    api: config.api ? {
+      ...currentConfig.api,
+      ...config.api,
+      openwebui: config.api.openwebui ? { ...currentConfig.api.openwebui, ...config.api.openwebui } : currentConfig.api.openwebui,
+      openrouter: config.api.openrouter ? { ...currentConfig.api.openrouter, ...config.api.openrouter } : currentConfig.api.openrouter,
+    } : currentConfig.api,
     appearance: config.appearance ? { ...currentConfig.appearance, ...config.appearance } : currentConfig.appearance,
     preferences: config.preferences ? { ...currentConfig.preferences, ...config.preferences } : currentConfig.preferences,
   };

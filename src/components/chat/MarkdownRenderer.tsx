@@ -1,4 +1,4 @@
-import { useMemo, ReactNode } from 'react';
+import React, { useMemo, ReactNode } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
@@ -14,7 +14,7 @@ interface MarkdownRendererProps {
   message?: Message;
 }
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isUser = false, message }) => {
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ content, isUser = false, message }) => {
   const { theme } = useAppSelector((state) => state.settings.appearance);
   const { activeExtensions, activeReplacement } = useAppSelector((state) => state.plugins);
 
@@ -259,4 +259,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content, isU
 
   // Apply post-processing from plugins
   return <>{pluginConfig.postProcess(rendered, renderContext)}</>;
-};
+}, (prevProps, nextProps) => {
+  // Custom comparison: only re-render if content, isUser, or message.id changes
+  return prevProps.content === nextProps.content &&
+         prevProps.isUser === nextProps.isUser &&
+         prevProps.message?.id === nextProps.message?.id;
+});

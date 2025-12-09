@@ -1,11 +1,16 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { ProviderType, OpenWebUIConfig, OpenRouterConfig } from '../../types/api.types';
 
 interface SettingsState {
   api: {
-    baseUrl: string;
-    apiKey: string;
-    selectedModel: string;
+    provider: ProviderType;
+    openwebui?: OpenWebUIConfig;
+    openrouter?: OpenRouterConfig;
     availableModels: string[];
+    // Legacy fields for backward compatibility (deprecated)
+    baseUrl?: string;
+    apiKey?: string;
+    selectedModel?: string;
   };
   appearance: {
     theme: 'light' | 'dark' | 'system';
@@ -22,9 +27,7 @@ interface SettingsState {
 
 const initialState: SettingsState = {
   api: {
-    baseUrl: '',
-    apiKey: '',
-    selectedModel: '',
+    provider: 'openwebui', // Default provider
     availableModels: [],
   },
   appearance: {
