@@ -8,6 +8,8 @@ import {
   importFromClaudeDesktop,
   updateServerStatus,
   setServerTools,
+  setServerResources,
+  setServerPrompts,
   setServerError,
   saveMCPServer,
   syncAllServerTools,
@@ -37,19 +39,19 @@ export function MCPSettings() {
     initServers();
   }, [dispatch]);
 
-  // Subscribe to server status events
+  // Subscribe to server events
   useEffect(() => {
-    const cleanupStatus = window.electron.mcp.onServerStatusChanged((event: any) => {
+    const cleanupStatus = window.electron.mcp.onServerStatusChanged((event: { serverId: string; status: string; error?: string }) => {
       dispatch(
         updateServerStatus({
           id: event.serverId,
-          status: event.status,
+          status: event.status as any,
           error: event.error,
         })
       );
     });
 
-    const cleanupTools = window.electron.mcp.onServerToolsUpdated((event: any) => {
+    const cleanupTools = window.electron.mcp.onServerToolsUpdated((event: { serverId: string; tools: any[] }) => {
       console.log('[MCPSettings] Tools updated for server:', event.serverId, 'Tools count:', event.tools?.length || 0);
       dispatch(
         setServerTools({
@@ -59,7 +61,27 @@ export function MCPSettings() {
       );
     });
 
-    const cleanupError = window.electron.mcp.onServerError((event: any) => {
+    const cleanupResources = window.electron.mcp.onServerResourcesUpdated((event: { serverId: string; resources: any[] }) => {
+      console.log('[MCPSettings] Resources updated for server:', event.serverId, 'Resources count:', event.resources?.length || 0);
+      dispatch(
+        setServerResources({
+          id: event.serverId,
+          resources: event.resources,
+        })
+      );
+    });
+
+    const cleanupPrompts = window.electron.mcp.onServerPromptsUpdated((event: { serverId: string; prompts: any[] }) => {
+      console.log('[MCPSettings] Prompts updated for server:', event.serverId, 'Prompts count:', event.prompts?.length || 0);
+      dispatch(
+        setServerPrompts({
+          id: event.serverId,
+          prompts: event.prompts,
+        })
+      );
+    });
+
+    const cleanupError = window.electron.mcp.onServerError((event: { serverId: string; error: string }) => {
       dispatch(
         setServerError({
           id: event.serverId,
@@ -71,6 +93,8 @@ export function MCPSettings() {
     return () => {
       cleanupStatus?.();
       cleanupTools?.();
+      cleanupResources?.();
+      cleanupPrompts?.();
       cleanupError?.();
     };
   }, [dispatch]);
@@ -161,6 +185,30 @@ export function MCPSettings() {
     }
   };
 
+  // Helper to get server info display
+  const getServerInfo = (server: MCPServerConfig): string => {
+    if (server.transport === 'stdio') {
+      return `${server.command || ''} ${(server.args || []).join(' ')}`.trim();
+    } else if (server.transport === 'streamable-http') {
+      return server.url || '';
+    }
+    return '';
+  };
+
+  // Helper to get transport label
+  const getTransportLabel = (transport: string): string => {
+    switch (transport) {
+      case 'stdio':
+        return 'stdio';
+      case 'streamable-http':
+        return 'HTTP';
+      case 'sse':
+        return 'SSE (legacy)';
+      default:
+        return transport;
+    }
+  };
+
   const serverList = Object.values(servers);
 
   return (
@@ -218,6 +266,8 @@ export function MCPSettings() {
             const state = serverStates[server.id];
             const status = state?.status || 'stopped';
             const tools = state?.tools || [];
+            const resources = state?.resources || [];
+            const prompts = state?.prompts || [];
             const serverError = state?.error;
 
             // Status configuration
@@ -241,7 +291,7 @@ export function MCPSettings() {
               >
                 {/* Left: Name + Status */}
                 <div className="flex-1">
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-base font-medium text-text-primary">
                       {server.name}
                     </span>
@@ -249,16 +299,29 @@ export function MCPSettings() {
                       <span>{statusConfig.icon}</span>
                       <span>{statusConfig.label}</span>
                     </span>
+                    <span className="rounded bg-gray-600 px-1.5 py-0.5 text-xs text-gray-200">
+                      {getTransportLabel(server.transport)}
+                    </span>
                     {tools.length > 0 && (
                       <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-white">
                         {tools.length} {tools.length === 1 ? 'tool' : 'tools'}
                       </span>
                     )}
+                    {resources.length > 0 && (
+                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs text-white">
+                        {resources.length} {resources.length === 1 ? 'resource' : 'resources'}
+                      </span>
+                    )}
+                    {prompts.length > 0 && (
+                      <span className="rounded-full bg-purple-600 px-2 py-0.5 text-xs text-white">
+                        {prompts.length} {prompts.length === 1 ? 'prompt' : 'prompts'}
+                      </span>
+                    )}
                   </div>
 
-                  {/* Command preview */}
-                  <div className="mt-1 text-xs text-text-secondary font-mono">
-                    {server.command} {server.args.join(' ')}
+                  {/* Server info preview */}
+                  <div className="mt-1 text-xs text-text-secondary font-mono truncate max-w-lg">
+                    {getServerInfo(server)}
                   </div>
 
                   {/* Error message */}

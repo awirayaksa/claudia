@@ -4,6 +4,10 @@ import {
   MCPServerState,
   MCPServerStatus,
   MCPTool,
+  MCPResource,
+  MCPPrompt,
+  MCPResourceContent,
+  MCPPromptMessage,
 } from '../../types/mcp.types';
 
 // ============================================================================
@@ -20,6 +24,12 @@ interface MCPState {
   // All available tools (aggregated from all ready servers)
   availableTools: MCPTool[];
 
+  // All available resources (aggregated from all ready servers)
+  availableResources: MCPResource[];
+
+  // All available prompts (aggregated from all ready servers)
+  availablePrompts: MCPPrompt[];
+
   // UI state
   isLoadingServers: boolean;
   error: string | null;
@@ -30,6 +40,8 @@ const initialState: MCPState = {
   servers: {},
   serverStates: {},
   availableTools: [],
+  availableResources: [],
+  availablePrompts: [],
   isLoadingServers: false,
   error: null,
   selectedServerId: null,
@@ -202,7 +214,7 @@ export const callMCPTool = createAsyncThunk(
     }: {
       serverId: string;
       toolName: string;
-      args: Record<string, any>;
+      args: Record<string, unknown>;
     },
     { rejectWithValue }
   ) => {
@@ -216,6 +228,62 @@ export const callMCPTool = createAsyncThunk(
       return rejectWithValue(
         error instanceof Error ? error.message : 'Failed to call tool'
       );
+    }
+  }
+);
+
+// Read an MCP resource
+export const readMCPResource = createAsyncThunk(
+  'mcp/readResource',
+  async (
+    {
+      serverId,
+      uri,
+    }: {
+      serverId: string;
+      uri: string;
+    },
+    { rejectWithValue }
+  ): Promise<MCPResourceContent[]> => {
+    try {
+      const response = await window.electron.mcp.readResource(serverId, uri);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to read resource');
+      }
+      return response.contents;
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to read resource'
+      ) as never;
+    }
+  }
+);
+
+// Get an MCP prompt
+export const getMCPPrompt = createAsyncThunk(
+  'mcp/getPrompt',
+  async (
+    {
+      serverId,
+      promptName,
+      args,
+    }: {
+      serverId: string;
+      promptName: string;
+      args?: Record<string, string>;
+    },
+    { rejectWithValue }
+  ): Promise<MCPPromptMessage[]> => {
+    try {
+      const response = await window.electron.mcp.getPrompt(serverId, promptName, args);
+      if (!response.success) {
+        throw new Error(response.error || 'Failed to get prompt');
+      }
+      return response.messages;
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to get prompt'
+      ) as never;
     }
   }
 );
@@ -253,6 +321,68 @@ export const syncAllServerTools = createAsyncThunk(
   }
 );
 
+// Sync all server resources
+export const syncAllServerResources = createAsyncThunk(
+  'mcp/syncAllServerResources',
+  async (_, { getState, dispatch }) => {
+    const state = getState() as { mcp: MCPState };
+    const serverIds = Object.keys(state.mcp.servers);
+
+    console.log('[MCP] Syncing resources for', serverIds.length, 'servers');
+
+    for (const serverId of serverIds) {
+      try {
+        const statusResponse = await window.electron.mcp.getServerStatus(serverId);
+        if (statusResponse.success && statusResponse.status === 'ready') {
+          const resourcesResponse = await window.electron.mcp.listResources(serverId);
+          if (resourcesResponse.success) {
+            console.log(`[MCP] Synced ${resourcesResponse.resources.length} resources for server ${serverId}`);
+            dispatch(
+              setServerResources({
+                id: serverId,
+                resources: resourcesResponse.resources,
+              })
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`[MCP] Failed to sync resources for server ${serverId}:`, error);
+      }
+    }
+  }
+);
+
+// Sync all server prompts
+export const syncAllServerPrompts = createAsyncThunk(
+  'mcp/syncAllServerPrompts',
+  async (_, { getState, dispatch }) => {
+    const state = getState() as { mcp: MCPState };
+    const serverIds = Object.keys(state.mcp.servers);
+
+    console.log('[MCP] Syncing prompts for', serverIds.length, 'servers');
+
+    for (const serverId of serverIds) {
+      try {
+        const statusResponse = await window.electron.mcp.getServerStatus(serverId);
+        if (statusResponse.success && statusResponse.status === 'ready') {
+          const promptsResponse = await window.electron.mcp.listPrompts(serverId);
+          if (promptsResponse.success) {
+            console.log(`[MCP] Synced ${promptsResponse.prompts.length} prompts for server ${serverId}`);
+            dispatch(
+              setServerPrompts({
+                id: serverId,
+                prompts: promptsResponse.prompts,
+              })
+            );
+          }
+        }
+      } catch (error) {
+        console.error(`[MCP] Failed to sync prompts for server ${serverId}:`, error);
+      }
+    }
+  }
+);
+
 // ============================================================================
 // Slice Definition
 // ============================================================================
@@ -285,8 +415,7 @@ const mcpSlice = createSlice({
     removeServer: (state, action: PayloadAction<string>) => {
       delete state.servers[action.payload];
       delete state.serverStates[action.payload];
-      // Rebuild available tools after removal
-      rebuildAvailableToolsHelper(state);
+      rebuildAllHelper(state);
     },
 
     // Server state updates (from IPC events)
@@ -323,22 +452,23 @@ const mcpSlice = createSlice({
         }
       }
 
-      // If server stopped or errored, clear tools
+      // If server stopped or errored, clear tools/resources/prompts
       if (
         action.payload.status === 'stopped' ||
         action.payload.status === 'error'
       ) {
         if (state.serverStates[action.payload.id]) {
           state.serverStates[action.payload.id].tools = [];
+          state.serverStates[action.payload.id].resources = [];
+          state.serverStates[action.payload.id].prompts = [];
         }
-        rebuildAvailableToolsHelper(state);
+        rebuildAllHelper(state);
       }
 
-      // FIX: If server just became ready, rebuild available tools
-      // This handles the race condition where tools arrive before status changes to 'ready'
+      // If server just became ready, rebuild all
       if (action.payload.status === 'ready' && previousStatus !== 'ready') {
-        console.log(`[Redux mcpSlice] Server ${action.payload.id} became ready, rebuilding tools`);
-        rebuildAvailableToolsHelper(state);
+        console.log(`[Redux mcpSlice] Server ${action.payload.id} became ready, rebuilding all`);
+        rebuildAllHelper(state);
       }
     },
 
@@ -349,7 +479,6 @@ const mcpSlice = createSlice({
       console.log('[Redux mcpSlice] setServerTools called:', {
         serverId: action.payload.id,
         toolCount: action.payload.tools.length,
-        toolNames: action.payload.tools.map(t => t.name)
       });
       if (state.serverStates[action.payload.id]) {
         state.serverStates[action.payload.id].tools = action.payload.tools;
@@ -360,6 +489,34 @@ const mcpSlice = createSlice({
       }
     },
 
+    setServerResources: (
+      state,
+      action: PayloadAction<{ id: string; resources: MCPResource[] }>
+    ) => {
+      console.log('[Redux mcpSlice] setServerResources called:', {
+        serverId: action.payload.id,
+        resourceCount: action.payload.resources.length,
+      });
+      if (state.serverStates[action.payload.id]) {
+        state.serverStates[action.payload.id].resources = action.payload.resources;
+        rebuildAvailableResourcesHelper(state);
+      }
+    },
+
+    setServerPrompts: (
+      state,
+      action: PayloadAction<{ id: string; prompts: MCPPrompt[] }>
+    ) => {
+      console.log('[Redux mcpSlice] setServerPrompts called:', {
+        serverId: action.payload.id,
+        promptCount: action.payload.prompts.length,
+      });
+      if (state.serverStates[action.payload.id]) {
+        state.serverStates[action.payload.id].prompts = action.payload.prompts;
+        rebuildAvailablePromptsHelper(state);
+      }
+    },
+
     setServerError: (state, action: PayloadAction<{ id: string; error: string }>) => {
       if (state.serverStates[action.payload.id]) {
         state.serverStates[action.payload.id].error = action.payload.error;
@@ -367,9 +524,17 @@ const mcpSlice = createSlice({
       }
     },
 
-    // Aggregated tools
+    // Aggregated rebuilds
     rebuildAvailableTools: (state) => {
       rebuildAvailableToolsHelper(state);
+    },
+
+    rebuildAvailableResources: (state) => {
+      rebuildAvailableResourcesHelper(state);
+    },
+
+    rebuildAvailablePrompts: (state) => {
+      rebuildAvailablePromptsHelper(state);
     },
 
     // UI state
@@ -436,7 +601,9 @@ const mcpSlice = createSlice({
       if (state.serverStates[serverId]) {
         state.serverStates[serverId].status = 'stopped';
         state.serverStates[serverId].tools = [];
-        rebuildAvailableToolsHelper(state);
+        state.serverStates[serverId].resources = [];
+        state.serverStates[serverId].prompts = [];
+        rebuildAllHelper(state);
       }
     });
 
@@ -445,7 +612,7 @@ const mcpSlice = createSlice({
       const serverId = action.payload.serverId;
       delete state.servers[serverId];
       delete state.serverStates[serverId];
-      rebuildAvailableToolsHelper(state);
+      rebuildAllHelper(state);
     });
 
     // Import from Claude Desktop
@@ -468,17 +635,18 @@ const mcpSlice = createSlice({
 // Helper Functions
 // ============================================================================
 
+function rebuildAllHelper(state: MCPState) {
+  rebuildAvailableToolsHelper(state);
+  rebuildAvailableResourcesHelper(state);
+  rebuildAvailablePromptsHelper(state);
+}
+
 function rebuildAvailableToolsHelper(state: MCPState) {
   console.log('[Redux mcpSlice] rebuildAvailableToolsHelper called');
   const tools: MCPTool[] = [];
   const seenToolNames = new Set<string>();
 
   for (const [serverId, serverState] of Object.entries(state.serverStates)) {
-    console.log(`[Redux mcpSlice] Checking server ${serverId}:`, {
-      status: serverState.status,
-      toolCount: serverState.tools.length,
-      toolNames: serverState.tools.map(t => t.name)
-    });
     if (serverState.status === 'ready' && serverState.tools.length > 0) {
       for (const tool of serverState.tools) {
         // Avoid duplicate tool names (first server wins)
@@ -497,6 +665,54 @@ function rebuildAvailableToolsHelper(state: MCPState) {
   state.availableTools = tools;
 }
 
+function rebuildAvailableResourcesHelper(state: MCPState) {
+  console.log('[Redux mcpSlice] rebuildAvailableResourcesHelper called');
+  const resources: MCPResource[] = [];
+  const seenUris = new Set<string>();
+
+  for (const [serverId, serverState] of Object.entries(state.serverStates)) {
+    if (serverState.status === 'ready' && serverState.resources.length > 0) {
+      for (const resource of serverState.resources) {
+        // Avoid duplicate URIs (first server wins)
+        if (!seenUris.has(resource.uri)) {
+          resources.push(resource);
+          seenUris.add(resource.uri);
+        } else {
+          console.warn(
+            `[MCP] Duplicate resource URI "${resource.uri}" from server ${serverId}, skipping`
+          );
+        }
+      }
+    }
+  }
+
+  state.availableResources = resources;
+}
+
+function rebuildAvailablePromptsHelper(state: MCPState) {
+  console.log('[Redux mcpSlice] rebuildAvailablePromptsHelper called');
+  const prompts: MCPPrompt[] = [];
+  const seenPromptNames = new Set<string>();
+
+  for (const [serverId, serverState] of Object.entries(state.serverStates)) {
+    if (serverState.status === 'ready' && serverState.prompts.length > 0) {
+      for (const prompt of serverState.prompts) {
+        // Avoid duplicate prompt names (first server wins)
+        if (!seenPromptNames.has(prompt.name)) {
+          prompts.push(prompt);
+          seenPromptNames.add(prompt.name);
+        } else {
+          console.warn(
+            `[MCP] Duplicate prompt name "${prompt.name}" from server ${serverId}, skipping`
+          );
+        }
+      }
+    }
+  }
+
+  state.availablePrompts = prompts;
+}
+
 // ============================================================================
 // Exports
 // ============================================================================
@@ -509,8 +725,12 @@ export const {
   setServerState,
   updateServerStatus,
   setServerTools,
+  setServerResources,
+  setServerPrompts,
   setServerError,
   rebuildAvailableTools,
+  rebuildAvailableResources,
+  rebuildAvailablePrompts,
   setSelectedServer,
   setError,
   clearError,

@@ -1,53 +1,51 @@
-import { spawn, ChildProcess } from 'child_process';
 import { EventEmitter } from 'events';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
+import {
+  ToolListChangedNotificationSchema,
+  ResourceListChangedNotificationSchema,
+  PromptListChangedNotificationSchema,
+} from '@modelcontextprotocol/sdk/types.js';
 import {
   MCPServerConfig,
   MCPServerStatus,
   MCPServerCapabilities,
   MCPTool,
-  JSONRPCRequest,
-  JSONRPCResponse,
-  JSONRPCMessage,
-  InitializeRequest,
-  InitializeResponse,
-  ToolsListRequest,
-  ToolsListResponse,
-  ToolCallRequest,
-  ToolCallResponse,
+  MCPResource,
+  MCPPrompt,
+  MCPToolResult,
+  MCPResourceContent,
+  MCPPromptMessage,
 } from '../../src/types/mcp.types';
 
 // ============================================================================
-// Pending Request Tracking
+// MCP Client Wrapper - Uses official SDK
 // ============================================================================
 
-interface PendingRequest {
-  resolve: (value: any) => void;
-  reject: (error: Error) => void;
-  timeout: NodeJS.Timeout;
-}
-
-// ============================================================================
-// MCP Server Instance
-// ============================================================================
-
-export class MCPServerInstance extends EventEmitter {
-  private process: ChildProcess | null = null;
-  private pendingRequests: Map<number | string, PendingRequest> = new Map();
-  private messageBuffer: string = '';
-  private requestId: number = 1;
+export class MCPClientWrapper extends EventEmitter {
+  private client: Client | null = null;
+  private transport: Transport | null = null;
   private _status: MCPServerStatus = 'stopped';
   private _capabilities?: MCPServerCapabilities;
   private _tools: MCPTool[] = [];
+  private _resources: MCPResource[] = [];
+  private _prompts: MCPPrompt[] = [];
   private _error?: string;
   private _pid?: number;
-  private _logs: string[] = []; // Store recent logs (stderr)
-  private readonly MAX_LOGS = 200; // Keep last 200 log lines
+  private _logs: string[] = [];
+  private readonly MAX_LOGS = 200;
 
   constructor(private config: MCPServerConfig) {
     super();
   }
 
   // Getters
+  get id(): string {
+    return this.config.id;
+  }
+
   get status(): MCPServerStatus {
     return this._status;
   }
@@ -60,6 +58,14 @@ export class MCPServerInstance extends EventEmitter {
     return this._tools;
   }
 
+  get resources(): MCPResource[] {
+    return this._resources;
+  }
+
+  get prompts(): MCPPrompt[] {
+    return this._prompts;
+  }
+
   get error(): string | undefined {
     return this._error;
   }
@@ -69,11 +75,20 @@ export class MCPServerInstance extends EventEmitter {
   }
 
   get logs(): string[] {
-    return [...this._logs]; // Return a copy
+    return [...this._logs];
   }
 
   clearLogs(): void {
     this._logs = [];
+  }
+
+  private addLog(message: string): void {
+    const timestamp = new Date().toISOString();
+    const logEntry = `[${timestamp}] ${message}`;
+    this._logs.push(logEntry);
+    if (this._logs.length > this.MAX_LOGS) {
+      this._logs = this._logs.slice(-this.MAX_LOGS);
+    }
   }
 
   // ============================================================================
@@ -81,8 +96,8 @@ export class MCPServerInstance extends EventEmitter {
   // ============================================================================
 
   async start(): Promise<void> {
-    if (this.process) {
-      throw new Error('Server is already running');
+    if (this.client) {
+      throw new Error('Client is already running');
     }
 
     this._status = 'starting';
@@ -90,410 +105,430 @@ export class MCPServerInstance extends EventEmitter {
     this.emit('statusChanged', this._status);
 
     try {
-      // Debug logging for spawn configuration
-      console.log(`[MCP] ${this.config.name} spawn config:`, {
-        command: this.config.command,
-        args: this.config.args,
-        envKeys: Object.keys(this.config.env || {}),
-      });
+      // Create transport based on config
+      if (this.config.transport === 'stdio') {
+        await this.createStdioTransport();
+      } else if (this.config.transport === 'streamable-http') {
+        await this.createHttpTransport();
+      } else {
+        throw new Error(`Unknown transport: ${this.config.transport}`);
+      }
 
-      // Determine if shell is needed (Windows + common npm/script commands)
-      const isWindows = process.platform === 'win32';
-      const shellCommands = ['npx', 'npm', 'node', 'python', 'py', 'uvx', 'uv'];
-      const needsShell = isWindows && shellCommands.some(cmd =>
-        this.config.command.toLowerCase() === cmd ||
-        this.config.command.toLowerCase() === `${cmd}.cmd`
+      this._status = 'initializing';
+      this.emit('statusChanged', this._status);
+
+      // Create and connect client
+      this.client = new Client(
+        {
+          name: 'Claudia',
+          version: '0.1.0',
+        },
+        {
+          capabilities: {
+            // Request capabilities from server
+          },
+        }
       );
 
-      // Ensure env is always a valid object
-      const mergedEnv = {
-        ...process.env,
-        ...(this.config.env || {}),
-      };
+      // Connect to transport
+      await this.client.connect(this.transport!);
 
-      // Spawn process
-      this.process = spawn(this.config.command, this.config.args, {
-        stdio: ['pipe', 'pipe', 'pipe'],
-        env: mergedEnv,
-        shell: needsShell,
-        windowsHide: true,
-      });
+      // Get server capabilities
+      const serverCapabilities = this.client.getServerCapabilities();
+      this._capabilities = this.mapCapabilities(serverCapabilities);
+      console.log(`[MCP ${this.config.name}] Capabilities:`, JSON.stringify(this._capabilities, null, 2));
 
-      this._pid = this.process.pid;
+      // Fetch tools if supported
+      if (this._capabilities?.tools) {
+        await this.fetchTools();
+      }
 
-      // Set up event handlers
-      this.process.stdout?.on('data', (data) => this.handleStdout(data));
-      this.process.stderr?.on('data', (data) => this.handleStderr(data));
-      this.process.on('exit', (code, signal) => this.handleExit(code, signal));
-      this.process.on('error', (error) => this.handleProcessError(error));
+      // Fetch resources if supported
+      if (this._capabilities?.resources) {
+        await this.fetchResources();
+      }
 
-      // Initialize the server
-      await this.initialize();
+      // Fetch prompts if supported
+      if (this._capabilities?.prompts) {
+        await this.fetchPrompts();
+      }
+
+      // Set up notification handlers for list changes
+      this.setupNotificationHandlers();
+
+      this._status = 'ready';
+      this.emit('statusChanged', this._status);
+      this.addLog('Connected and ready');
     } catch (error) {
       this._status = 'error';
-      this._error = error instanceof Error ? error.message : 'Failed to start server';
+      this._error = error instanceof Error ? error.message : 'Failed to start client';
+      this.addLog(`Error: ${this._error}`);
       this.emit('statusChanged', this._status);
       this.emit('error', this._error);
-      this.cleanup();
+      await this.cleanup();
       throw error;
     }
   }
 
+  private async createStdioTransport(): Promise<void> {
+    if (!this.config.command) {
+      throw new Error('Command is required for stdio transport');
+    }
+
+    console.log(`[MCP ${this.config.name}] Creating stdio transport:`, {
+      command: this.config.command,
+      args: this.config.args,
+      envKeys: Object.keys(this.config.env || {}),
+    });
+
+    // Merge environment variables
+    const mergedEnv: Record<string, string> = {};
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) {
+        mergedEnv[key] = value;
+      }
+    }
+    if (this.config.env) {
+      Object.assign(mergedEnv, this.config.env);
+    }
+
+    this.transport = new StdioClientTransport({
+      command: this.config.command,
+      args: this.config.args || [],
+      env: mergedEnv,
+      stderr: 'pipe',
+    });
+
+    // Handle stderr for logging
+    const stdioTransport = this.transport as StdioClientTransport;
+    if (stdioTransport.stderr) {
+      stdioTransport.stderr.on('data', (data: Buffer) => {
+        const message = data.toString().trim();
+        if (message) {
+          console.warn(`[MCP ${this.config.name}] stderr:`, message);
+          this.addLog(message);
+        }
+      });
+    }
+
+    // Get PID if available
+    // Note: The SDK transport may expose the process
+    const transportAny = this.transport as any;
+    if (transportAny._process?.pid) {
+      this._pid = transportAny._process.pid;
+    }
+  }
+
+  private async createHttpTransport(): Promise<void> {
+    if (!this.config.url) {
+      throw new Error('URL is required for streamable-http transport');
+    }
+
+    console.log(`[MCP ${this.config.name}] Creating HTTP transport:`, {
+      url: this.config.url,
+    });
+
+    this.transport = new StreamableHTTPClientTransport(
+      new URL(this.config.url)
+    );
+  }
+
+  private mapCapabilities(serverCaps: any): MCPServerCapabilities {
+    return {
+      tools: serverCaps?.tools ? { listChanged: !!serverCaps.tools.listChanged } : undefined,
+      resources: serverCaps?.resources
+        ? {
+            subscribe: !!serverCaps.resources.subscribe,
+            listChanged: !!serverCaps.resources.listChanged,
+          }
+        : undefined,
+      prompts: serverCaps?.prompts ? { listChanged: !!serverCaps.prompts.listChanged } : undefined,
+      logging: serverCaps?.logging,
+    };
+  }
+
+  private setupNotificationHandlers(): void {
+    if (!this.client) return;
+
+    // Handle tool list changes
+    this.client.setNotificationHandler(
+      ToolListChangedNotificationSchema,
+      async () => {
+        console.log(`[MCP ${this.config.name}] Tools list changed, refetching...`);
+        await this.fetchTools();
+      }
+    );
+
+    // Handle resource list changes
+    this.client.setNotificationHandler(
+      ResourceListChangedNotificationSchema,
+      async () => {
+        console.log(`[MCP ${this.config.name}] Resources list changed, refetching...`);
+        await this.fetchResources();
+      }
+    );
+
+    // Handle prompt list changes
+    this.client.setNotificationHandler(
+      PromptListChangedNotificationSchema,
+      async () => {
+        console.log(`[MCP ${this.config.name}] Prompts list changed, refetching...`);
+        await this.fetchPrompts();
+      }
+    );
+  }
+
   async stop(): Promise<void> {
-    if (!this.process) {
+    if (!this.client && !this.transport) {
       return;
     }
 
     this._status = 'stopping';
     this.emit('statusChanged', this._status);
+    this.addLog('Stopping...');
 
     try {
-      // Send shutdown notification
-      this.sendNotification('notifications/shutdown');
-
-      // Wait 2 seconds for graceful exit
-      await new Promise<void>((resolve) => {
-        const timeout = setTimeout(() => {
-          // Force kill if not exited
-          if (this.process && !this.process.killed) {
-            this.process.kill('SIGTERM');
-            setTimeout(() => {
-              if (this.process && !this.process.killed) {
-                this.process.kill('SIGKILL');
-              }
-            }, 1000);
-          }
-          resolve();
-        }, 2000);
-
-        this.process?.once('exit', () => {
-          clearTimeout(timeout);
-          resolve();
-        });
-      });
+      await this.cleanup();
     } finally {
-      this.cleanup();
+      this._status = 'stopped';
+      this.emit('statusChanged', this._status);
+      this.addLog('Stopped');
     }
   }
 
-  private cleanup(): void {
-    // Reject all pending requests
-    for (const [id, pending] of this.pendingRequests) {
-      clearTimeout(pending.timeout);
-      pending.reject(new Error('Server stopped'));
-    }
-    this.pendingRequests.clear();
-
-    // Clean up process
-    if (this.process) {
-      this.process.removeAllListeners();
-      this.process.stdout?.removeAllListeners();
-      this.process.stderr?.removeAllListeners();
-      this.process = null;
+  private async cleanup(): Promise<void> {
+    // Close client
+    if (this.client) {
+      try {
+        await this.client.close();
+      } catch (error) {
+        console.error(`[MCP ${this.config.name}] Error closing client:`, error);
+      }
+      this.client = null;
     }
 
-    this._status = 'stopped';
-    this._pid = undefined;
+    // Close transport
+    if (this.transport) {
+      try {
+        await this.transport.close();
+      } catch (error) {
+        console.error(`[MCP ${this.config.name}] Error closing transport:`, error);
+      }
+      this.transport = null;
+    }
+
     this._capabilities = undefined;
     this._tools = [];
-    this.messageBuffer = '';
-    this.emit('statusChanged', this._status);
+    this._resources = [];
+    this._prompts = [];
+    this._pid = undefined;
   }
 
   // ============================================================================
-  // Initialization Handshake
+  // Tools
   // ============================================================================
 
-  private async initialize(): Promise<void> {
-    this._status = 'initializing';
-    this.emit('statusChanged', this._status);
+  private async fetchTools(): Promise<void> {
+    if (!this.client) return;
 
     try {
-      // Step 1: Send initialize request
-      const initRequest: InitializeRequest = {
-        jsonrpc: '2.0',
-        id: this.getNextRequestId(),
-        method: 'initialize',
-        params: {
-          protocolVersion: '2024-11-05',
-          capabilities: {},
-          clientInfo: {
-            name: 'Claudia',
-            version: '0.1.0',
-          },
-        },
-      };
-
-      const initResponse = (await this.sendRequest(
-        initRequest.method,
-        initRequest.params
-      )) as InitializeResponse['result'];
-
-      this._capabilities = initResponse.capabilities;
-      console.log(`[MCP Server ${this.id}] Capabilities:`, JSON.stringify(this._capabilities, null, 2));
-
-      // Step 2: Send initialized notification
-      this.sendNotification('notifications/initialized');
-
-      // Step 3: List tools if supported
-      if (this._capabilities.tools) {
-        console.log(`[MCP Server ${this.id}] Tools capability supported, fetching tools...`);
-        const toolsRequest: ToolsListRequest = {
-          jsonrpc: '2.0',
-          id: this.getNextRequestId(),
-          method: 'tools/list',
-        };
-
-        const toolsResponse = (await this.sendRequest(
-          toolsRequest.method
-        )) as ToolsListResponse['result'];
-
-        this._tools = toolsResponse.tools;
-        console.log(`[MCP Server ${this.id}] Received ${this._tools.length} tools:`, this._tools.map(t => t.name));
-        this.emit('toolsUpdated', this._tools);
-      } else {
-        console.warn(`[MCP Server ${this.id}] Server does not support tools capability!`);
-      }
-
-      // Successfully initialized
-      this._status = 'ready';
-      this.emit('statusChanged', this._status);
+      const result = await this.client.listTools();
+      this._tools = (result.tools || []).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema as MCPTool['inputSchema'],
+      }));
+      console.log(`[MCP ${this.config.name}] Received ${this._tools.length} tools:`, this._tools.map((t) => t.name));
+      this.emit('toolsUpdated', this._tools);
     } catch (error) {
-      this._status = 'error';
-      this._error = error instanceof Error ? error.message : 'Initialization failed';
-      this.emit('statusChanged', this._status);
-      this.emit('error', this._error);
-      this.cleanup();
+      console.error(`[MCP ${this.config.name}] Failed to list tools:`, error);
+    }
+  }
+
+  async listTools(): Promise<MCPTool[]> {
+    return this._tools;
+  }
+
+  async callTool(name: string, args: Record<string, unknown>): Promise<MCPToolResult> {
+    if (this._status !== 'ready' || !this.client) {
+      throw new Error(`Client is not ready (status: ${this._status})`);
+    }
+
+    this.addLog(`Calling tool: ${name}`);
+
+    try {
+      const result = await this.client.callTool({
+        name,
+        arguments: args,
+      });
+
+      return {
+        content: (result.content || []).map((item) => ({
+          type: item.type as 'text' | 'image' | 'resource',
+          text: item.type === 'text' ? (item as any).text : undefined,
+          data: item.type === 'image' ? (item as any).data : undefined,
+          mimeType: (item as any).mimeType,
+        })),
+        isError: result.isError,
+      };
+    } catch (error) {
+      this.addLog(`Tool call failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   }
 
   // ============================================================================
-  // Tool Calling
+  // Resources
   // ============================================================================
 
-  async callTool(name: string, args: Record<string, any>): Promise<any> {
-    if (this._status !== 'ready') {
-      throw new Error(`Server is not ready (status: ${this._status})`);
+  private async fetchResources(): Promise<void> {
+    if (!this.client) return;
+
+    try {
+      const result = await this.client.listResources();
+      this._resources = (result.resources || []).map((resource) => ({
+        uri: resource.uri,
+        name: resource.name,
+        description: resource.description,
+        mimeType: resource.mimeType,
+      }));
+      console.log(`[MCP ${this.config.name}] Received ${this._resources.length} resources`);
+      this.emit('resourcesUpdated', this._resources);
+    } catch (error) {
+      console.error(`[MCP ${this.config.name}] Failed to list resources:`, error);
+    }
+  }
+
+  async listResources(): Promise<MCPResource[]> {
+    return this._resources;
+  }
+
+  async readResource(uri: string): Promise<MCPResourceContent[]> {
+    if (this._status !== 'ready' || !this.client) {
+      throw new Error(`Client is not ready (status: ${this._status})`);
     }
 
-    const request: ToolCallRequest = {
-      jsonrpc: '2.0',
-      id: this.getNextRequestId(),
-      method: 'tools/call',
-      params: {
+    this.addLog(`Reading resource: ${uri}`);
+
+    try {
+      const result = await this.client.readResource({ uri });
+      return (result.contents || []).map((content) => ({
+        uri: content.uri,
+        mimeType: content.mimeType,
+        text: (content as any).text,
+        blob: (content as any).blob,
+      }));
+    } catch (error) {
+      this.addLog(`Resource read failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
+    }
+  }
+
+  // ============================================================================
+  // Prompts
+  // ============================================================================
+
+  private async fetchPrompts(): Promise<void> {
+    if (!this.client) return;
+
+    try {
+      const result = await this.client.listPrompts();
+      this._prompts = (result.prompts || []).map((prompt) => ({
+        name: prompt.name,
+        description: prompt.description,
+        arguments: prompt.arguments?.map((arg) => ({
+          name: arg.name,
+          description: arg.description,
+          required: arg.required,
+        })),
+      }));
+      console.log(`[MCP ${this.config.name}] Received ${this._prompts.length} prompts`);
+      this.emit('promptsUpdated', this._prompts);
+    } catch (error) {
+      console.error(`[MCP ${this.config.name}] Failed to list prompts:`, error);
+    }
+  }
+
+  async listPrompts(): Promise<MCPPrompt[]> {
+    return this._prompts;
+  }
+
+  async getPrompt(name: string, args?: Record<string, string>): Promise<MCPPromptMessage[]> {
+    if (this._status !== 'ready' || !this.client) {
+      throw new Error(`Client is not ready (status: ${this._status})`);
+    }
+
+    this.addLog(`Getting prompt: ${name}`);
+
+    try {
+      const result = await this.client.getPrompt({
         name,
         arguments: args,
-      },
-    };
-
-    const response = (await this.sendRequest(
-      request.method,
-      request.params
-    )) as ToolCallResponse['result'];
-
-    return response;
-  }
-
-  // ============================================================================
-  // JSON-RPC Communication
-  // ============================================================================
-
-  private sendRequest(method: string, params?: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      const id = this.getNextRequestId();
-      const request: JSONRPCRequest = {
-        jsonrpc: '2.0',
-        id,
-        method,
-        params,
-      };
-
-      // Set up timeout (30 seconds)
-      const timeout = setTimeout(() => {
-        this.pendingRequests.delete(id);
-        reject(new Error(`Request timeout: ${method}`));
-      }, 30000);
-
-      // Store pending request
-      this.pendingRequests.set(id, { resolve, reject, timeout });
-
-      // Send request
-      this.sendMessage(request);
-    });
-  }
-
-  private sendNotification(method: string, params?: any): void {
-    const notification = {
-      jsonrpc: '2.0',
-      method,
-      params,
-    };
-
-    this.sendMessage(notification);
-  }
-
-  private sendMessage(message: any): void {
-    if (!this.process || !this.process.stdin) {
-      throw new Error('Process not running');
+      });
+      return (result.messages || []).map((message) => ({
+        role: message.role as 'user' | 'assistant',
+        content: {
+          type: (message.content as any).type || 'text',
+          text: (message.content as any).text,
+          data: (message.content as any).data,
+          mimeType: (message.content as any).mimeType,
+        },
+      }));
+    } catch (error) {
+      this.addLog(`Get prompt failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
-
-    const json = JSON.stringify(message);
-    this.process.stdin.write(json + '\n');
-  }
-
-  // ============================================================================
-  // Stream Handling
-  // ============================================================================
-
-  private handleStdout(data: Buffer): void {
-    this.messageBuffer += data.toString();
-
-    // Process complete messages (newline-delimited)
-    const lines = this.messageBuffer.split('\n');
-    this.messageBuffer = lines.pop() || ''; // Keep incomplete line in buffer
-
-    for (const line of lines) {
-      if (line.trim()) {
-        try {
-          const message = JSON.parse(line) as JSONRPCMessage;
-          this.handleMessage(message);
-        } catch (error) {
-          console.error('[MCP] Failed to parse message:', line, error);
-        }
-      }
-    }
-  }
-
-  private handleStderr(data: Buffer): void {
-    const message = data.toString().trim();
-    if (message) {
-      console.warn(`[MCP] ${this.config.name} stderr:`, message);
-
-      // Store log with timestamp
-      const timestamp = new Date().toISOString();
-      const logEntry = `[${timestamp}] ${message}`;
-      this._logs.push(logEntry);
-
-      // Keep only last MAX_LOGS entries
-      if (this._logs.length > this.MAX_LOGS) {
-        this._logs = this._logs.slice(-this.MAX_LOGS);
-      }
-    }
-  }
-
-  private handleMessage(message: JSONRPCMessage): void {
-    // Check if it's a response (has id field)
-    if ('id' in message && message.id !== undefined) {
-      const pending = this.pendingRequests.get(message.id);
-      if (pending) {
-        clearTimeout(pending.timeout);
-        this.pendingRequests.delete(message.id);
-
-        const response = message as JSONRPCResponse;
-        if (response.error) {
-          pending.reject(
-            new Error(
-              `JSON-RPC Error ${response.error.code}: ${response.error.message}`
-            )
-          );
-        } else {
-          pending.resolve(response.result);
-        }
-      }
-    } else {
-      // It's a notification
-      this.handleNotification(message);
-    }
-  }
-
-  private handleNotification(message: JSONRPCMessage): void {
-    // Handle server-initiated notifications
-    console.log(`[MCP] ${this.config.name} notification:`, message);
-  }
-
-  // ============================================================================
-  // Process Event Handlers
-  // ============================================================================
-
-  private handleExit(code: number | null, signal: string | null): void {
-    console.error(`[MCP] ${this.config.name} exited:`, { code, signal });
-
-    this._status = 'error';
-    this._error = `Server exited with code ${code}`;
-
-    // Reject all pending requests
-    for (const [id, pending] of this.pendingRequests) {
-      clearTimeout(pending.timeout);
-      pending.reject(new Error('Server crashed'));
-    }
-    this.pendingRequests.clear();
-
-    this.emit('statusChanged', this._status);
-    this.emit('error', this._error);
-    this.cleanup();
-  }
-
-  private handleProcessError(error: Error): void {
-    console.error(`[MCP] ${this.config.name} process error:`, error);
-
-    this._status = 'error';
-    this._error = error.message;
-
-    this.emit('statusChanged', this._status);
-    this.emit('error', this._error);
-    this.cleanup();
-  }
-
-  // ============================================================================
-  // Helpers
-  // ============================================================================
-
-  private getNextRequestId(): number {
-    return this.requestId++;
   }
 }
 
 // ============================================================================
-// MCP Server Manager
+// MCP Client Manager
 // ============================================================================
 
-export class MCPServerManager extends EventEmitter {
-  private servers: Map<string, MCPServerInstance> = new Map();
+export class MCPClientManager extends EventEmitter {
+  private clients: Map<string, MCPClientWrapper> = new Map();
 
   async startServer(config: MCPServerConfig): Promise<void> {
-    // Stop existing server if running
-    const existing = this.servers.get(config.id);
+    // Stop existing client if running
+    const existing = this.clients.get(config.id);
     if (existing) {
       await existing.stop();
     }
 
     // Create new instance
-    const instance = new MCPServerInstance(config);
+    const client = new MCPClientWrapper(config);
 
     // Forward events
-    instance.on('statusChanged', (status: MCPServerStatus) => {
+    client.on('statusChanged', (status: MCPServerStatus) => {
       this.emit('serverStatusChanged', { serverId: config.id, status });
     });
 
-    instance.on('toolsUpdated', (tools: MCPTool[]) => {
+    client.on('toolsUpdated', (tools: MCPTool[]) => {
       this.emit('serverToolsUpdated', { serverId: config.id, tools });
     });
 
-    instance.on('error', (error: string) => {
+    client.on('resourcesUpdated', (resources: MCPResource[]) => {
+      this.emit('serverResourcesUpdated', { serverId: config.id, resources });
+    });
+
+    client.on('promptsUpdated', (prompts: MCPPrompt[]) => {
+      this.emit('serverPromptsUpdated', { serverId: config.id, prompts });
+    });
+
+    client.on('error', (error: string) => {
       this.emit('serverError', { serverId: config.id, error });
     });
 
     // Store and start
-    this.servers.set(config.id, instance);
-    await instance.start();
+    this.clients.set(config.id, client);
+    await client.start();
   }
 
   async stopServer(serverId: string): Promise<void> {
-    const instance = this.servers.get(serverId);
-    if (instance) {
-      await instance.stop();
-      this.servers.delete(serverId);
+    const client = this.clients.get(serverId);
+    if (client) {
+      await client.stop();
+      this.clients.delete(serverId);
     }
   }
 
@@ -502,56 +537,107 @@ export class MCPServerManager extends EventEmitter {
     await this.startServer(config);
   }
 
+  // Tools
   async callTool(
     serverId: string,
     toolName: string,
-    args: Record<string, any>
-  ): Promise<any> {
-    const instance = this.servers.get(serverId);
-    if (!instance) {
+    args: Record<string, unknown>
+  ): Promise<MCPToolResult> {
+    const client = this.clients.get(serverId);
+    if (!client) {
       throw new Error(`Server not found: ${serverId}`);
     }
-
-    return await instance.callTool(toolName, args);
-  }
-
-  getServerStatus(serverId: string): MCPServerStatus {
-    const instance = this.servers.get(serverId);
-    return instance ? instance.status : 'stopped';
+    return await client.callTool(toolName, args);
   }
 
   getServerTools(serverId: string): MCPTool[] {
-    const instance = this.servers.get(serverId);
-    return instance ? instance.tools : [];
+    const client = this.clients.get(serverId);
+    return client ? client.tools : [];
   }
 
+  // Resources
+  async listResources(serverId: string): Promise<MCPResource[]> {
+    const client = this.clients.get(serverId);
+    if (!client) {
+      throw new Error(`Server not found: ${serverId}`);
+    }
+    return await client.listResources();
+  }
+
+  async readResource(serverId: string, uri: string): Promise<MCPResourceContent[]> {
+    const client = this.clients.get(serverId);
+    if (!client) {
+      throw new Error(`Server not found: ${serverId}`);
+    }
+    return await client.readResource(uri);
+  }
+
+  getServerResources(serverId: string): MCPResource[] {
+    const client = this.clients.get(serverId);
+    return client ? client.resources : [];
+  }
+
+  // Prompts
+  async listPrompts(serverId: string): Promise<MCPPrompt[]> {
+    const client = this.clients.get(serverId);
+    if (!client) {
+      throw new Error(`Server not found: ${serverId}`);
+    }
+    return await client.listPrompts();
+  }
+
+  async getPrompt(
+    serverId: string,
+    promptName: string,
+    args?: Record<string, string>
+  ): Promise<MCPPromptMessage[]> {
+    const client = this.clients.get(serverId);
+    if (!client) {
+      throw new Error(`Server not found: ${serverId}`);
+    }
+    return await client.getPrompt(promptName, args);
+  }
+
+  getServerPrompts(serverId: string): MCPPrompt[] {
+    const client = this.clients.get(serverId);
+    return client ? client.prompts : [];
+  }
+
+  // Status
+  getServerStatus(serverId: string): MCPServerStatus {
+    const client = this.clients.get(serverId);
+    return client ? client.status : 'stopped';
+  }
+
+  // Logs
   getServerLogs(serverId: string): string[] {
-    const instance = this.servers.get(serverId);
-    return instance ? instance.logs : [];
+    const client = this.clients.get(serverId);
+    return client ? client.logs : [];
   }
 
   clearServerLogs(serverId: string): void {
-    const instance = this.servers.get(serverId);
-    if (instance) {
-      instance.clearLogs();
+    const client = this.clients.get(serverId);
+    if (client) {
+      client.clearLogs();
     }
   }
 
+  // Cleanup
   async stopAll(): Promise<void> {
-    const stopPromises = Array.from(this.servers.values()).map((instance) =>
-      instance.stop()
+    const stopPromises = Array.from(this.clients.values()).map((client) =>
+      client.stop()
     );
     await Promise.all(stopPromises);
-    this.servers.clear();
+    this.clients.clear();
   }
 }
 
 // Singleton instance
-let managerInstance: MCPServerManager | null = null;
+let managerInstance: MCPClientManager | null = null;
 
-export function getMCPServerManager(): MCPServerManager {
+export function getMCPServerManager(): MCPClientManager {
   if (!managerInstance) {
-    managerInstance = new MCPServerManager();
+    managerInstance = new MCPClientManager();
   }
   return managerInstance;
 }

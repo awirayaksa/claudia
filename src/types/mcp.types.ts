@@ -1,48 +1,20 @@
 // MCP (Model Context Protocol) Type Definitions
-
-// ============================================================================
-// JSON-RPC 2.0 Base Types
-// ============================================================================
-
-export interface JSONRPCRequest {
-  jsonrpc: '2.0';
-  id: number | string;
-  method: string;
-  params?: any;
-}
-
-export interface JSONRPCResponse {
-  jsonrpc: '2.0';
-  id: number | string;
-  result?: any;
-  error?: JSONRPCError;
-}
-
-export interface JSONRPCError {
-  code: number;
-  message: string;
-  data?: any;
-}
-
-export interface JSONRPCNotification {
-  jsonrpc: '2.0';
-  method: string;
-  params?: any;
-}
-
-export type JSONRPCMessage = JSONRPCRequest | JSONRPCResponse | JSONRPCNotification;
+// Using @modelcontextprotocol/sdk for protocol implementation
 
 // ============================================================================
 // MCP Server Configuration
 // ============================================================================
 
+export type MCPTransportType = 'stdio' | 'streamable-http';
+
 export interface MCPServerConfig {
   id: string; // UUID
   name: string; // Display name
-  command: string; // Executable path or command
-  args: string[]; // Command arguments
+  command?: string; // Executable path or command (required for stdio)
+  args?: string[]; // Command arguments (for stdio)
+  url?: string; // Server URL (required for streamable-http)
   env?: Record<string, string>; // Environment variables
-  transport: 'stdio' | 'sse'; // Transport protocol
+  transport: MCPTransportType; // Transport protocol
   autoStart?: boolean; // Auto-start on app launch (default: false)
   enabled: boolean; // Whether server is enabled
   metadata?: {
@@ -59,17 +31,17 @@ export interface MCPServerConfig {
 
 export interface MCPTool {
   name: string;
-  description: string;
+  description?: string;
   inputSchema: {
     type: 'object';
-    properties: Record<string, any>;
+    properties?: Record<string, unknown>;
     required?: string[];
-    [key: string]: any; // Additional JSON Schema fields
+    [key: string]: unknown; // Additional JSON Schema fields
   };
 }
 
 // ============================================================================
-// MCP Resource Definition (Future Phase)
+// MCP Resource Definition
 // ============================================================================
 
 export interface MCPResource {
@@ -79,18 +51,37 @@ export interface MCPResource {
   mimeType?: string;
 }
 
+export interface MCPResourceContent {
+  uri: string;
+  mimeType?: string;
+  text?: string;
+  blob?: string; // Base64 encoded binary data
+}
+
 // ============================================================================
-// MCP Prompt Definition (Future Phase)
+// MCP Prompt Definition
 // ============================================================================
+
+export interface MCPPromptArgument {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
 
 export interface MCPPrompt {
   name: string;
   description?: string;
-  arguments?: Array<{
-    name: string;
-    description?: string;
-    required?: boolean;
-  }>;
+  arguments?: MCPPromptArgument[];
+}
+
+export interface MCPPromptMessage {
+  role: 'user' | 'assistant';
+  content: {
+    type: 'text' | 'image' | 'resource';
+    text?: string;
+    data?: string;
+    mimeType?: string;
+  };
 }
 
 // ============================================================================
@@ -98,10 +89,17 @@ export interface MCPPrompt {
 // ============================================================================
 
 export interface MCPServerCapabilities {
-  tools?: boolean;
-  resources?: boolean;
-  prompts?: boolean;
-  logging?: boolean;
+  tools?: {
+    listChanged?: boolean;
+  };
+  resources?: {
+    subscribe?: boolean;
+    listChanged?: boolean;
+  };
+  prompts?: {
+    listChanged?: boolean;
+  };
+  logging?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -110,7 +108,7 @@ export interface MCPServerCapabilities {
 
 export type MCPServerStatus =
   | 'stopped' // Not running
-  | 'starting' // Child process spawning
+  | 'starting' // Transport initializing
   | 'initializing' // Handshake in progress
   | 'ready' // Connected and ready
   | 'error' // Failed to start/crashed
@@ -121,10 +119,10 @@ export interface MCPServerState {
   status: MCPServerStatus;
   capabilities?: MCPServerCapabilities;
   tools: MCPTool[];
-  resources: MCPResource[]; // Future
-  prompts: MCPPrompt[]; // Future
+  resources: MCPResource[];
+  prompts: MCPPrompt[];
   error?: string;
-  pid?: number;
+  pid?: number; // Process ID (for stdio only)
   lastStarted?: string; // ISO timestamp
   lastError?: string; // ISO timestamp
   restartCount: number;
@@ -138,76 +136,22 @@ export interface MCPToolCall {
   id: string; // UUID for tracking
   serverId: string;
   toolName: string;
-  arguments: Record<string, any>;
+  arguments: Record<string, unknown>;
   status: 'pending' | 'executing' | 'success' | 'error';
-  result?: any;
+  result?: MCPToolResult;
   error?: string;
   startTime: string; // ISO timestamp
   endTime?: string; // ISO timestamp
 }
 
-// ============================================================================
-// MCP Protocol Messages
-// ============================================================================
-
-// Initialize Request
-export interface InitializeRequest extends JSONRPCRequest {
-  method: 'initialize';
-  params: {
-    protocolVersion: string;
-    capabilities: Record<string, any>;
-    clientInfo: {
-      name: string;
-      version: string;
-    };
-  };
-}
-
-// Initialize Response
-export interface InitializeResponse extends JSONRPCResponse {
-  result: {
-    protocolVersion: string;
-    capabilities: MCPServerCapabilities;
-    serverInfo: {
-      name: string;
-      version: string;
-    };
-  };
-}
-
-// Tools List Request
-export interface ToolsListRequest extends JSONRPCRequest {
-  method: 'tools/list';
-  params?: Record<string, never>;
-}
-
-// Tools List Response
-export interface ToolsListResponse extends JSONRPCResponse {
-  result: {
-    tools: MCPTool[];
-  };
-}
-
-// Tool Call Request
-export interface ToolCallRequest extends JSONRPCRequest {
-  method: 'tools/call';
-  params: {
-    name: string;
-    arguments?: Record<string, any>;
-  };
-}
-
-// Tool Call Response
-export interface ToolCallResponse extends JSONRPCResponse {
-  result: {
-    content: Array<{
-      type: 'text' | 'image' | 'resource';
-      text?: string;
-      data?: string;
-      mimeType?: string;
-    }>;
-    isError?: boolean;
-  };
+export interface MCPToolResult {
+  content: Array<{
+    type: 'text' | 'image' | 'resource';
+    text?: string;
+    data?: string;
+    mimeType?: string;
+  }>;
+  isError?: boolean;
 }
 
 // ============================================================================
@@ -223,6 +167,16 @@ export interface MCPServerStatusChangedEvent {
 export interface MCPServerToolsUpdatedEvent {
   serverId: string;
   tools: MCPTool[];
+}
+
+export interface MCPServerResourcesUpdatedEvent {
+  serverId: string;
+  resources: MCPResource[];
+}
+
+export interface MCPServerPromptsUpdatedEvent {
+  serverId: string;
+  prompts: MCPPrompt[];
 }
 
 export interface MCPServerErrorEvent {
