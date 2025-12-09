@@ -26,21 +26,34 @@ export interface ElectronAPI {
   platform: string;
   onMenuEvent: (channel: string, callback: () => void) => (() => void) | undefined;
   mcp: {
+    // Server management
     startServer: (serverId: string) => Promise<any>;
     stopServer: (serverId: string) => Promise<any>;
     restartServer: (serverId: string) => Promise<any>;
     getServerStatus: (serverId: string) => Promise<any>;
     getLogs: (serverId: string) => Promise<any>;
     clearLogs: (serverId: string) => Promise<any>;
+    // Configuration
     listConfigs: () => Promise<any>;
     getConfig: (serverId: string) => Promise<any>;
     saveConfig: (config: any) => Promise<any>;
     deleteConfig: (serverId: string) => Promise<any>;
+    // Tools
     listTools: (serverId: string) => Promise<any>;
     callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
+    // Resources
+    listResources: (serverId: string) => Promise<any>;
+    readResource: (serverId: string, uri: string) => Promise<any>;
+    // Prompts
+    listPrompts: (serverId: string) => Promise<any>;
+    getPrompt: (serverId: string, promptName: string, args?: Record<string, string>) => Promise<any>;
+    // Import
     importClaudeDesktop: () => Promise<any>;
+    // Event listeners
     onServerStatusChanged: (callback: (event: any) => void) => () => void;
     onServerToolsUpdated: (callback: (event: any) => void) => () => void;
+    onServerResourcesUpdated: (callback: (event: any) => void) => () => void;
+    onServerPromptsUpdated: (callback: (event: any) => void) => () => void;
     onServerError: (callback: (event: any) => void) => () => void;
   };
   plugins: {

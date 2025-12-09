@@ -1,4 +1,6 @@
 import { format } from 'date-fns';
+import { MarkdownRenderer } from './MarkdownRenderer';
+import { useThrottledValue } from '../../hooks/useThrottledValue';
 
 interface StreamingMessageProps {
   content: string;
@@ -7,6 +9,9 @@ interface StreamingMessageProps {
 
 export function StreamingMessage({ content, onAbort }: StreamingMessageProps) {
   const formattedTime = format(new Date(), 'h:mm a');
+
+  // Throttle markdown parsing to every 100ms for performance
+  const throttledContent = useThrottledValue(content, 100);
 
   return (
     <div className="flex justify-start py-2">
@@ -44,9 +49,9 @@ export function StreamingMessage({ content, onAbort }: StreamingMessageProps) {
           )}
         </div>
 
-        {/* Streaming content */}
-        <div className="whitespace-pre-wrap text-sm text-text-primary">
-          {content}
+        {/* Streaming content with live markdown rendering */}
+        <div className="text-sm text-text-primary">
+          <MarkdownRenderer content={throttledContent} isUser={false} />
           {/* Blinking cursor */}
           <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-accent"></span>
         </div>

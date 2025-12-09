@@ -17,7 +17,10 @@
       "Bash(npm run type-check:*)",
       "Bash(npx tsc:*)",
       "Bash(npm run build:*)",
-      "Bash(dir \"c:\\Workspace\\Claude\\claudia\\electron\")"
+      "Bash(dir \"c:\\Workspace\\Claude\\claudia\\electron\")",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(npm pkg:*)"
     ],
     "deny": [],
     "ask": []
