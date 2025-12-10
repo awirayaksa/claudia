@@ -38,14 +38,33 @@ function App() {
         console.log('Loaded config from electron store:', config);
 
         if (config) {
-          // Load API settings
+          // Load API settings with new provider structure
           if (config.api && typeof config.api === 'object') {
-            dispatch(setApiConfig({
-              baseUrl: config.api.baseUrl || '',
-              apiKey: config.api.apiKey || '',
-              selectedModel: config.api.selectedModel || '',
+            const apiConfig: any = {
+              provider: config.api.provider || 'openwebui',
               availableModels: config.api.availableModels || [],
-            }));
+            };
+
+            // Include provider-specific configs
+            if (config.api.openwebui) {
+              apiConfig.openwebui = config.api.openwebui;
+            }
+            if (config.api.openrouter) {
+              apiConfig.openrouter = config.api.openrouter;
+            }
+
+            // Extract selectedModel from the active provider for backward compatibility
+            const provider = config.api.provider || 'openwebui';
+            let selectedModel = '';
+            if (provider === 'openwebui' && config.api.openwebui?.selectedModel) {
+              selectedModel = config.api.openwebui.selectedModel;
+            } else if (provider === 'openrouter' && config.api.openrouter?.selectedModel) {
+              selectedModel = config.api.openrouter.selectedModel;
+            }
+            // Set selectedModel at the top level for backward compatibility
+            apiConfig.selectedModel = selectedModel;
+
+            dispatch(setApiConfig(apiConfig));
           }
 
           // Load appearance settings
