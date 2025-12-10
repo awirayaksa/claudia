@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setApiConfig, setAvailableModels, setPreferences } from '../../store/slices/settingsSlice';
-import { getAPIProvider } from '../../services/api/provider.service';
 import { ProviderFactory } from '../../services/api/provider.factory';
 import { ProviderType, OpenWebUIConfig, OpenRouterConfig } from '../../types/api.types';
 import { OpenWebUIConfigForm } from './OpenWebUIConfigForm';

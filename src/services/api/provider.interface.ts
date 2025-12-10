@@ -3,8 +3,7 @@ import {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ProviderType,
-  ProviderCapabilities,
-  ProviderConfig
+  ProviderCapabilities
 } from '../../types/api.types';
 import { StreamCallbacks } from './streaming.service';
 
