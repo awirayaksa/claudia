@@ -91,12 +91,18 @@ export function ApiSettings() {
         availableModels: api.availableModels,
       };
 
-      // Add provider-specific config
+      // Add provider-specific config and extract selectedModel
+      let selectedModel = '';
       if (provider === 'openwebui') {
         newApiConfig.openwebui = openwebuiConfig;
+        selectedModel = openwebuiConfig.selectedModel || '';
       } else if (provider === 'openrouter') {
         newApiConfig.openrouter = openrouterConfig;
+        selectedModel = openrouterConfig.selectedModel || '';
       }
+
+      // Set selectedModel at the top level for backward compatibility
+      newApiConfig.selectedModel = selectedModel;
 
       // Save to Electron store
       await window.electron.config.set({
