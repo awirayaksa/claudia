@@ -43,7 +43,7 @@ export const ChatMessage = React.memo(function ChatMessage({ message }: ChatMess
         {/* Message header */}
         <div className="mb-1 flex items-center gap-2">
           <span className={`text-xs font-semibold ${isUser ? 'text-white' : 'text-text-primary'}`}>
-            {isUser ? 'You' : 'Assistant'}
+            {isUser ? 'You' : 'Claudia'}
           </span>
           <span className={`text-xs ${isUser ? 'text-white text-opacity-80' : 'text-text-secondary'}`}>
             {formattedTime}

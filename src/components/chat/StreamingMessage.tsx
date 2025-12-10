@@ -20,7 +20,7 @@ export function StreamingMessage({ content, onAbort }: StreamingMessageProps) {
         <div className="mb-1 flex items-center justify-between gap-4">
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-text-primary">
-              Assistant
+              Claudia
             </span>
             <span className="text-xs text-text-secondary">{formattedTime}</span>
           </div>

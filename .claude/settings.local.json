@@ -22,7 +22,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(npm pkg:*)",
       "Bash(dir \"c:\\Workspace\\Claude\\claudia\\src\\components\\settings\")",
-      "Bash(findstr:*)"
+      "Bash(findstr:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

@@ -58,6 +58,9 @@ export async function streamChatCompletion(
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
 
+    // Accumulate tool calls from streaming deltas
+    const accumulatedToolCalls: Map<number, ToolCall> = new Map();
+
     // Create SSE parser
     const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
       if (event.type === 'event') {
@@ -73,19 +76,63 @@ export async function streamChatCompletion(
           const json = JSON.parse(data);
           const delta = json.choices?.[0]?.delta;
           const content = delta?.content;
-          const toolCalls = delta?.tool_calls;
+          const toolCallDeltas = delta?.tool_calls;
 
           if (content) {
             onChunk(content);
           }
 
-          // Check for tool calls
-          if (toolCalls && onToolCalls) {
-            onToolCalls(toolCalls);
+          // Accumulate tool call deltas
+          if (toolCallDeltas && onToolCalls) {
+            for (const toolCallDelta of toolCallDeltas) {
+              const index = toolCallDelta.index;
+              const existing = accumulatedToolCalls.get(index);
+
+              console.log('[Streaming] Tool call delta:', JSON.stringify(toolCallDelta));
+
+              if (!existing) {
+                // First chunk for this tool call
+                accumulatedToolCalls.set(index, {
+                  id: toolCallDelta.id || '',
+                  type: toolCallDelta.type || 'function',
+                  function: {
+                    name: toolCallDelta.function?.name || '',
+                    arguments: toolCallDelta.function?.arguments || '',
+                  },
+                });
+              } else {
+                // Subsequent chunks - append arguments
+                if (toolCallDelta.function?.arguments) {
+                  existing.function.arguments += toolCallDelta.function.arguments;
+                }
+                // Update ID if it wasn't set in first chunk
+                if (toolCallDelta.id && !existing.id) {
+                  existing.id = toolCallDelta.id;
+                }
+                // Update name if it wasn't set in first chunk
+                if (toolCallDelta.function?.name && !existing.function.name) {
+                  existing.function.name = toolCallDelta.function.name;
+                }
+              }
+            }
+            console.log('[Streaming] Accumulated tool calls:', Array.from(accumulatedToolCalls.values()));
           }
 
           // Check if stream is done via finish_reason
           if (json.choices?.[0]?.finish_reason) {
+            // Send accumulated tool calls if any
+            if (accumulatedToolCalls.size > 0 && onToolCalls) {
+              const toolCallsArray = Array.from(accumulatedToolCalls.values()).map(tc => ({
+                ...tc,
+                // Ensure arguments is valid JSON - default to empty object if empty
+                function: {
+                  ...tc.function,
+                  arguments: tc.function.arguments || '{}',
+                },
+              }));
+              console.log('[Streaming] Sending accumulated tool calls:', JSON.stringify(toolCallsArray, null, 2));
+              onToolCalls(toolCallsArray);
+            }
             onComplete();
           }
         } catch (error) {

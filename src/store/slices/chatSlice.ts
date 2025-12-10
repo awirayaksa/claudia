@@ -62,12 +62,15 @@ export const sendMessage = createAsyncThunk(
         stream: false,
       });
 
+      const assistantContent = response.choices[0].message.content;
+      console.log('[Claudia] LLM Response:', assistantContent);
+
       return {
         userMessageId: uuidv4(),
         assistantMessageId: uuidv4(),
         userContent: content,
         userAttachments: attachments,
-        assistantContent: response.choices[0].message.content,
+        assistantContent: assistantContent,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
@@ -275,9 +278,12 @@ export const sendStreamingMessage = createAsyncThunk(
         },
         {
           onChunk: (chunk) => {
+            console.log('[Claudia] Streaming chunk:', chunk);
             dispatch(appendStreamingContent(chunk));
           },
           onComplete: () => {
+            const finalContent = (getState() as RootState).chat.streamingContent;
+            console.log('[Claudia] Streaming complete. Full response:', finalContent);
             dispatch(completeStreaming());
             resolve();
           },
@@ -386,10 +392,13 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             {
               onChunk: (chunk) => {
                 if (chunk) {
+                  console.log('[Claudia] Streaming chunk (with tools):', chunk);
                   dispatch(appendStreamingContent(chunk));
                 }
               },
               onComplete: () => {
+                const currentContent = (getState() as RootState).chat.streamingContent;
+                console.log('[Claudia] Streaming iteration complete. Content:', currentContent);
                 resolve();
               },
               onError: (error) => {
@@ -397,6 +406,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
                 reject(error);
               },
               onToolCalls: (toolCalls) => {
+                console.log('[Claudia] LLM requested tool calls:', toolCalls);
                 assistantToolCalls = toolCalls;
                 dispatch(setToolCalls(toolCalls));
               },
@@ -427,6 +437,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             assistantToolCalls,
             mcpState
           );
+          console.log('[Claudia] Tool execution results:', toolResults);
           dispatch(setExecutingTools(false));
 
           // Update the assistant message with tool results
