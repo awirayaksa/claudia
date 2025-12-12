@@ -110,14 +110,16 @@ const chatSlice = createSlice({
       state.streamingMessageId = action.payload.assistantMessageId;
       state.error = null;
 
-      // Add user message
-      state.messages.push({
-        id: action.payload.userMessageId,
-        role: 'user',
-        content: action.payload.userContent,
-        attachments: action.payload.userAttachments,
-        timestamp: action.payload.timestamp,
-      });
+      // Add user message only if content is not empty (skip for tool call iterations)
+      if (action.payload.userContent.trim()) {
+        state.messages.push({
+          id: action.payload.userMessageId,
+          role: 'user',
+          content: action.payload.userContent,
+          attachments: action.payload.userAttachments,
+          timestamp: action.payload.timestamp,
+        });
+      }
     },
     appendStreamingContent: (state, action: PayloadAction<string>) => {
       state.streamingContent += action.payload;
