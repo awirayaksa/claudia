@@ -92,8 +92,9 @@ export class ToolIntegrationService {
 
       const response = await Promise.race([executionPromise, timeoutPromise]);
 
+      // Check if the IPC call itself failed
       if (!response.success) {
-        console.error(`[Tool Integration] Tool ${toolName} execution failed:`, response.error);
+        console.error(`[Tool Integration] Tool ${toolName} IPC call failed:`, response.error);
         return {
           tool_call_id: toolCall.id,
           role: 'tool',
@@ -105,14 +106,38 @@ export class ToolIntegrationService {
         };
       }
 
+      // Check if the tool execution itself had an error
+      const toolResult = response.result;
+      if (toolResult.isError) {
+        console.error(`[Tool Integration] Tool ${toolName} returned error:`, toolResult.content);
+        return {
+          tool_call_id: toolCall.id,
+          role: 'tool',
+          name: toolName,
+          content: toolResult.content.map((c: any) => c.text || JSON.stringify(c)).join('\n'),
+          isError: true,
+        };
+      }
+
       console.log(`[Tool Integration] Tool ${toolName} executed successfully`);
 
-      // Return successful result
+      // Return successful result - convert content array to JSON string
+      const contentString = toolResult.content.map((c: any) => {
+        if (c.type === 'text') {
+          return c.text;
+        } else if (c.type === 'image') {
+          return `[Image: ${c.mimeType || 'unknown'}]`;
+        } else if (c.type === 'resource') {
+          return `[Resource: ${c.mimeType || 'unknown'}]`;
+        }
+        return JSON.stringify(c);
+      }).join('\n');
+
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
         name: toolName,
-        content: JSON.stringify(response.result),
+        content: contentString,
         isError: false,
       };
     } catch (error) {
