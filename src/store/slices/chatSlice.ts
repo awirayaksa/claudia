@@ -17,6 +17,8 @@ interface ChatState {
   pendingToolCalls: ToolCall[];
   isExecutingTools: boolean;
   toolCallIteration: number;
+  // Edit state
+  editingMessage: { id: string; content: string; attachments?: Attachment[] } | null;
 }
 
 const initialState: ChatState = {
@@ -30,6 +32,7 @@ const initialState: ChatState = {
   pendingToolCalls: [],
   isExecutingTools: false,
   toolCallIteration: 0,
+  editingMessage: null,
 };
 
 // Async thunk for sending a message
@@ -179,6 +182,19 @@ const chatSlice = createSlice({
         message.toolResults = action.payload.toolResults;
       }
     },
+    // Edit message actions
+    deleteMessagesAfter: (state, action: PayloadAction<string>) => {
+      const messageIndex = state.messages.findIndex((m) => m.id === action.payload);
+      if (messageIndex !== -1) {
+        state.messages = state.messages.slice(0, messageIndex);
+      }
+    },
+    setEditingMessage: (
+      state,
+      action: PayloadAction<{ id: string; content: string; attachments?: Attachment[] } | null>
+    ) => {
+      state.editingMessage = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -231,6 +247,8 @@ export const {
   incrementToolIteration,
   addToolCallMessage,
   updateMessageToolResults,
+  deleteMessagesAfter,
+  setEditingMessage,
 } = chatSlice.actions;
 
 // Thunk for sending streaming message

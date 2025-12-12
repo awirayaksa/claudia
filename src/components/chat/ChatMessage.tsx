@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Message } from '../../types/message.types';
+import { Message, Attachment } from '../../types/message.types';
 import { MessageAttachment } from './MessageAttachment';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { ToolCallMessage } from './ToolCallMessage';
@@ -7,9 +7,11 @@ import { format } from 'date-fns';
 
 interface ChatMessageProps {
   message: Message;
+  onEdit?: (messageId: string, content: string, attachments?: Attachment[]) => void;
+  disabled?: boolean;
 }
 
-export const ChatMessage = React.memo(function ChatMessage({ message }: ChatMessageProps) {
+export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, disabled }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isTool = message.role === 'tool';
@@ -62,12 +64,49 @@ export const ChatMessage = React.memo(function ChatMessage({ message }: ChatMess
             </span>
           </div>
           {isUser && (
-            <button
-              onClick={handleCopy}
-              className="group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity"
-              title={copied ? 'Copied!' : 'Copy message'}
-            >
-              {copied ? (
+            <div className="flex gap-1">
+              <button
+                onClick={handleCopy}
+                className="group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity"
+                title={copied ? 'Copied!' : 'Copy message'}
+              >
+                {copied ? (
+                  <svg
+                    className="h-4 w-4 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M5 13l4 4L19 7"
+                    />
+                  </svg>
+                ) : (
+                  <svg
+                    className="h-4 w-4 text-white"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                    />
+                  </svg>
+                )}
+              </button>
+
+              <button
+                onClick={() => onEdit?.(message.id, message.content, message.attachments)}
+                disabled={disabled}
+                className="group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
+                title="Edit message"
+              >
                 <svg
                   className="h-4 w-4 text-white"
                   fill="none"
@@ -78,25 +117,11 @@ export const ChatMessage = React.memo(function ChatMessage({ message }: ChatMess
                     strokeLinecap="round"
                     strokeLinejoin="round"
                     strokeWidth={2}
-                    d="M5 13l4 4L19 7"
+                    d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
                   />
                 </svg>
-              ) : (
-                <svg
-                  className="h-4 w-4 text-white"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                  />
-                </svg>
-              )}
-            </button>
+              </button>
+            </div>
           )}
         </div>
 

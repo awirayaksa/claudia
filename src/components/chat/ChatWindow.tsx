@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
@@ -8,7 +8,7 @@ import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { Attachment } from '../../types/message.types';
-import { clearMessages, addMessage } from '../../store/slices/chatSlice';
+import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage } from '../../store/slices/chatSlice';
 import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
 
@@ -28,6 +28,8 @@ export function ChatWindow() {
     sendMessage,
     abortStreaming,
   } = useChat();
+
+  const editingMessage = useAppSelector((state) => state.chat.editingMessage);
 
   const {
     currentConversationId,
@@ -217,6 +219,29 @@ export function ChatWindow() {
     dispatch(clearMessages());
   };
 
+  const handleEditMessage = useCallback((messageId: string, content: string, attachments?: Attachment[]) => {
+    // 1. Abort any active streaming
+    if (isStreaming) {
+      abortStreaming();
+    }
+
+    // 2. Delete messages from this point forward
+    dispatch(deleteMessagesAfter(messageId));
+
+    // 3. Set editing state (for input population)
+    dispatch(setEditingMessage({ id: messageId, content, attachments }));
+
+    // 4. Scroll to bottom and focus input
+    setTimeout(() => {
+      chatInputRef.current?.focus();
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  }, [isStreaming, abortStreaming, dispatch]);
+
+  const handleCancelEdit = useCallback(() => {
+    dispatch(setEditingMessage(null));
+  }, [dispatch]);
+
   // Show configuration prompt if not configured
   if (!isConfigured) {
     return (
@@ -302,7 +327,12 @@ export function ChatWindow() {
         ) : (
           <>
             {messages.map((message) => (
-              <ChatMessage key={message.id} message={message} />
+              <ChatMessage
+                key={message.id}
+                message={message}
+                onEdit={handleEditMessage}
+                disabled={isLoading || isStreaming}
+              />
             ))}
             {/* Streaming message */}
             {isStreaming && streamingContent && (
@@ -349,6 +379,9 @@ export function ChatWindow() {
         selectedModel={currentConversation?.model || pendingModel || selectedModel}
         availableModels={availableModels}
         onModelChange={handleModelChange}
+        initialMessage={editingMessage?.content}
+        initialAttachments={editingMessage?.attachments}
+        onCancelEdit={handleCancelEdit}
       />
     </div>
   );
