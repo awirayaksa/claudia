@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
-import { sendMessage, sendStreamingMessageWithTools, clearMessages, abortStreaming } from '../store/slices/chatSlice';
+import { sendMessage, sendStreamingMessageWithTools, clearMessages, abortStreaming, deleteMessagesAfter, setEditingMessage } from '../store/slices/chatSlice';
 import { Attachment } from '../types/message.types';
 
 export function useChat() {
@@ -39,6 +39,22 @@ export function useChat() {
     dispatch(abortStreaming());
   }, [dispatch]);
 
+  const handleEditMessage = useCallback(
+    (messageId: string, content: string, attachments?: Attachment[]) => {
+      // Abort streaming if active
+      if (isStreaming) {
+        dispatch(abortStreaming());
+      }
+
+      // Delete subsequent messages
+      dispatch(deleteMessagesAfter(messageId));
+
+      // Set editing state
+      dispatch(setEditingMessage({ id: messageId, content, attachments }));
+    },
+    [isStreaming, dispatch]
+  );
+
   return {
     messages,
     isLoading,
@@ -48,5 +64,6 @@ export function useChat() {
     sendMessage: handleSendMessage,
     clearMessages: handleClearMessages,
     abortStreaming: handleAbortStreaming,
+    editMessage: handleEditMessage,
   };
 }

@@ -1,4 +1,4 @@
-import React, { useState, useRef, KeyboardEvent, forwardRef, useImperativeHandle } from 'react';
+import React, { useState, useRef, KeyboardEvent, forwardRef, useImperativeHandle, useEffect } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Button } from '../common/Button';
 import { Attachment } from '../../types/message.types';
@@ -12,6 +12,9 @@ interface ChatInputProps {
   selectedModel?: string;
   availableModels?: string[];
   onModelChange?: (model: string) => void;
+  initialMessage?: string;
+  initialAttachments?: Attachment[];
+  onCancelEdit?: () => void;
 }
 
 export interface ChatInputRef {
@@ -25,6 +28,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   selectedModel,
   availableModels,
   onModelChange,
+  initialMessage,
+  initialAttachments,
+  onCancelEdit,
 }, ref) => {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -40,6 +46,21 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     },
   }));
 
+  // Populate input when editing a message
+  useEffect(() => {
+    if (initialMessage !== undefined) {
+      setMessage(initialMessage);
+      // Auto-resize textarea for initial content
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+      }
+    }
+    if (initialAttachments) {
+      setAttachments(initialAttachments);
+    }
+  }, [initialMessage, initialAttachments]);
+
   const handleSend = async () => {
     if ((message.trim() || attachments.length > 0) && !disabled && !uploading) {
       onSend(message.trim(), attachments.length > 0 ? attachments : undefined);
@@ -49,6 +70,8 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
+      // Clear editing state
+      onCancelEdit?.();
     }
   };
 
