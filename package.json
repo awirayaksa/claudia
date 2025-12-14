@@ -1,6 +1,6 @@
 {
   "name": "claudia",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Claude Desktop clone that connects to Open WebUI/Open Router",
   "main": "dist-electron/main.js",
   "author": "Adri Wirayaksa",
