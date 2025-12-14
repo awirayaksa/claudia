@@ -18,7 +18,9 @@
     "preview": "vite preview",
     "lint": "eslint src electron --ext ts,tsx",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\" \"electron/**/*.ts\"",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "release": "powershell -ExecutionPolicy Bypass -File ./scripts/release.ps1",
+    "release:bat": "scripts\\release.bat"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.24.3",
