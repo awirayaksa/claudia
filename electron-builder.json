@@ -1,5 +1,5 @@
 {
-  "appId": "com.claudia.app",
+  "appId": "com.adriwirayaksa.claudia",
   "productName": "Claudia",
   "directories": {
     "output": "release",
@@ -8,7 +8,6 @@
   "files": [
     "dist/**/*",
     "dist-electron/**/*",
-    "build/**/*",
     "package.json"
   ],
   "win": {
@@ -22,17 +21,42 @@
         "arch": ["x64"]
       }
     ],
-    "icon": "build/icon.ico",
-    "artifactName": "${productName}-${version}-${arch}.${ext}"
+    "icon": "build/icon.ico"
   },
   "nsis": {
     "oneClick": false,
+    "perMachine": false,
     "allowToChangeInstallationDirectory": true,
+    "deleteAppDataOnUninstall": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
-    "shortcutName": "Claudia"
+    "shortcutName": "Claudia",
+    "artifactName": "${productName}-${version}-Setup.${ext}"
   },
   "portable": {
-    "artifactName": "${productName}-${version}-portable.exe"
+    "artifactName": "${productName}-${version}-Portable.${ext}"
+  },
+  "mac": {
+    "target": [
+      "dmg",
+      "zip"
+    ],
+    "category": "public.app-category.productivity",
+    "icon": "build/icon.icns",
+    "artifactName": "${productName}-${version}-mac.${ext}"
+  },
+  "linux": {
+    "target": [
+      "AppImage",
+      "deb"
+    ],
+    "category": "Utility",
+    "icon": "build/icon.png",
+    "artifactName": "${productName}-${version}-linux.${ext}"
+  },
+  "publish": {
+    "provider": "github",
+    "owner": "awirayaksa",
+    "repo": "claudia"
   }
 }
