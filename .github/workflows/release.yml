@@ -39,7 +39,7 @@ jobs:
         uses: softprops/action-gh-release@v1
         with:
           files: |
-            dist/*.exe
+            release/*.exe
             dist/*.zip
             dist/*.yml
           draft: false
@@ -47,9 +47,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      # - name: Send Telegram Notification
-      #   if: success()
-      #   run: |
-      #     $version = "${{ steps.version.outputs.VERSION }}"
-      #     $message = "🚀 New release published!%0A%0AVersion: v$version%0ARepository: ${{ github.repository }}%0A%0ADownload: https://github.com/${{ github.repository }}/releases/tag/v$version"
-      #     Invoke-RestMethod -Uri "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$message&parse_mode=HTML"
+      - name: Send Telegram Notification
+        if: success()
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $message = "🚀 New release published!%0A%0AVersion: v$version%0ARepository: ${{ github.repository }}%0A%0ADownload: https://github.com/${{ github.repository }}/releases/tag/v$version"
+          Invoke-RestMethod -Uri "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$message&parse_mode=HTML"
