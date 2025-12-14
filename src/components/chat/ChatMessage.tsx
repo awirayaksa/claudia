@@ -63,52 +63,56 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
               {formattedTime}
             </span>
           </div>
-          {isUser && (
-            <div className="flex gap-1">
-              <button
-                onClick={handleCopy}
-                className="group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity"
-                title={copied ? 'Copied!' : 'Copy message'}
-              >
-                {copied ? (
-                  <svg
-                    className="h-4 w-4 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="h-4 w-4 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
-                )}
-              </button>
+          <div className="flex gap-1">
+            {/* Copy button - available for both user and assistant */}
+            <button
+              onClick={handleCopy}
+              className={`group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity ${
+                isUser ? 'text-white' : 'text-text-secondary hover:text-text-primary'
+              }`}
+              title={copied ? 'Copied!' : 'Copy message'}
+            >
+              {copied ? (
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M5 13l4 4L19 7"
+                  />
+                </svg>
+              ) : (
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
+                  />
+                </svg>
+              )}
+            </button>
 
+            {/* Edit button - only for user messages */}
+            {isUser && (
               <button
                 onClick={() => onEdit?.(message.id, message.content, message.attachments)}
                 disabled={disabled}
-                className="group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed"
+                className="group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed text-white"
                 title="Edit message"
               >
                 <svg
-                  className="h-4 w-4 text-white"
+                  className="h-4 w-4"
                   fill="none"
                   stroke="currentColor"
                   viewBox="0 0 24 24"
@@ -121,8 +125,8 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
                   />
                 </svg>
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
         {/* Message content */}
