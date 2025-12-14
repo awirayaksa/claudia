@@ -103,7 +103,7 @@ function App() {
 
     const cleanupAbout = window.electron.onMenuEvent('menu:about', () => {
       // TODO: Show about dialog
-      alert('Claudia - Open WebUI Desktop Client\nVersion 1.0.0');
+      alert('Claudia - Open WebUI/Open Router Desktop Client\nVersion 0.1.0');
     });
 
     // Cleanup listeners on unmount
