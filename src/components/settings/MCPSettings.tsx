@@ -287,10 +287,10 @@ export function MCPSettings() {
             return (
               <div
                 key={server.id}
-                className="flex items-center justify-between rounded border border-border bg-surface p-4 hover:bg-surface-hover transition-colors"
+                className="flex flex-col rounded border border-border bg-surface p-4 hover:bg-surface-hover transition-colors"
               >
-                {/* Left: Name + Status */}
-                <div className="flex-1">
+                {/* Server Info */}
+                <div>
                   <div className="flex items-center gap-3 flex-wrap">
                     <span className="text-base font-medium text-text-primary">
                       {server.name}
@@ -324,8 +324,8 @@ export function MCPSettings() {
                     {getServerInfo(server)}
                   </div>
 
-                  {/* Error message */}
-                  {serverError && (
+                  {/* Error message - only show when status is error */}
+                  {serverError && status === 'error' && (
                     <div className="mt-2 text-sm text-error">{serverError}</div>
                   )}
 
@@ -337,8 +337,8 @@ export function MCPSettings() {
                   )}
                 </div>
 
-                {/* Right: Actions */}
-                <div className="flex items-center gap-2">
+                {/* Actions - New Row */}
+                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
                   {status === 'ready' && (
                     <Button
                       size="sm"
@@ -370,8 +370,8 @@ export function MCPSettings() {
                     View Logs
                   </Button>
 
-                  {/* Edit button - only show when stopped */}
-                  {status === 'stopped' && (
+                  {/* Edit button - show when stopped or error */}
+                  {(status === 'stopped' || status === 'error') && (
                     <Button
                       size="sm"
                       variant="secondary"
@@ -381,8 +381,8 @@ export function MCPSettings() {
                     </Button>
                   )}
 
-                  {/* Delete button - only show when stopped */}
-                  {status === 'stopped' && (
+                  {/* Delete button - show when stopped or error */}
+                  {(status === 'stopped' || status === 'error') && (
                     <Button
                       size="sm"
                       variant="secondary"

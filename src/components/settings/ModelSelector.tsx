@@ -6,6 +6,9 @@ interface ModelSelectorProps {
 }
 
 export function ModelSelector({ value, onChange, models }: ModelSelectorProps) {
+  // Sort models alphabetically
+  const sortedModels = [...models].sort((a, b) => a.localeCompare(b));
+
   return (
     <div className="w-full">
       <label className="mb-1.5 block text-sm font-medium text-text-primary">
@@ -17,7 +20,7 @@ export function ModelSelector({ value, onChange, models }: ModelSelectorProps) {
         className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text-primary transition-colors hover:border-accent focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent"
       >
         <option value="">Select a model...</option>
-        {models.map((model) => (
+        {sortedModels.map((model) => (
           <option key={model} value={model}>
             {model}
           </option>

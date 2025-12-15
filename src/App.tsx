@@ -7,6 +7,7 @@ import { useAppDispatch } from './store';
 import { setApiConfig, setAppearance, setPreferences } from './store/slices/settingsSlice';
 import { setSettingsOpen, toggleSidebar } from './store/slices/uiSlice';
 import { discoverPlugins, loadPluginConfigs, refreshActivePlugins } from './store/slices/pluginSlice';
+import packageJson from '../package.json';
 
 function App() {
   const dispatch = useAppDispatch();
@@ -103,7 +104,7 @@ function App() {
 
     const cleanupAbout = window.electron.onMenuEvent('menu:about', () => {
       // TODO: Show about dialog
-      alert('Claudia - Open WebUI/Open Router Desktop Client\nVersion 0.1.0');
+      alert(`Claudia - Open WebUI/Open Router Desktop Client\nVersion ${packageJson.version}`);
     });
 
     // Cleanup listeners on unmount

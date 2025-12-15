@@ -1,4 +1,5 @@
 // Message types for chat functionality
+import { UIResourceContent } from './mcp.types';
 
 export interface Attachment {
   id: string;
@@ -24,8 +25,10 @@ export interface ToolResult {
   tool_call_id: string;
   role: 'tool';
   name: string;
-  content: string; // JSON string or error message
+  content: string | UIResourceContent; // Primary content for LLM (text)
   isError?: boolean;
+  hasUI?: boolean; // Track if this result contains UI
+  uiResource?: UIResourceContent; // Separate UI resource for rendering
 }
 
 export interface Message {

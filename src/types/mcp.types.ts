@@ -150,8 +150,41 @@ export interface MCPToolResult {
     text?: string;
     data?: string;
     mimeType?: string;
+    resource?: {
+      uri: string;
+      mimeType?: string;
+      text?: string;
+      blob?: string;
+    };
   }>;
   isError?: boolean;
+}
+
+// ============================================================================
+// MCP-UI Types
+// ============================================================================
+
+export type UIResourceMimeType =
+  | 'text/html'                         // Inline HTML
+  | 'text/uri-list'                     // External URLs
+  | 'application/vnd.mcp-ui.remote-dom'; // Remote-dom JavaScript
+
+export interface UIResourceContent {
+  uri: string;        // ui://component/id
+  mimeType: UIResourceMimeType;
+  text?: string;      // Inline content (for text/html or remote-dom)
+  blob?: string;      // Base64 content
+}
+
+export interface UIResource {
+  type: 'resource';
+  resource: UIResourceContent;
+}
+
+export interface UIAction {
+  uri: string;
+  action: string;
+  data?: Record<string, unknown>;
 }
 
 // ============================================================================

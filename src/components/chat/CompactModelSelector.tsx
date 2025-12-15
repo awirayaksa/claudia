@@ -17,6 +17,7 @@ export function CompactModelSelector({
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const selectedItemRef = useRef<HTMLButtonElement>(null);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -37,6 +38,19 @@ export function CompactModelSelector({
     }
   }, [isOpen]);
 
+  // Auto-scroll to selected item when dropdown opens
+  useEffect(() => {
+    if (isOpen && selectedItemRef.current && dropdownRef.current) {
+      // Small delay to ensure the dropdown is fully rendered
+      setTimeout(() => {
+        selectedItemRef.current?.scrollIntoView({
+          behavior: 'smooth',
+          block: 'center',
+        });
+      }, 10);
+    }
+  }, [isOpen]);
+
   // Handle keyboard navigation
   const handleKeyDown = (event: React.KeyboardEvent) => {
     if (event.key === 'Escape') {
@@ -54,6 +68,9 @@ export function CompactModelSelector({
   const isModelAvailable = models.includes(value);
   const displayName = abbreviateModelName(value);
   const truncatedName = truncateModelName(displayName, 20);
+
+  // Sort models alphabetically
+  const sortedModels = [...models].sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="relative" onKeyDown={handleKeyDown}>
@@ -89,16 +106,17 @@ export function CompactModelSelector({
           aria-label="Available models"
         >
           <div className="max-h-80 overflow-y-auto p-2">
-            {models.length === 0 ? (
+            {sortedModels.length === 0 ? (
               <div className="px-3 py-2 text-sm text-text-secondary">No models available</div>
             ) : (
-              models.map((model) => {
+              sortedModels.map((model) => {
                 const isSelected = model === value;
                 const modelDisplayName = abbreviateModelName(model);
 
                 return (
                   <button
                     key={model}
+                    ref={isSelected ? selectedItemRef : null}
                     type="button"
                     onClick={() => handleSelectModel(model)}
                     className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors hover:bg-background ${isSelected ? 'bg-background text-accent' : 'text-text-primary'

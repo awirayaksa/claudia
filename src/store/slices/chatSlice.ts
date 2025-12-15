@@ -1,5 +1,5 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
-import { Message, Attachment, ToolCall } from '../../types/message.types';
+import { Message, Attachment, ToolCall, ToolResult } from '../../types/message.types';
 import { getAPIProvider } from '../../services/api/provider.service';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
 import { v4 as uuidv4 } from 'uuid';
@@ -45,6 +45,7 @@ export const sendMessage = createAsyncThunk(
     try {
       const state = getState() as any;
       const provider = getAPIProvider();
+      const temperature = state.settings.preferences.temperature;
 
       // Get all messages for context
       const messages = state.chat.messages.map((msg: Message) => ({
@@ -63,10 +64,10 @@ export const sendMessage = createAsyncThunk(
         model,
         messages,
         stream: false,
+        temperature: temperature,
       });
 
       const assistantContent = response.choices[0].message.content;
-      console.log('[Claudia] LLM Response:', assistantContent);
 
       return {
         userMessageId: uuidv4(),
@@ -260,6 +261,7 @@ export const sendStreamingMessage = createAsyncThunk(
   ) => {
     const state = getState() as any;
     const provider = getAPIProvider();
+    const temperature = state.settings.preferences.temperature;
 
     const userMessageId = uuidv4();
     const assistantMessageId = uuidv4();
@@ -295,15 +297,13 @@ export const sendStreamingMessage = createAsyncThunk(
         {
           model,
           messages,
+          temperature: temperature,
         },
         {
           onChunk: (chunk) => {
-            console.log('[Claudia] Streaming chunk:', chunk);
             dispatch(appendStreamingContent(chunk));
           },
           onComplete: () => {
-            const finalContent = (getState() as RootState).chat.streamingContent;
-            console.log('[Claudia] Streaming complete. Full response:', finalContent);
             dispatch(completeStreaming());
             resolve();
           },
@@ -329,6 +329,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     const MAX_TOOL_ITERATIONS = 5;
     const state = getState() as RootState;
     const provider = getAPIProvider();
+    const temperature = state.settings.preferences.temperature;
 
     const userMessageId = uuidv4();
     const assistantMessageId = uuidv4();
@@ -369,15 +370,6 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     const availableTools = ToolIntegrationService.getAvailableTools(mcpState);
     const hasTools = ToolIntegrationService.hasAvailableTools(mcpState);
 
-    // Debug logging
-    console.log('[Tool Integration] Available MCP tools:', availableTools.length);
-    console.log('[Tool Integration] Tool names:', availableTools.map(t => t.name));
-    console.log('[Tool Integration] MCP servers ready:',
-      Object.entries(mcpState.serverStates)
-        .filter(([_, state]) => state.status === 'ready')
-        .map(([id, state]) => ({ id, toolCount: state.tools?.length || 0 }))
-    );
-
     // Create abort controller
     const abortController = new AbortController();
     dispatch(setAbortController(abortController as any));
@@ -393,11 +385,6 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           ? ToolIntegrationService.mcpToolsToOpenAI(availableTools)
           : undefined;
 
-        console.log(`[Tool Integration] Iteration ${iteration}: Sending ${openAITools?.length || 0} tools to LLM`);
-        if (openAITools && openAITools.length > 0) {
-          console.log('[Tool Integration] Tool functions:', openAITools.map(t => t.function.name));
-        }
-
         let assistantToolCalls: ToolCall[] = [];
 
         // Stream LLM response
@@ -408,17 +395,15 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
               messages,
               tools: openAITools,
               tool_choice: !hasTools ? 'none' : (iteration >= MAX_TOOL_ITERATIONS - 1 ? 'none' : 'auto'),
+              temperature: temperature,
             },
             {
               onChunk: (chunk) => {
                 if (chunk) {
-                  console.log('[Claudia] Streaming chunk (with tools):', chunk);
                   dispatch(appendStreamingContent(chunk));
                 }
               },
               onComplete: () => {
-                const currentContent = (getState() as RootState).chat.streamingContent;
-                console.log('[Claudia] Streaming iteration complete. Content:', currentContent);
                 resolve();
               },
               onError: (error) => {
@@ -426,7 +411,6 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
                 reject(error);
               },
               onToolCalls: (toolCalls) => {
-                console.log('[Claudia] LLM requested tool calls:', toolCalls);
                 assistantToolCalls = toolCalls;
                 dispatch(setToolCalls(toolCalls));
               },
@@ -457,7 +441,6 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             assistantToolCalls,
             mcpState
           );
-          console.log('[Claudia] Tool execution results:', toolResults);
           dispatch(setExecutingTools(false));
 
           // Update the assistant message with tool results
@@ -468,21 +451,49 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
 
           // Add tool result messages to history for LLM context
           for (const result of toolResults) {
-            const toolResultMessage: Message = {
-              id: uuidv4(),
-              role: 'tool',
-              content: result.content,
-              timestamp: new Date().toISOString(),
-              tool_call_id: result.tool_call_id,
-              name: result.name,
-              toolResults: [result],
-            };
-            dispatch(addToolCallMessage(toolResultMessage));
+            // Handle UI resources differently - send confirmation to LLM without full content
+            let contentString: string;
 
-            // Add to messages for next iteration
+            if (result.hasUI && result.uiResource) {
+              // Send a simple confirmation to LLM instead of full UI content
+              contentString = `Interactive UI component displayed successfully. The user can now interact with the ${result.name} interface.`;
+
+              // Add to Redux for UI rendering
+              const toolResultMessage: Message = {
+                id: uuidv4(),
+                role: 'tool',
+                content: contentString,
+                timestamp: new Date().toISOString(),
+                tool_call_id: result.tool_call_id,
+                name: result.name,
+                toolResults: [result],
+              };
+              dispatch(addToolCallMessage(toolResultMessage));
+            } else {
+              // Regular tool result - prepare content string for LLM
+              if (typeof result.content === 'string') {
+                contentString = result.content;
+              } else {
+                // Fallback for unexpected cases (should not happen with proper tool integration)
+                contentString = JSON.stringify(result.content);
+              }
+
+              const toolResultMessage: Message = {
+                id: uuidv4(),
+                role: 'tool',
+                content: contentString,
+                timestamp: new Date().toISOString(),
+                tool_call_id: result.tool_call_id,
+                name: result.name,
+                toolResults: [result],
+              };
+              dispatch(addToolCallMessage(toolResultMessage));
+            }
+
+            // Add to messages for next iteration (both UI and regular results)
             messages.push({
               role: 'tool',
-              content: result.content,
+              content: contentString,
               tool_calls: undefined,
               tool_call_id: result.tool_call_id,
               name: result.name,
@@ -522,6 +533,77 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
       dispatch(completeStreaming());
       dispatch(clearToolCalls());
     }
+  }
+);
+
+// Execute UI action from UIResourceRenderer
+export const executeUIAction = createAsyncThunk(
+  'chat/executeUIAction',
+  async (
+    {
+      uri: _uri,
+      toolName,
+      action: _action,
+      data,
+      originalToolCallId,
+    }: {
+      uri: string;
+      toolName: string;
+      action: string;
+      data?: Record<string, unknown>;
+      originalToolCallId: string;
+    },
+    { getState, dispatch }
+  ) => {
+    const state = getState() as RootState;
+    const mcpState = state.mcp;
+
+    // Find server for this tool
+    const serverId = ToolIntegrationService['findServerForTool'](toolName, mcpState);
+    if (!serverId) {
+      throw new Error(`Server for tool ${toolName} not found`);
+    }
+
+    // Use the data directly as tool arguments (data contains the actual tool params)
+    const toolCall: ToolCall = {
+      id: uuidv4(),
+      type: 'function',
+      function: {
+        name: toolName,
+        arguments: JSON.stringify(data || {}),
+      },
+    };
+
+    dispatch(setExecutingTools(true));
+
+    // Execute tool
+    const result = await ToolIntegrationService.executeToolCall(toolCall, mcpState);
+
+    // Update original message with new result
+    const message = state.chat.messages.find((m) =>
+      m.toolResults?.some((r) => r.tool_call_id === originalToolCallId)
+    );
+
+    if (message && message.toolResults) {
+      // Override the result's tool_call_id to match the original
+      const updatedResult: ToolResult = {
+        ...result,
+        tool_call_id: originalToolCallId,
+      };
+
+      const updatedResults = message.toolResults.map((r) =>
+        r.tool_call_id === originalToolCallId ? updatedResult : r
+      );
+
+      dispatch(updateMessageToolResults({
+        messageId: message.id,
+        toolResults: updatedResults,
+      }));
+    }
+
+    dispatch(setExecutingTools(false));
+
+    return result;
   }
 );
 
