@@ -378,12 +378,28 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     let iteration = 0;
     let shouldContinue = true;
 
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[TOOL LOOP] Starting tool calling loop');
+    console.log('[TOOL LOOP] Initial messages count:', messages.length);
+    console.log('[TOOL LOOP] Messages:', JSON.stringify(messages, null, 2));
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
     while (shouldContinue && iteration < MAX_TOOL_ITERATIONS) {
       try {
+        console.log(`\n┌─────────────────────────────────────────────────────────────┐`);
+        console.log(`│ ITERATION ${iteration}                                           │`);
+        console.log(`└─────────────────────────────────────────────────────────────┘`);
+
         // Convert MCP tools to OpenAI format
         const openAITools = hasTools
           ? ToolIntegrationService.mcpToolsToOpenAI(availableTools)
           : undefined;
+
+        console.log(`[ITERATION ${iteration}] Calling LLM with:`, {
+          messageCount: messages.length,
+          toolCount: openAITools?.length || 0,
+          tool_choice: !hasTools ? 'none' : (iteration >= MAX_TOOL_ITERATIONS - 1 ? 'none' : 'auto')
+        });
 
         let assistantToolCalls: ToolCall[] = [];
 
@@ -411,6 +427,11 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
                 reject(error);
               },
               onToolCalls: (toolCalls) => {
+                console.log(`[ITERATION ${iteration}] LLM returned tool calls:`, toolCalls.length);
+                console.log(`[ITERATION ${iteration}] Tool calls details:`, toolCalls.map(tc => ({
+                  name: tc.function.name,
+                  args: tc.function.arguments
+                })));
                 assistantToolCalls = toolCalls;
                 dispatch(setToolCalls(toolCalls));
               },
@@ -419,29 +440,46 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           );
         });
 
+        console.log(`[ITERATION ${iteration}] LLM streaming complete. Tool calls:`, assistantToolCalls.length);
+
         // Check if we have tool calls to execute
         if (assistantToolCalls.length > 0) {
+          console.log(`[ITERATION ${iteration}] ✓ Tool calls detected, executing...`);
           // Add assistant message with tool calls
           const assistantMessageId = uuidv4();
+          const assistantContent = (getState() as RootState).chat.streamingContent || '';
           const assistantMessage: Message = {
             id: assistantMessageId,
             role: 'assistant',
-            content: (getState() as RootState).chat.streamingContent || '',
+            content: assistantContent,
             timestamp: new Date().toISOString(),
             toolCalls: assistantToolCalls,
           };
           dispatch(addToolCallMessage(assistantMessage));
 
+          // IMPORTANT: Add assistant message to messages array for LLM context
+          console.log(`[ITERATION ${iteration}] Adding assistant message to messages array`);
+          messages.push({
+            role: 'assistant',
+            content: assistantContent,
+            tool_calls: assistantToolCalls,
+            tool_call_id: undefined,
+            name: undefined,
+          });
+          console.log(`[ITERATION ${iteration}] Messages after adding assistant:`, messages.length);
+
           // Clear streaming content for next iteration
           dispatch(completeStreaming());
 
           // Execute tools
+          console.log(`[ITERATION ${iteration}] Executing ${assistantToolCalls.length} tools...`);
           dispatch(setExecutingTools(true));
           const toolResults = await ToolIntegrationService.executeToolCalls(
             assistantToolCalls,
             mcpState
           );
           dispatch(setExecutingTools(false));
+          console.log(`[ITERATION ${iteration}] Tools executed. Results:`, toolResults.length);
 
           // Update the assistant message with tool results
           dispatch(updateMessageToolResults({
@@ -450,7 +488,12 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           }));
 
           // Add tool result messages to history for LLM context
+          console.log(`[ITERATION ${iteration}] Processing tool results...`);
           for (const result of toolResults) {
+            console.log(`[ITERATION ${iteration}] Processing result for tool:`, result.name, {
+              hasUI: result.hasUI,
+              isError: result.isError
+            });
             // Handle UI resources differently - send confirmation to LLM without full content
             let contentString: string;
 
@@ -491,6 +534,11 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             }
 
             // Add to messages for next iteration (both UI and regular results)
+            console.log(`[ITERATION ${iteration}] Adding tool result to messages:`, {
+              role: 'tool',
+              name: result.name,
+              contentPreview: contentString.substring(0, 100)
+            });
             messages.push({
               role: 'tool',
               content: contentString,
@@ -500,10 +548,21 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             });
           }
 
+          console.log(`[ITERATION ${iteration}] Messages after adding tool results:`, messages.length);
+          console.log(`[ITERATION ${iteration}] Current messages:`, JSON.stringify(messages.map(m => ({
+            role: m.role,
+            content: typeof m.content === 'string' ? m.content.substring(0, 50) : m.content,
+            tool_calls: m.tool_calls?.length,
+            name: m.name
+          })), null, 2));
+
           // Increment iteration and continue loop
           dispatch(incrementToolIteration());
           iteration++;
           shouldContinue = true;
+
+          console.log(`[ITERATION ${iteration - 1}] ➜ Continuing to iteration ${iteration}`);
+          console.log(`[ITERATION ${iteration - 1}] shouldContinue:`, shouldContinue);
 
           // Reset streaming for next iteration
           const nextAssistantMessageId = uuidv4();
@@ -515,6 +574,8 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           }));
         } else {
           // No tool calls - complete streaming
+          console.log(`[ITERATION ${iteration}] ✗ No tool calls detected`);
+          console.log(`[ITERATION ${iteration}] Completing streaming and stopping loop`);
           dispatch(completeStreaming());
           dispatch(clearToolCalls());
           shouldContinue = false;
@@ -529,10 +590,17 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
 
     // If we hit max iterations, force completion
     if (iteration >= MAX_TOOL_ITERATIONS && shouldContinue) {
+      console.log(`[TOOL LOOP] ⚠️  Max iterations (${MAX_TOOL_ITERATIONS}) reached, forcing stop`);
       dispatch(setError('Maximum tool calling iterations reached'));
       dispatch(completeStreaming());
       dispatch(clearToolCalls());
     }
+
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    console.log('[TOOL LOOP] Tool calling loop complete');
+    console.log('[TOOL LOOP] Total iterations:', iteration);
+    console.log('[TOOL LOOP] Final messages count:', messages.length);
+    console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   }
 );
 
