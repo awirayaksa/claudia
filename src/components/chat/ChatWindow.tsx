@@ -2,7 +2,6 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
-import { Button } from '../common/Button';
 import { useChat } from '../../hooks/useChat';
 import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
@@ -215,10 +214,6 @@ export function ChatWindow() {
     }
   };
 
-  const handleClearChat = () => {
-    dispatch(clearMessages());
-  };
-
   const handleEditMessage = useCallback((messageId: string, content: string, attachments?: Attachment[]) => {
     // 1. Abort any active streaming
     if (isStreaming) {
@@ -245,7 +240,7 @@ export function ChatWindow() {
   // Show configuration prompt if not configured
   if (!isConfigured) {
     return (
-      <div className="flex h-full flex-col items-center justify-center p-8">
+      <div className="flex flex-1 flex-col items-center justify-center p-8 overflow-hidden">
         <div className="max-w-md text-center">
           <svg
             className="mx-auto mb-4 h-16 w-16 text-text-secondary"
@@ -281,22 +276,7 @@ export function ChatWindow() {
   }
 
   return (
-    <div className="flex h-full flex-col">
-      {/* Chat header */}
-      <div className="border-b border-border bg-surface px-4 py-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="font-semibold text-text-primary">Chat</h2>
-            <p className="text-xs text-text-secondary">Model: {selectedModel}</p>
-          </div>
-          {messages.length > 0 && (
-            <Button variant="ghost" size="sm" onClick={handleClearChat}>
-              Clear Chat
-            </Button>
-          )}
-        </div>
-      </div>
-
+    <div className="flex flex-1 flex-col overflow-hidden">
       {/* Messages area */}
       <div
         ref={messagesContainerRef}

@@ -93,6 +93,7 @@ export function OpenWebUIConfigForm({
         onChange={(e) => onConfigChange({ apiKey: e.target.value })}
         error={errors.apiKey}
         helperText="Get your API key from Settings > Account in Open WebUI"
+        showPasswordToggle
       />
 
       <div className="flex gap-2">

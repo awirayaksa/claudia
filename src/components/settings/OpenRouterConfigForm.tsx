@@ -65,22 +65,6 @@ export function OpenRouterConfigForm({
         </p>
       </div>
 
-      {/* Info box about OpenRouter */}
-      <div className="rounded border border-accent bg-accent bg-opacity-10 p-3">
-        <p className="text-sm text-accent">
-          <strong>OpenRouter</strong> provides access to multiple AI models from different providers.
-          Get your API key from{' '}
-          <a
-            href="https://openrouter.ai/keys"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="underline"
-          >
-            openrouter.ai/keys
-          </a>
-        </p>
-      </div>
-
       <Input
         label="API Key"
         type="password"
@@ -89,6 +73,7 @@ export function OpenRouterConfigForm({
         onChange={(e) => onConfigChange({ apiKey: e.target.value })}
         error={errors.apiKey}
         helperText="Your OpenRouter API key"
+        showPasswordToggle
       />
 
       <Input

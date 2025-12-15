@@ -1,4 +1,4 @@
-import { MCPTool } from '../../types/mcp.types';
+import { MCPTool, UIResourceContent } from '../../types/mcp.types';
 import { ToolCall, ToolResult } from '../../types/message.types';
 import { OpenAITool } from '../../types/api.types';
 import { RootState } from '../../store';
@@ -37,6 +37,42 @@ export class ToolIntegrationService {
       }
     }
     return null;
+  }
+
+  /**
+   * Check if content item is a UI resource
+   * A resource is considered a UI resource if URI starts with 'ui://'
+   */
+  private static isUIResource(content: any): boolean {
+    if (content.type !== 'resource') {
+      return false;
+    }
+
+    const uri = content.resource?.uri || '';
+    return uri.startsWith('ui://');
+  }
+
+  /**
+   * Extract UI resource from content array
+   */
+  private static extractUIResource(contentArray: any[]): UIResourceContent | null {
+    for (const item of contentArray) {
+      if (this.isUIResource(item)) {
+        return item.resource;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Extract text content from content array (ignoring UI resources)
+   */
+  private static extractTextContent(contentArray: any[]): string {
+    const textItems = contentArray
+      .filter((item: any) => item.type === 'text')
+      .map((item: any) => item.text);
+
+    return textItems.length > 0 ? textItems.join('\n') : '';
   }
 
   /**
@@ -81,8 +117,6 @@ export class ToolIntegrationService {
         };
       }
 
-      console.log(`[Tool Integration] Executing ${toolName} with args:`, args);
-
       // Execute tool with timeout
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Tool execution timeout')), TOOL_TIMEOUT_MS)
@@ -119,27 +153,48 @@ export class ToolIntegrationService {
         };
       }
 
-      console.log(`[Tool Integration] Tool ${toolName} executed successfully`);
+      // Extract text content and UI resource separately
+      const textContent = this.extractTextContent(toolResult.content);
+      const uiResource = this.extractUIResource(toolResult.content);
 
-      // Return successful result - convert content array to JSON string
-      const contentString = toolResult.content.map((c: any) => {
-        if (c.type === 'text') {
-          return c.text;
-        } else if (c.type === 'image') {
-          return `[Image: ${c.mimeType || 'unknown'}]`;
-        } else if (c.type === 'resource') {
-          return `[Resource: ${c.mimeType || 'unknown'}]`;
-        }
-        return JSON.stringify(c);
-      }).join('\n');
+      if (uiResource) {
+        // Return BOTH text and UI resource
+        return {
+          tool_call_id: toolCall.id,
+          role: 'tool',
+          name: toolName,
+          content: textContent || `[Interactive UI: ${uiResource.uri}]`,  // Text for LLM
+          isError: false,
+          hasUI: true,
+          uiResource: uiResource,  // UI for rendering
+        };
+      } else {
+        // Convert content array to string (existing behavior)
+        const contentString = toolResult.content.map((c: any) => {
+          if (c.type === 'text') {
+            return c.text;
+          } else if (c.type === 'image') {
+            return `[Image: ${c.mimeType || 'unknown'}]`;
+          } else if (c.type === 'resource') {
+            // Extract text content from resource if available
+            if (c.resource?.text) {
+              return c.resource.text;
+            }
+            // Fallback to URI or mimeType
+            return `[Resource: ${c.resource?.uri || c.mimeType || 'unknown'}]`;
+          }
+          return JSON.stringify(c);
+        }).join('\n');
 
-      return {
-        tool_call_id: toolCall.id,
-        role: 'tool',
-        name: toolName,
-        content: contentString,
-        isError: false,
-      };
+        return {
+          tool_call_id: toolCall.id,
+          role: 'tool',
+          name: toolName,
+          content: contentString,
+          isError: false,
+          hasUI: false,
+        };
+      }
     } catch (error) {
       if (error instanceof Error && error.message === 'Tool execution timeout') {
         console.error(`[Tool Integration] Tool ${toolName} timed out after ${TOOL_TIMEOUT_MS}ms`);
@@ -198,15 +253,24 @@ export class ToolIntegrationService {
    * Format tool result for display
    */
   static formatToolResultForDisplay(result: ToolResult): string {
-    try {
-      const content = JSON.parse(result.content);
-      if (content.error) {
-        return `Error: ${content.error}`;
-      }
-      return JSON.stringify(content, null, 2);
-    } catch {
-      return result.content;
+    // Don't format UI resources as strings
+    if (result.hasUI) {
+      return '[UI Component - Rendered Below]';
     }
+
+    if (typeof result.content === 'string') {
+      try {
+        const content = JSON.parse(result.content);
+        if (content.error) {
+          return `Error: ${content.error}`;
+        }
+        return JSON.stringify(content, null, 2);
+      } catch {
+        return result.content;
+      }
+    }
+
+    return JSON.stringify(result.content, null, 2);
   }
 
   /**

@@ -1,14 +1,24 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { ToolCall, ToolResult } from '../../types/message.types';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
+import { UIResourceDisplay } from './UIResourceDisplay';
 
 interface ToolCallMessageProps {
   toolCall: ToolCall;
   result?: ToolResult;
+  hideUIResource?: boolean;
 }
 
-export function ToolCallMessage({ toolCall, result }: ToolCallMessageProps) {
+export function ToolCallMessage({ toolCall, result, hideUIResource = false }: ToolCallMessageProps) {
+  // Auto-expand if there's a UI resource (but not when hiding UI resource)
   const [isExpanded, setIsExpanded] = useState(false);
+
+  // Auto-expand when UI resource is detected (only if not hiding it)
+  useEffect(() => {
+    if (result?.hasUI && !hideUIResource) {
+      setIsExpanded(true);
+    }
+  }, [result?.hasUI, hideUIResource]);
 
   // Parse tool arguments
   let parsedArgs: any = {};
@@ -85,14 +95,14 @@ export function ToolCallMessage({ toolCall, result }: ToolCallMessageProps) {
             <span>{statusConfig.label}</span>
           </span>
         </div>
-        <span className="text-text-secondary">
+        <span className="ml-4 text-text-secondary">
           {isExpanded ? '▼' : '▶'}
         </span>
       </button>
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="mt-3 space-y-3 border-t border-border pt-3">
+        <div className="mt-3 w-full space-y-3 border-t border-border pt-3">
           {/* Arguments */}
           <div>
             <div className="mb-1 text-xs font-medium text-text-secondary">Arguments:</div>
@@ -107,15 +117,25 @@ export function ToolCallMessage({ toolCall, result }: ToolCallMessageProps) {
               <div className="mb-1 text-xs font-medium text-text-secondary">
                 {result.isError ? 'Error:' : 'Result:'}
               </div>
-              <pre
-                className={`overflow-x-auto rounded p-2 text-xs ${
-                  result.isError
-                    ? 'bg-error bg-opacity-10 text-error'
-                    : 'bg-surface text-text-primary'
-                }`}
-              >
-                {ToolIntegrationService.formatToolResultForDisplay(result)}
-              </pre>
+
+              {/* Render UI resource OR text result */}
+              {result.hasUI && result.uiResource && !hideUIResource ? (
+                <UIResourceDisplay
+                  resource={result.uiResource}
+                  toolCallId={result.tool_call_id}
+                  toolName={result.name}
+                />
+              ) : (
+                <pre
+                  className={`overflow-x-auto rounded p-2 text-xs ${
+                    result.isError
+                      ? 'bg-error bg-opacity-10 text-error'
+                      : 'bg-surface text-text-primary'
+                  }`}
+                >
+                  {ToolIntegrationService.formatToolResultForDisplay(result)}
+                </pre>
+              )}
             </div>
           )}
 
