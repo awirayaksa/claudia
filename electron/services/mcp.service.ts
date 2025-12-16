@@ -368,6 +368,7 @@ export class MCPClientWrapper extends EventEmitter {
           text: item.type === 'text' ? (item as any).text : undefined,
           data: item.type === 'image' ? (item as any).data : undefined,
           mimeType: (item as any).mimeType,
+          resource: item.type === 'resource' ? (item as any).resource : undefined,
         })),
         isError: result.isError,
       };

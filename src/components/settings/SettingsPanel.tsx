@@ -5,6 +5,7 @@ import { ApiSettings } from './ApiSettings';
 import { MCPSettings } from './MCPSettings';
 import { ThemeSettings } from './ThemeSettings';
 import { PluginSettings } from './PluginSettings';
+import { PreferencesSettings } from './PreferencesSettings';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setSettingsOpen } from '../../store/slices/uiSlice';
 
@@ -60,16 +61,12 @@ export function SettingsPanel() {
         </div>
 
         {/* Tab content */}
-        <div className="flex-1 pl-6 overflow-y-auto">
+        <div className="flex-1 pl-6 pr-6 overflow-y-auto">
           {activeTab === 'api' && <ApiSettings />}
           {activeTab === 'mcp' && <MCPSettings />}
           {activeTab === 'plugins' && <PluginSettings />}
           {activeTab === 'appearance' && <ThemeSettings />}
-          {activeTab === 'preferences' && (
-            <div className="text-text-secondary">
-              <p>Additional preferences coming soon...</p>
-            </div>
-          )}
+          {activeTab === 'preferences' && <PreferencesSettings />}
         </div>
       </div>
     </Modal>
