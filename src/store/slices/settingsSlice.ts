@@ -22,6 +22,8 @@ interface SettingsState {
     streamingEnabled: boolean;
     maxTokens: number;
     temperature: number;
+    logLevel: 'debug' | 'info' | 'warn' | 'error';
+    enableFileLogging: boolean;
   };
 }
 
@@ -40,6 +42,8 @@ const initialState: SettingsState = {
     streamingEnabled: true,
     maxTokens: 2048,
     temperature: 0.7,
+    logLevel: 'info',
+    enableFileLogging: true,
   },
 };
 

@@ -19,6 +19,7 @@ import {
   MCPResourceContent,
   MCPPromptMessage,
 } from '../../src/types/mcp.types';
+import { LoggerService } from './logger.service';
 
 // ============================================================================
 // MCP Client Wrapper - Uses official SDK
@@ -349,7 +350,7 @@ export class MCPClientWrapper extends EventEmitter {
     return this._tools;
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<MCPToolResult> {
+  async callTool(name: string, args: Record<string, unknown>, traceId?: string): Promise<MCPToolResult> {
     if (this._status !== 'ready' || !this.client) {
       throw new Error(`Client is not ready (status: ${this._status})`);
     }
@@ -361,6 +362,24 @@ export class MCPClientWrapper extends EventEmitter {
         name,
         arguments: args,
       });
+
+      // Log raw MCP response at DEBUG level
+      LoggerService.debug('tool.response.raw', `MCP tool response: ${name}`, {
+        payload: {
+          tool_name: name,
+          content: result.content.map(item => ({
+            type: item.type,
+            text: item.type === 'text' ? (item as any).text : undefined,
+            mimeType: (item as any).mimeType,
+            hasResource: item.type === 'resource' ? !!(item as any).resource : undefined
+          })),
+          isError: result.isError
+        },
+        metadata: {
+          contentItemCount: result.content?.length || 0,
+          contentTypes: result.content?.map(c => c.type) || []
+        }
+      }, traceId);
 
       return {
         content: (result.content || []).map((item) => ({
@@ -542,13 +561,14 @@ export class MCPClientManager extends EventEmitter {
   async callTool(
     serverId: string,
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    traceId?: string
   ): Promise<MCPToolResult> {
     const client = this.clients.get(serverId);
     if (!client) {
       throw new Error(`Server not found: ${serverId}`);
     }
-    return await client.callTool(toolName, args);
+    return await client.callTool(toolName, args, traceId);
   }
 
   getServerTools(serverId: string): MCPTool[] {

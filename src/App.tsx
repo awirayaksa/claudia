@@ -7,6 +7,7 @@ import { useAppDispatch } from './store';
 import { setApiConfig, setAppearance, setPreferences } from './store/slices/settingsSlice';
 import { setSettingsOpen, toggleSidebar } from './store/slices/uiSlice';
 import { discoverPlugins, loadPluginConfigs, refreshActivePlugins } from './store/slices/pluginSlice';
+import { Logger } from './services/logger.service';
 import packageJson from '../package.json';
 
 function App() {
@@ -76,6 +77,16 @@ function App() {
           // Load preferences
           if (config.preferences && typeof config.preferences === 'object') {
             dispatch(setPreferences(config.preferences));
+
+            // Initialize logger with loaded preferences
+            Logger.initialize({
+              logLevel: config.preferences.logLevel || 'info',
+              enableFileLogging: config.preferences.enableFileLogging !== false,
+            });
+
+            Logger.info('app', 'Renderer process initialized', {
+              version: packageJson.version,
+            });
           }
         }
       } catch (error) {

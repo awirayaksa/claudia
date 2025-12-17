@@ -12,6 +12,7 @@ import {
 import { ToolCall } from '../../../types/message.types';
 import { IAPIProvider } from '../provider.interface';
 import { StreamCallbacks } from '../streaming.service';
+import { Logger } from '../../logger.service';
 
 /**
  * OpenRouter API Provider
@@ -96,7 +97,8 @@ export class OpenRouterProvider implements IAPIProvider {
   async streamChatCompletion(
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    traceId?: string
   ): Promise<void> {
     const { onChunk, onComplete, onError, onToolCalls } = callbacks;
 
@@ -147,6 +149,10 @@ export class OpenRouterProvider implements IAPIProvider {
       // Accumulate tool calls from streaming deltas
       const accumulatedToolCalls: Map<number, ToolCall> = new Map();
 
+      // Accumulate content and track chunks for logging
+      let accumulatedContent = '';
+      let chunkCount = 0;
+
       // Create SSE parser
       const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
         if (event.type === 'event') {
@@ -164,7 +170,18 @@ export class OpenRouterProvider implements IAPIProvider {
             const content = delta?.content;
             const toolCallDeltas = delta?.tool_calls;
 
+            // Debug logging to see what's being received
+            Logger.debug('llm.stream.chunk', 'Received SSE chunk', {
+              hasContent: !!content,
+              contentLength: content?.length,
+              hasDelta: !!delta,
+              deltaKeys: delta ? Object.keys(delta) : [],
+              finishReason: json.choices?.[0]?.finish_reason
+            }, traceId);
+
             if (content) {
+              accumulatedContent += content;
+              chunkCount++;
               onChunk(content);
             }
 
@@ -174,7 +191,11 @@ export class OpenRouterProvider implements IAPIProvider {
                 const index = toolCallDelta.index;
                 const existing = accumulatedToolCalls.get(index);
 
-                console.log('[OpenRouter] Tool call delta:', JSON.stringify(toolCallDelta));
+                Logger.debug('llm.stream.toolcall', 'Tool call delta received', {
+                  toolCallDelta,
+                  index,
+                  hasExisting: !!existing
+                }, traceId);
 
                 if (!existing) {
                   // First chunk for this tool call
@@ -201,7 +222,10 @@ export class OpenRouterProvider implements IAPIProvider {
                   }
                 }
               }
-              console.log('[OpenRouter] Accumulated tool calls:', Array.from(accumulatedToolCalls.values()));
+              Logger.debug('llm.stream.toolcall', 'Tool calls accumulated', {
+                toolCallCount: accumulatedToolCalls.size,
+                toolCalls: Array.from(accumulatedToolCalls.values())
+              }, traceId);
             }
 
             // Check if stream is done via finish_reason
@@ -216,13 +240,45 @@ export class OpenRouterProvider implements IAPIProvider {
                     arguments: tc.function.arguments || '{}',
                   },
                 }));
-                console.log('[OpenRouter] Sending accumulated tool calls:', JSON.stringify(toolCallsArray, null, 2));
+                Logger.debug('llm.stream.toolcall', 'Sending accumulated tool calls', {
+                  toolCallCount: toolCallsArray.length,
+                  toolCalls: toolCallsArray
+                }, traceId);
                 onToolCalls(toolCallsArray);
               }
+
+              // Log complete LLM response at DEBUG level
+              Logger.debug('llm.response', 'LLM streaming response complete', {
+                payload: {
+                  finish_reason: json.choices[0].finish_reason,
+                  content: accumulatedContent,
+                  tool_calls: accumulatedToolCalls.size > 0
+                    ? Array.from(accumulatedToolCalls.values()).map(tc => ({
+                        id: tc.id,
+                        type: tc.type,
+                        function: {
+                          name: tc.function.name,
+                          arguments: JSON.parse(tc.function.arguments || '{}')
+                        }
+                      }))
+                    : undefined,
+                  usage: json.usage
+                },
+                metadata: {
+                  model: json.model,
+                  response_id: json.id,
+                  chunkCount,
+                  contentLength: accumulatedContent.length,
+                  toolCallCount: accumulatedToolCalls.size
+                }
+              }, traceId);
+
               onComplete();
             }
           } catch (error) {
-            console.error('Failed to parse SSE chunk:', error);
+            Logger.error('llm.stream', 'Failed to parse SSE chunk', error as Error, {
+              data: event.data?.substring(0, 200) // Log first 200 chars for debugging
+            }, traceId);
             // Continue processing other chunks even if one fails
           }
         }
@@ -265,7 +321,7 @@ export class OpenRouterProvider implements IAPIProvider {
       await this.getModels();
       return true;
     } catch (error) {
-      console.error('OpenRouter connection test failed:', error);
+      Logger.error('api.provider', 'OpenRouter connection test failed', error as Error);
       return false;
     }
   }

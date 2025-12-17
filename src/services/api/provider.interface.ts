@@ -27,11 +27,13 @@ export interface IAPIProvider {
    * @param request - The chat completion request
    * @param callbacks - Callbacks for handling streaming events
    * @param abortSignal - Optional signal to abort the request
+   * @param traceId - Optional trace ID for logging correlation
    */
   streamChatCompletion(
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    traceId?: string
   ): Promise<void>;
 
   /**

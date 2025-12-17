@@ -40,7 +40,7 @@ export interface ElectronAPI {
     deleteConfig: (serverId: string) => Promise<any>;
     // Tools
     listTools: (serverId: string) => Promise<any>;
-    callTool: (serverId: string, toolName: string, args: any) => Promise<any>;
+    callTool: (serverId: string, toolName: string, args: any, traceId?: string) => Promise<any>;
     // Resources
     listResources: (serverId: string) => Promise<any>;
     readResource: (serverId: string, uri: string) => Promise<any>;
@@ -76,6 +76,12 @@ export interface ElectronAPI {
     onError: (callback: (event: any) => void) => () => void;
     onDiscovered: (callback: (event: any) => void) => () => void;
     onChanged: (callback: (event: any) => void) => () => void;
+  };
+  logger: {
+    write: (entry: any) => Promise<void>;
+    openLogsFolder: () => Promise<void>;
+    getLogDirectory: () => Promise<string | null>;
+    onLogEntry: (callback: (entry: any) => void) => () => void;
   };
 }
 

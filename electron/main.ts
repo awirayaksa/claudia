@@ -11,6 +11,8 @@ import {
   initializePluginManager,
   cleanupPluginManager,
 } from './handlers/plugin.handler';
+import { LoggerService } from './services/logger.service';
+import { registerLoggerHandlers } from './handlers/logger.handler';
 
 let mainWindow: BrowserWindow | null = null;
 
@@ -167,12 +169,30 @@ function saveWindowState() {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  // Initialize logger first (before any other services)
+  const config = store.get('config', {}) as any;
+  const logLevel = config?.preferences?.logLevel || 'info';
+  const enableFileLogging = config?.preferences?.enableFileLogging !== false;
+
+  LoggerService.initialize({
+    logLevel,
+    enableFileLogging,
+    logDirectory: path.join(app.getPath('userData'), 'logs'),
+  });
+
+  LoggerService.info('app', 'Application starting', {
+    version: app.getVersion(),
+    platform: process.platform,
+    arch: process.arch,
+  });
+
   // Register IPC handlers
   registerConfigHandlers();
   registerConversationHandlers();
   registerProjectHandlers();
   registerMCPHandlers();
   registerPluginHandlers();
+  registerLoggerHandlers();
 
   // Initialize plugin manager
   await initializePluginManager();
@@ -222,9 +242,11 @@ ipcMain.handle('file:select', async () => {
 
 // Basic error handling
 process.on('uncaughtException', (error) => {
+  LoggerService.error('app', 'Uncaught Exception', error as Error);
   console.error('Uncaught Exception:', error);
 });
 
 process.on('unhandledRejection', (error) => {
+  LoggerService.error('app', 'Unhandled Rejection', error as Error);
   console.error('Unhandled Rejection:', error);
 });

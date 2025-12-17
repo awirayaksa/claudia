@@ -47,14 +47,16 @@ export class OpenWebUIProvider implements IAPIProvider {
   async streamChatCompletion(
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    traceId?: string
   ): Promise<void> {
     return streamChatCompletion(
       this.config.baseUrl,
       this.config.apiKey,
       request,
       callbacks,
-      abortSignal
+      abortSignal,
+      traceId
     );
   }
 
