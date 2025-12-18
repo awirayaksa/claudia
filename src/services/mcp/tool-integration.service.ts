@@ -2,7 +2,6 @@ import { MCPTool, UIResourceContent } from '../../types/mcp.types';
 import { ToolCall, ToolResult } from '../../types/message.types';
 import { OpenAITool } from '../../types/api.types';
 import { RootState } from '../../store';
-import { Logger } from '../logger.service';
 import { isUIResource } from '@mcp-ui/client';
 
 /**
@@ -78,21 +77,13 @@ export class ToolIntegrationService {
   static async executeToolCall(
     toolCall: ToolCall,
     mcpState: RootState['mcp'],
-    traceId?: string
+    _traceId?: string
   ): Promise<ToolResult> {
     const toolName = toolCall.function.name;
     const serverId = this.findServerForTool(toolName, mcpState);
     const TOOL_TIMEOUT_MS = 30000; // 30 seconds
 
-    Logger.debug('mcp.tool', `Executing tool: ${toolName}`, {
-      toolCallId: toolCall.id,
-      serverId,
-    }, traceId);
-
     if (!serverId) {
-      Logger.error('mcp.tool', `Tool "${toolName}" not found in any ready server`, undefined, {
-        toolName,
-      }, traceId);
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -110,10 +101,6 @@ export class ToolIntegrationService {
       try {
         args = JSON.parse(toolCall.function.arguments);
       } catch (parseError) {
-        Logger.error('mcp.tool', `Failed to parse arguments for ${toolName}`, parseError as Error, {
-          toolName,
-          arguments: toolCall.function.arguments,
-        }, traceId);
         return {
           tool_call_id: toolCall.id,
           role: 'tool',
@@ -125,37 +112,17 @@ export class ToolIntegrationService {
         };
       }
 
-      // Log tool invocation payload at DEBUG level
-      Logger.debug('tool.invoke', `Invoking tool: ${toolName}`, {
-        payload: {
-          tool_call_id: toolCall.id,
-          tool_name: toolName,
-          server_id: serverId,
-          arguments: args
-        },
-        metadata: {
-          rawArguments: toolCall.function.arguments,
-          argumentSize: toolCall.function.arguments.length,
-          argumentKeys: Object.keys(args)
-        }
-      }, traceId);
-
       // Execute tool with timeout
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error('Tool execution timeout')), TOOL_TIMEOUT_MS)
       );
 
-      const executionPromise = window.electron.mcp.callTool(serverId, toolName, args, traceId);
+      const executionPromise = window.electron.mcp.callTool(serverId, toolName, args, undefined);
 
       const response = await Promise.race([executionPromise, timeoutPromise]);
 
       // Check if the IPC call itself failed
       if (!response.success) {
-        Logger.error('mcp.tool', `Tool ${toolName} IPC call failed`, undefined, {
-          toolName,
-          error: response.error,
-        }, traceId);
-
         const errorResult = {
           tool_call_id: toolCall.id,
           role: 'tool' as const,
@@ -166,27 +133,12 @@ export class ToolIntegrationService {
           isError: true,
         };
 
-        // Log processed error response at DEBUG level
-        Logger.debug('tool.response.processed', `Tool IPC error: ${toolName}`, {
-          payload: {
-            tool_call_id: toolCall.id,
-            tool_name: toolName,
-            error: response.error,
-            isError: true
-          }
-        }, traceId);
-
         return errorResult;
       }
 
       // Check if the tool execution itself had an error
       const toolResult = response.result;
       if (toolResult.isError) {
-        Logger.error('mcp.tool', `Tool ${toolName} returned error`, undefined, {
-          toolName,
-          error: toolResult.content,
-        }, traceId);
-
         const errorContent = toolResult.content.map((c: any) => c.text || JSON.stringify(c)).join('\n');
         const errorResult = {
           tool_call_id: toolCall.id,
@@ -195,16 +147,6 @@ export class ToolIntegrationService {
           content: errorContent,
           isError: true,
         };
-
-        // Log processed error response at DEBUG level
-        Logger.debug('tool.response.processed', `Tool execution error: ${toolName}`, {
-          payload: {
-            tool_call_id: toolCall.id,
-            tool_name: toolName,
-            content: toolResult.content,
-            isError: true
-          }
-        }, traceId);
 
         return errorResult;
       }
@@ -215,12 +157,6 @@ export class ToolIntegrationService {
 
       if (uiResource) {
         // Return BOTH text and UI resource
-        Logger.info('mcp.tool', `Tool ${toolName} completed with UI resource`, {
-          toolName,
-          hasUI: true,
-          uri: uiResource.uri,
-        }, traceId);
-
         const uiResult = {
           tool_call_id: toolCall.id,
           role: 'tool' as const,
@@ -230,20 +166,6 @@ export class ToolIntegrationService {
           hasUI: true,
           uiResource: uiResource,  // UI for rendering
         };
-
-        // Log processed UI response at DEBUG level
-        Logger.debug('tool.response.processed', `Tool UI response: ${toolName}`, {
-          payload: {
-            tool_call_id: toolCall.id,
-            tool_name: toolName,
-            content: textContent || `[Interactive UI: ${uiResource.uri}]`,
-            hasUI: true,
-            uiResource: uiResource
-          },
-          metadata: {
-            contentLength: (textContent || '').length
-          }
-        }, traceId);
 
         return uiResult;
       } else {
@@ -264,11 +186,6 @@ export class ToolIntegrationService {
           return JSON.stringify(c);
         }).join('\n');
 
-        Logger.info('mcp.tool', `Tool ${toolName} completed successfully`, {
-          toolName,
-          contentLength: contentString.length,
-        }, traceId);
-
         const textResult = {
           tool_call_id: toolCall.id,
           role: 'tool' as const,
@@ -278,27 +195,10 @@ export class ToolIntegrationService {
           hasUI: false,
         };
 
-        // Log processed text response at DEBUG level
-        Logger.debug('tool.response.processed', `Tool text response: ${toolName}`, {
-          payload: {
-            tool_call_id: toolCall.id,
-            tool_name: toolName,
-            content: contentString
-          },
-          metadata: {
-            contentLength: contentString.length,
-            contentItemCount: toolResult.content.length
-          }
-        }, traceId);
-
         return textResult;
       }
     } catch (error) {
       if (error instanceof Error && error.message === 'Tool execution timeout') {
-        Logger.error('mcp.tool', `Tool ${toolName} timed out`, undefined, {
-          toolName,
-          timeoutMs: TOOL_TIMEOUT_MS,
-        }, traceId);
         return {
           tool_call_id: toolCall.id,
           role: 'tool',
@@ -310,9 +210,6 @@ export class ToolIntegrationService {
         };
       }
 
-      Logger.error('mcp.tool', `Unexpected error executing ${toolName}`, error as Error, {
-        toolName,
-      }, traceId);
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -331,21 +228,11 @@ export class ToolIntegrationService {
   static async executeToolCalls(
     toolCalls: ToolCall[],
     mcpState: RootState['mcp'],
-    traceId?: string
+    _traceId?: string
   ): Promise<ToolResult[]> {
-    Logger.info('mcp.tool', `Executing ${toolCalls.length} tool calls`, {
-      toolCount: toolCalls.length,
-      tools: toolCalls.map(tc => tc.function.name),
-    }, traceId);
-
     const results = await Promise.all(
-      toolCalls.map((toolCall) => this.executeToolCall(toolCall, mcpState, traceId))
+      toolCalls.map((toolCall) => this.executeToolCall(toolCall, mcpState, undefined))
     );
-
-    Logger.info('mcp.tool', `All tool calls completed`, {
-      resultCount: results.length,
-      errors: results.filter(r => r.isError).length,
-    }, traceId);
 
     return results;
   }

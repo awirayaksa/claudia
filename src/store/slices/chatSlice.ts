@@ -2,7 +2,6 @@ import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Message, Attachment, ToolCall, ToolResult } from '../../types/message.types';
 import { getAPIProvider } from '../../services/api/provider.service';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
-import { Logger } from '../../services/logger.service';
 import { v4 as uuidv4 } from 'uuid';
 import type { RootState } from '../index';
 
@@ -375,103 +374,18 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     const abortController = new AbortController();
     dispatch(setAbortController(abortController as any));
 
-    // Create request tracer for tracking the entire conversation flow
-    const tracer = Logger.trace('chat.stream', 'llm_conversation');
-    tracer.checkpoint('Starting tool calling loop', {
-      initialMessageCount: messages.length,
-      hasTools,
-      toolCount: availableTools.length,
-    });
-
     // Tool calling loop
     let iteration = 0;
     let shouldContinue = true;
 
     while (shouldContinue && iteration < MAX_TOOL_ITERATIONS) {
       try {
-        tracer.checkpoint(`Iteration ${iteration} start`, {
-          iteration,
-          messageCount: messages.length,
-        });
-
         // Convert MCP tools to OpenAI format
         const openAITools = hasTools
           ? ToolIntegrationService.mcpToolsToOpenAI(availableTools)
           : undefined;
 
-        // Validate tool formatting
-        Logger.debug('chat.tools.validation', `Tool formatting validation (iteration ${iteration})`, {
-          hasTools,
-          availableToolsCount: availableTools?.length || 0,
-          openAIToolsCount: openAITools?.length || 0,
-          openAIToolsSnapshot: openAITools?.map(t => ({
-            type: t.type,
-            functionName: t.function?.name,
-            hasDescription: !!t.function?.description,
-            descriptionLength: t.function?.description?.length || 0,
-            hasParameters: !!t.function?.parameters,
-            parametersKeys: t.function?.parameters ? Object.keys(t.function.parameters) : []
-          })),
-          toolsMatchExpected: (availableTools?.length || 0) === (openAITools?.length || 0)
-        }, tracer.traceId);
-
         const tool_choice = !hasTools ? 'none' : (iteration >= MAX_TOOL_ITERATIONS - 1 ? 'none' : 'auto');
-
-        Logger.debug('chat.stream', `Calling LLM for iteration ${iteration}`, {
-          messageCount: messages.length,
-          toolCount: openAITools?.length || 0,
-          tool_choice,
-        }, tracer.traceId);
-
-        // Validate messages array for undefined/null values
-        Logger.debug('chat.messages.validation', `Messages array validation (iteration ${iteration})`, {
-          messageCount: messages.length,
-          messagesDetailed: messages.map((m, idx) => ({
-            index: idx,
-            role: m.role,
-            hasContent: m.content !== undefined && m.content !== null,
-            contentType: typeof m.content,
-            contentLength: m.content?.length || 0,
-            hasToolCalls: m.tool_calls !== undefined,
-            toolCallsType: typeof m.tool_calls,
-            toolCallsIsArray: Array.isArray(m.tool_calls),
-            hasToolCallId: m.tool_call_id !== undefined,
-            toolCallIdType: typeof m.tool_call_id,
-            hasName: m.name !== undefined,
-            nameType: typeof m.name,
-            allPropertiesKeys: Object.keys(m)
-          })),
-          hasUndefinedValues: messages.some(m =>
-            m.tool_calls === undefined ||
-            m.tool_call_id === undefined ||
-            m.name === undefined
-          )
-        }, tracer.traceId);
-
-        // Log complete LLM request payload at DEBUG level
-        Logger.debug('llm.request', `Sending LLM request (iteration ${iteration})`, {
-          payload: {
-            model,
-            messages,
-            tools: openAITools,
-            tool_choice,
-            temperature,
-            stream: true
-          },
-          metadata: {
-            iteration,
-            messageCount: messages.length,
-            toolCount: openAITools?.length || 0,
-            messagesSnapshot: messages.map(m => ({
-              role: m.role,
-              contentLength: m.content?.length || 0,
-              hasToolCalls: !!m.tool_calls,
-              toolCallCount: m.tool_calls?.length || 0,
-              tool_call_id: m.tool_call_id,
-              name: m.name
-            }))
-          }
-        }, tracer.traceId);
 
         let assistantToolCalls: ToolCall[] = [];
 
@@ -482,7 +396,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
               model,
               messages,
               tools: openAITools,
-              tool_choice: !hasTools ? 'none' : (iteration >= MAX_TOOL_ITERATIONS - 1 ? 'none' : 'auto'),
+              tool_choice: tool_choice,
               temperature: temperature,
             },
             {
@@ -499,67 +413,17 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
                 reject(error);
               },
               onToolCalls: (toolCalls) => {
-                Logger.debug('chat.stream', `LLM returned tool calls (iteration ${iteration})`, {
-                  toolCallCount: toolCalls.length,
-                  tools: toolCalls.map(tc => ({
-                    name: tc.function.name,
-                    argsLength: tc.function.arguments.length
-                  })),
-                }, tracer.traceId);
                 assistantToolCalls = toolCalls;
                 dispatch(setToolCalls(toolCalls));
               },
             },
             abortController.signal,
-            tracer.traceId
+            undefined
           );
         });
 
-        // Log received LLM response at DEBUG level
-        const receivedContent = (getState() as RootState).chat.streamingContent || '';
-        Logger.debug('llm.response.received', `LLM response received (iteration ${iteration})`, {
-          payload: {
-            streamingContent: receivedContent,
-            toolCalls: assistantToolCalls.map(tc => ({
-              id: tc.id,
-              type: tc.type,
-              function: {
-                name: tc.function.name,
-                arguments: JSON.parse(tc.function.arguments)
-              }
-            }))
-          },
-          metadata: {
-            iteration,
-            contentLength: receivedContent.length,
-            toolCallCount: assistantToolCalls.length
-          }
-        }, tracer.traceId);
-
-        Logger.debug('chat.stream', `LLM streaming complete (iteration ${iteration})`, {
-          toolCallCount: assistantToolCalls.length,
-        }, tracer.traceId);
-
-        // Compare expected vs actual tool calls
-        Logger.debug('chat.stream.validation', `Tool calling validation (iteration ${iteration})`, {
-          hasTools,
-          toolsAvailableCount: openAITools?.length || 0,
-          tool_choice,
-          expectedToolCalls: hasTools && tool_choice !== 'none',
-          actualToolCallCount: assistantToolCalls.length,
-          receivedToolCalls: assistantToolCalls.length > 0,
-          discrepancy: hasTools && tool_choice !== 'none' && assistantToolCalls.length === 0,
-          contentLength: receivedContent.length,
-          emptyResponse: receivedContent.length === 0 && assistantToolCalls.length === 0
-        }, tracer.traceId);
-
         // Check if we have tool calls to execute
         if (assistantToolCalls.length > 0) {
-          tracer.checkpoint(`Tool calls detected (iteration ${iteration})`, {
-            toolCallCount: assistantToolCalls.length,
-            tools: assistantToolCalls.map(tc => tc.function.name),
-          });
-
           // Add assistant message with tool calls
           const assistantMessageId = uuidv4();
           const assistantContent = (getState() as RootState).chat.streamingContent || '';
@@ -573,11 +437,6 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           dispatch(addToolCallMessage(assistantMessage));
 
           // IMPORTANT: Add assistant message to messages array for LLM context
-          Logger.debug('chat.stream', `Adding assistant message to messages array (iteration ${iteration})`, {
-            contentLength: assistantContent.length,
-            toolCallCount: assistantToolCalls.length,
-          }, tracer.traceId);
-
           messages.push({
             role: 'assistant',
             content: assistantContent,
@@ -586,30 +445,17 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             name: undefined,
           });
 
-          Logger.debug('chat.stream', `Messages updated (iteration ${iteration})`, {
-            messageCount: messages.length,
-          }, tracer.traceId);
-
           // Clear streaming content for next iteration
           dispatch(completeStreaming());
 
           // Execute tools
-          Logger.info('chat.stream', `Executing tools (iteration ${iteration})`, {
-            toolCount: assistantToolCalls.length,
-          }, tracer.traceId);
-
           dispatch(setExecutingTools(true));
           const toolResults = await ToolIntegrationService.executeToolCalls(
             assistantToolCalls,
             mcpState,
-            tracer.traceId // Pass trace ID to tool execution
+            undefined
           );
           dispatch(setExecutingTools(false));
-
-          tracer.checkpoint(`Tools executed (iteration ${iteration})`, {
-            resultCount: toolResults.length,
-            hasUIResources: toolResults.some(r => r.hasUI),
-          });
 
           // Update the assistant message with tool results
           dispatch(updateMessageToolResults({
@@ -618,15 +464,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           }));
 
           // Add tool result messages to history for LLM context
-          Logger.debug('chat.stream', `Processing tool results (iteration ${iteration})`, {
-            resultCount: toolResults.length,
-          }, tracer.traceId);
-
           for (const result of toolResults) {
-            Logger.debug('chat.stream', `Processing result for tool: ${result.name}`, {
-              hasUI: result.hasUI,
-              isError: result.isError,
-            }, tracer.traceId);
             // Handle UI resources differently - send confirmation to LLM without full content
             let contentString: string;
 
@@ -667,12 +505,6 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             }
 
             // Add to messages for next iteration (both UI and regular results)
-            Logger.debug('chat.stream', `Adding tool result to messages (iteration ${iteration})`, {
-              role: 'tool',
-              name: result.name,
-              contentLength: contentString.length,
-            }, tracer.traceId);
-
             messages.push({
               role: 'tool',
               content: contentString,
@@ -682,20 +514,10 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             });
           }
 
-          Logger.debug('chat.stream', `Messages updated after tool results (iteration ${iteration})`, {
-            messageCount: messages.length,
-            messageRoles: messages.map(m => m.role),
-          }, tracer.traceId);
-
           // Increment iteration and continue loop
           dispatch(incrementToolIteration());
           iteration++;
           shouldContinue = true;
-
-          Logger.info('chat.stream', `Iteration ${iteration - 1} complete, continuing`, {
-            nextIteration: iteration,
-            shouldContinue,
-          }, tracer.traceId);
 
           // Reset streaming for next iteration
           const nextAssistantMessageId = uuidv4();
@@ -707,18 +529,11 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           }));
         } else {
           // No tool calls - complete streaming
-          Logger.info('chat.stream', `No tool calls detected, completing (iteration ${iteration})`, {
-            iteration,
-          }, tracer.traceId);
-
           dispatch(completeStreaming());
           dispatch(clearToolCalls());
           shouldContinue = false;
         }
       } catch (error) {
-        tracer.error('Tool calling loop failed', error as Error, {
-          iteration,
-        });
         dispatch(setError(error instanceof Error ? error.message : 'Unknown error'));
         dispatch(completeStreaming());
         dispatch(clearToolCalls());
@@ -728,20 +543,10 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
 
     // If we hit max iterations, force completion
     if (iteration >= MAX_TOOL_ITERATIONS && shouldContinue) {
-      Logger.warn('chat.stream', `Max iterations (${MAX_TOOL_ITERATIONS}) reached, forcing stop`, {
-        iteration,
-        maxIterations: MAX_TOOL_ITERATIONS,
-      }, tracer.traceId);
-
       dispatch(setError('Maximum tool calling iterations reached'));
       dispatch(completeStreaming());
       dispatch(clearToolCalls());
     }
-
-    tracer.complete('Tool calling loop complete', {
-      totalIterations: iteration,
-      finalMessageCount: messages.length,
-    });
   }
 );
 
