@@ -19,7 +19,6 @@ import {
   MCPResourceContent,
   MCPPromptMessage,
 } from '../../src/types/mcp.types';
-import { LoggerService } from './logger.service';
 
 // ============================================================================
 // MCP Client Wrapper - Uses official SDK
@@ -362,24 +361,6 @@ export class MCPClientWrapper extends EventEmitter {
         name,
         arguments: args,
       });
-
-      // Log raw MCP response at DEBUG level
-      LoggerService.debug('tool.response.raw', `MCP tool response: ${name}`, {
-        payload: {
-          tool_name: name,
-          content: result.content.map(item => ({
-            type: item.type,
-            text: item.type === 'text' ? (item as any).text : undefined,
-            mimeType: (item as any).mimeType,
-            hasResource: item.type === 'resource' ? !!(item as any).resource : undefined
-          })),
-          isError: result.isError
-        },
-        metadata: {
-          contentItemCount: result.content?.length || 0,
-          contentTypes: result.content?.map(c => c.type) || []
-        }
-      }, traceId);
 
       return {
         content: (result.content || []).map((item) => ({
