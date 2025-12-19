@@ -22,6 +22,9 @@ contextBridge.exposeInMainWorld('electron', {
     load: (id: string, projectId: string | null) => ipcRenderer.invoke('conversation:load', id, projectId),
     list: (projectId?: string | null) => ipcRenderer.invoke('conversation:list', projectId),
     delete: (id: string, projectId: string | null) => ipcRenderer.invoke('conversation:delete', id, projectId),
+    deleteMultiple: (conversations: Array<{ id: string; projectId: string | null }>) =>
+      ipcRenderer.invoke('conversation:deleteMultiple', conversations),
+    deleteAll: (projectId: string | null) => ipcRenderer.invoke('conversation:deleteAll', projectId),
   },
 
   // Project operations
@@ -195,6 +198,8 @@ export interface ElectronAPI {
     load: (id: string, projectId: string | null) => Promise<any>;
     list: (projectId?: string | null) => Promise<any>;
     delete: (id: string, projectId: string | null) => Promise<any>;
+    deleteMultiple: (conversations: Array<{ id: string; projectId: string | null }>) => Promise<any>;
+    deleteAll: (projectId: string | null) => Promise<any>;
   };
   project: {
     create: (project: any) => Promise<any>;
