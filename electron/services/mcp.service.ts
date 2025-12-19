@@ -349,7 +349,7 @@ export class MCPClientWrapper extends EventEmitter {
     return this._tools;
   }
 
-  async callTool(name: string, args: Record<string, unknown>): Promise<MCPToolResult> {
+  async callTool(name: string, args: Record<string, unknown>, traceId?: string): Promise<MCPToolResult> {
     if (this._status !== 'ready' || !this.client) {
       throw new Error(`Client is not ready (status: ${this._status})`);
     }
@@ -542,13 +542,14 @@ export class MCPClientManager extends EventEmitter {
   async callTool(
     serverId: string,
     toolName: string,
-    args: Record<string, unknown>
+    args: Record<string, unknown>,
+    traceId?: string
   ): Promise<MCPToolResult> {
     const client = this.clients.get(serverId);
     if (!client) {
       throw new Error(`Server not found: ${serverId}`);
     }
-    return await client.callTool(toolName, args);
+    return await client.callTool(toolName, args, traceId);
   }
 
   getServerTools(serverId: string): MCPTool[] {

@@ -293,9 +293,9 @@ export function registerMCPHandlers() {
 
   ipcMain.handle(
     'mcp:tools:call',
-    async (_event, serverId: string, toolName: string, args: Record<string, unknown>) => {
+    async (_event, serverId: string, toolName: string, args: Record<string, unknown>, traceId?: string) => {
       try {
-        const result = await manager.callTool(serverId, toolName, args);
+        const result = await manager.callTool(serverId, toolName, args, traceId);
         return { success: true, result };
       } catch (error) {
         console.error('[MCP] Failed to call tool:', error);

@@ -17,7 +17,8 @@ export async function streamChatCompletion(
   apiKey: string,
   request: ChatCompletionRequest,
   callbacks: StreamCallbacks,
-  abortSignal?: AbortSignal
+  abortSignal?: AbortSignal,
+  _traceId?: string
 ): Promise<void> {
   const { onChunk, onComplete, onError, onToolCalls } = callbacks;
 
@@ -61,6 +62,10 @@ export async function streamChatCompletion(
     // Accumulate tool calls from streaming deltas
     const accumulatedToolCalls: Map<number, ToolCall> = new Map();
 
+    // Accumulate content and track chunks for logging
+    let accumulatedContent = '';
+    let chunkCount = 0;
+
     // Create SSE parser
     const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
       if (event.type === 'event') {
@@ -79,6 +84,8 @@ export async function streamChatCompletion(
           const toolCallDeltas = delta?.tool_calls;
 
           if (content) {
+            accumulatedContent += content;
+            chunkCount++;
             onChunk(content);
           }
 
@@ -87,8 +94,6 @@ export async function streamChatCompletion(
             for (const toolCallDelta of toolCallDeltas) {
               const index = toolCallDelta.index;
               const existing = accumulatedToolCalls.get(index);
-
-              console.log('[Streaming] Tool call delta:', JSON.stringify(toolCallDelta));
 
               if (!existing) {
                 // First chunk for this tool call
@@ -115,7 +120,6 @@ export async function streamChatCompletion(
                 }
               }
             }
-            console.log('[Streaming] Accumulated tool calls:', Array.from(accumulatedToolCalls.values()));
           }
 
           // Check if stream is done via finish_reason
@@ -130,13 +134,12 @@ export async function streamChatCompletion(
                   arguments: tc.function.arguments || '{}',
                 },
               }));
-              console.log('[Streaming] Sending accumulated tool calls:', JSON.stringify(toolCallsArray, null, 2));
               onToolCalls(toolCallsArray);
             }
+
             onComplete();
           }
         } catch (error) {
-          console.error('Failed to parse SSE chunk:', error);
           // Continue processing other chunks even if one fails
         }
       }

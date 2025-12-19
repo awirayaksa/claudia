@@ -96,7 +96,8 @@ export class OpenRouterProvider implements IAPIProvider {
   async streamChatCompletion(
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    _traceId?: string
   ): Promise<void> {
     const { onChunk, onComplete, onError, onToolCalls } = callbacks;
 
@@ -147,6 +148,10 @@ export class OpenRouterProvider implements IAPIProvider {
       // Accumulate tool calls from streaming deltas
       const accumulatedToolCalls: Map<number, ToolCall> = new Map();
 
+      // Accumulate content and track chunks for logging
+      let accumulatedContent = '';
+      let chunkCount = 0;
+
       // Create SSE parser
       const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
         if (event.type === 'event') {
@@ -165,6 +170,8 @@ export class OpenRouterProvider implements IAPIProvider {
             const toolCallDeltas = delta?.tool_calls;
 
             if (content) {
+              accumulatedContent += content;
+              chunkCount++;
               onChunk(content);
             }
 
@@ -173,8 +180,6 @@ export class OpenRouterProvider implements IAPIProvider {
               for (const toolCallDelta of toolCallDeltas) {
                 const index = toolCallDelta.index;
                 const existing = accumulatedToolCalls.get(index);
-
-                console.log('[OpenRouter] Tool call delta:', JSON.stringify(toolCallDelta));
 
                 if (!existing) {
                   // First chunk for this tool call
@@ -201,7 +206,6 @@ export class OpenRouterProvider implements IAPIProvider {
                   }
                 }
               }
-              console.log('[OpenRouter] Accumulated tool calls:', Array.from(accumulatedToolCalls.values()));
             }
 
             // Check if stream is done via finish_reason
@@ -216,13 +220,12 @@ export class OpenRouterProvider implements IAPIProvider {
                     arguments: tc.function.arguments || '{}',
                   },
                 }));
-                console.log('[OpenRouter] Sending accumulated tool calls:', JSON.stringify(toolCallsArray, null, 2));
                 onToolCalls(toolCallsArray);
               }
+
               onComplete();
             }
           } catch (error) {
-            console.error('Failed to parse SSE chunk:', error);
             // Continue processing other chunks even if one fails
           }
         }
@@ -265,7 +268,6 @@ export class OpenRouterProvider implements IAPIProvider {
       await this.getModels();
       return true;
     } catch (error) {
-      console.error('OpenRouter connection test failed:', error);
       return false;
     }
   }

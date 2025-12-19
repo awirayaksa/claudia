@@ -2,6 +2,7 @@ import { MCPTool, UIResourceContent } from '../../types/mcp.types';
 import { ToolCall, ToolResult } from '../../types/message.types';
 import { OpenAITool } from '../../types/api.types';
 import { RootState } from '../../store';
+import { isUIResource } from '@mcp-ui/client';
 
 /**
  * Tool Integration Service
@@ -40,16 +41,11 @@ export class ToolIntegrationService {
   }
 
   /**
-   * Check if content item is a UI resource
-   * A resource is considered a UI resource if URI starts with 'ui://'
+   * Check if content item is a UI resource using SDK utility
+   * Delegates to @mcp-ui/client's isUIResource for type-safe detection
    */
   private static isUIResource(content: any): boolean {
-    if (content.type !== 'resource') {
-      return false;
-    }
-
-    const uri = content.resource?.uri || '';
-    return uri.startsWith('ui://');
+    return isUIResource(content);
   }
 
   /**
@@ -80,14 +76,14 @@ export class ToolIntegrationService {
    */
   static async executeToolCall(
     toolCall: ToolCall,
-    mcpState: RootState['mcp']
+    mcpState: RootState['mcp'],
+    _traceId?: string
   ): Promise<ToolResult> {
     const toolName = toolCall.function.name;
     const serverId = this.findServerForTool(toolName, mcpState);
     const TOOL_TIMEOUT_MS = 30000; // 30 seconds
 
     if (!serverId) {
-      console.error(`[Tool Integration] Tool "${toolName}" not found in any ready server`);
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -105,7 +101,6 @@ export class ToolIntegrationService {
       try {
         args = JSON.parse(toolCall.function.arguments);
       } catch (parseError) {
-        console.error(`[Tool Integration] Failed to parse arguments for ${toolName}:`, parseError);
         return {
           tool_call_id: toolCall.id,
           role: 'tool',
@@ -122,35 +117,38 @@ export class ToolIntegrationService {
         setTimeout(() => reject(new Error('Tool execution timeout')), TOOL_TIMEOUT_MS)
       );
 
-      const executionPromise = window.electron.mcp.callTool(serverId, toolName, args);
+      const executionPromise = window.electron.mcp.callTool(serverId, toolName, args, undefined);
 
       const response = await Promise.race([executionPromise, timeoutPromise]);
 
       // Check if the IPC call itself failed
       if (!response.success) {
-        console.error(`[Tool Integration] Tool ${toolName} IPC call failed:`, response.error);
-        return {
+        const errorResult = {
           tool_call_id: toolCall.id,
-          role: 'tool',
+          role: 'tool' as const,
           name: toolName,
           content: JSON.stringify({
             error: `Tool execution failed: ${response.error || 'Unknown error'}`,
           }),
           isError: true,
         };
+
+        return errorResult;
       }
 
       // Check if the tool execution itself had an error
       const toolResult = response.result;
       if (toolResult.isError) {
-        console.error(`[Tool Integration] Tool ${toolName} returned error:`, toolResult.content);
-        return {
+        const errorContent = toolResult.content.map((c: any) => c.text || JSON.stringify(c)).join('\n');
+        const errorResult = {
           tool_call_id: toolCall.id,
-          role: 'tool',
+          role: 'tool' as const,
           name: toolName,
-          content: toolResult.content.map((c: any) => c.text || JSON.stringify(c)).join('\n'),
+          content: errorContent,
           isError: true,
         };
+
+        return errorResult;
       }
 
       // Extract text content and UI resource separately
@@ -159,15 +157,17 @@ export class ToolIntegrationService {
 
       if (uiResource) {
         // Return BOTH text and UI resource
-        return {
+        const uiResult = {
           tool_call_id: toolCall.id,
-          role: 'tool',
+          role: 'tool' as const,
           name: toolName,
           content: textContent || `[Interactive UI: ${uiResource.uri}]`,  // Text for LLM
           isError: false,
           hasUI: true,
           uiResource: uiResource,  // UI for rendering
         };
+
+        return uiResult;
       } else {
         // Convert content array to string (existing behavior)
         const contentString = toolResult.content.map((c: any) => {
@@ -186,18 +186,19 @@ export class ToolIntegrationService {
           return JSON.stringify(c);
         }).join('\n');
 
-        return {
+        const textResult = {
           tool_call_id: toolCall.id,
-          role: 'tool',
+          role: 'tool' as const,
           name: toolName,
           content: contentString,
           isError: false,
           hasUI: false,
         };
+
+        return textResult;
       }
     } catch (error) {
       if (error instanceof Error && error.message === 'Tool execution timeout') {
-        console.error(`[Tool Integration] Tool ${toolName} timed out after ${TOOL_TIMEOUT_MS}ms`);
         return {
           tool_call_id: toolCall.id,
           role: 'tool',
@@ -209,7 +210,6 @@ export class ToolIntegrationService {
         };
       }
 
-      console.error(`[Tool Integration] Unexpected error executing ${toolName}:`, error);
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -227,11 +227,13 @@ export class ToolIntegrationService {
    */
   static async executeToolCalls(
     toolCalls: ToolCall[],
-    mcpState: RootState['mcp']
+    mcpState: RootState['mcp'],
+    _traceId?: string
   ): Promise<ToolResult[]> {
     const results = await Promise.all(
-      toolCalls.map((toolCall) => this.executeToolCall(toolCall, mcpState))
+      toolCalls.map((toolCall) => this.executeToolCall(toolCall, mcpState, undefined))
     );
+
     return results;
   }
 

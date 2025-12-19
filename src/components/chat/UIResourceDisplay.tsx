@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { UIResourceRenderer } from '@mcp-ui/client';
+import { UIResourceRenderer, getUIResourceMetadata, basicComponentLibrary } from '@mcp-ui/client';
 import type { UIActionResult } from '@mcp-ui/client';
 import { UIResourceContent } from '../../types/mcp.types';
 import { useAppDispatch } from '../../store';
@@ -18,21 +18,65 @@ export function UIResourceDisplay({
 }: UIResourceDisplayProps) {
   const dispatch = useAppDispatch();
 
+  // Extract MCP-UI specific metadata
+  const metadata = getUIResourceMetadata(resource);
+  const preferredSize = metadata?.['mcpui.dev/ui-preferred-frame-size'] as [string, string] | undefined;
+  const initialRenderData = (metadata?.['mcpui.dev/ui-initial-render-data'] as Record<string, any>) || {};
+
+  // Merge metadata with application-level context
+  const iframeRenderData = {
+    ...initialRenderData,  // Server-provided initialization data
+    toolName,              // Tool context
+    toolCallId,            // Unique identifier
+    // Could add: theme, locale, user preferences, etc.
+  };
+
   const handleUIAction = useCallback(async (result: UIActionResult) => {
     console.log('[UI Action]', { uri: resource.uri, result });
 
-    // Handle different action types
-    if (result.type === 'tool') {
-      dispatch(executeUIAction({
-        uri: resource.uri,
-        toolName: result.payload.toolName,
-        action: result.payload.toolName,
-        data: result.payload.params,
-        originalToolCallId: toolCallId,
-      }));
-    } else {
-      console.log('[UI Action] Non-tool action type:', result.type);
-      // Could handle other action types (prompt, link, intent, notify) here
+    // Handle all MCP-UI action types according to SDK specification
+    switch (result.type) {
+      case 'tool':
+        // Execute tool call through Redux action
+        dispatch(executeUIAction({
+          uri: resource.uri,
+          toolName: result.payload.toolName,
+          action: result.payload.toolName,
+          data: result.payload.params,
+          originalToolCallId: toolCallId,
+        }));
+        return { status: 'handled' };
+
+      case 'link':
+        // Open external link in new tab
+        if (result.payload.url) {
+          window.open(result.payload.url, '_blank', 'noopener,noreferrer');
+          return { status: 'handled' };
+        }
+        return { status: 'unhandled', reason: 'No URL provided for link action' };
+
+      case 'notify':
+        // Show notification to user (using console for now, could integrate with toast system)
+        if (result.payload.message) {
+          console.info('[MCP-UI Notification]', result.payload.message);
+          // TODO: Integrate with application notification system (e.g., toast)
+          return { status: 'handled' };
+        }
+        return { status: 'unhandled', reason: 'No message provided for notify action' };
+
+      case 'prompt':
+        // Prompt actions - not yet implemented in application
+        console.log('[UI Action] Prompt action received but not implemented:', result.payload);
+        return { status: 'unhandled', reason: 'Prompt actions not yet implemented' };
+
+      case 'intent':
+        // Intent actions - not yet implemented in application
+        console.log('[UI Action] Intent action received but not implemented:', result.payload);
+        return { status: 'unhandled', reason: 'Intent actions not yet implemented' };
+
+      default:
+        console.warn('[UI Action] Unknown action type:', (result as any).type);
+        return { status: 'unhandled', reason: 'Unknown action type' };
     }
   }, [resource.uri, toolCallId, dispatch]);
 
@@ -47,7 +91,19 @@ export function UIResourceDisplay({
           onUIAction={handleUIAction}
           htmlProps={{
             sandboxPermissions: 'allow-scripts allow-forms allow-same-origin allow-popups',
-            autoResizeIframe: { height: true, width: false },
+            // Metadata-driven frame sizing - server can specify preferred dimensions
+            style: preferredSize ? {
+              width: preferredSize[0],
+              height: preferredSize[1]
+            } : undefined,
+            // Only auto-resize if server didn't specify size preferences
+            autoResizeIframe: !preferredSize ? { height: true, width: false } : false,
+            // Pass initialization data to iframe
+            iframeRenderData,
+          }}
+          // Remote DOM support for application/vnd.mcp-ui.remote-dom resources
+          remoteDomProps={{
+            library: basicComponentLibrary,
           }}
         />
       </div>

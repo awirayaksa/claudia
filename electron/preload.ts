@@ -69,8 +69,8 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Tools
     listTools: (serverId: string) => ipcRenderer.invoke('mcp:tools:list', serverId),
-    callTool: (serverId: string, toolName: string, args: any) =>
-      ipcRenderer.invoke('mcp:tools:call', serverId, toolName, args),
+    callTool: (serverId: string, toolName: string, args: any, traceId?: string) =>
+      ipcRenderer.invoke('mcp:tools:call', serverId, toolName, args, traceId),
 
     // Resources
     listResources: (serverId: string) => ipcRenderer.invoke('mcp:resources:list', serverId),
@@ -157,6 +157,24 @@ contextBridge.exposeInMainWorld('electron', {
     onChanged: (callback: (event: any) => void) => {
       ipcRenderer.on('plugin:changed', (_event, data) => callback(data));
       return () => ipcRenderer.removeListener('plugin:changed', callback);
+    },
+  },
+
+  // Logger operations
+  logger: {
+    // Write log entry from renderer to main for file logging
+    write: (entry: any) => ipcRenderer.invoke('logger:write', entry),
+
+    // Open logs folder in file explorer
+    openLogsFolder: () => ipcRenderer.invoke('logger:openLogsFolder'),
+
+    // Get log directory path
+    getLogDirectory: () => ipcRenderer.invoke('logger:getLogDirectory'),
+
+    // Event listener for logs from main process
+    onLogEntry: (callback: (entry: any) => void) => {
+      ipcRenderer.on('logger:entry', (_event, data) => callback(data));
+      return () => ipcRenderer.removeListener('logger:entry', callback);
     },
   },
 });
@@ -246,6 +264,12 @@ export interface ElectronAPI {
     onError: (callback: (event: any) => void) => () => void;
     onDiscovered: (callback: (event: any) => void) => () => void;
     onChanged: (callback: (event: any) => void) => () => void;
+  };
+  logger: {
+    write: (entry: any) => Promise<void>;
+    openLogsFolder: () => Promise<void>;
+    getLogDirectory: () => Promise<string | null>;
+    onLogEntry: (callback: (entry: any) => void) => () => void;
   };
 }
 
