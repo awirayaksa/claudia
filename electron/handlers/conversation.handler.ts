@@ -146,6 +146,23 @@ async function deleteConversation(conversationId: string, projectId: string | nu
   }
 }
 
+// Delete multiple conversations
+async function deleteMultipleConversations(
+  conversations: Array<{ id: string; projectId: string | null }>
+): Promise<void> {
+  for (const conv of conversations) {
+    await deleteConversation(conv.id, conv.projectId);
+  }
+}
+
+// Delete all conversations for a project
+async function deleteAllConversations(projectId: string | null): Promise<void> {
+  const conversations = await listConversations(projectId);
+  for (const conv of conversations) {
+    await deleteConversation(conv.id, conv.projectId);
+  }
+}
+
 // Register IPC handlers
 export function registerConversationHandlers(): void {
   // Save conversation
@@ -200,6 +217,34 @@ export function registerConversationHandlers(): void {
       return {
         success: false,
         error: error instanceof Error ? error.message : 'Failed to delete conversation',
+      };
+    }
+  });
+
+  // Delete multiple conversations
+  ipcMain.handle('conversation:deleteMultiple', async (_event, conversations: Array<{ id: string; projectId: string | null }>) => {
+    try {
+      await deleteMultipleConversations(conversations);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to delete multiple conversations:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete conversations',
+      };
+    }
+  });
+
+  // Delete all conversations
+  ipcMain.handle('conversation:deleteAll', async (_event, projectId: string | null) => {
+    try {
+      await deleteAllConversations(projectId);
+      return { success: true };
+    } catch (error) {
+      console.error('Failed to delete all conversations:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete all conversations',
       };
     }
   });

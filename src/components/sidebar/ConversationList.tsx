@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ConversationItem } from './ConversationItem';
 import { ProjectSelector } from './ProjectSelector';
 import { Button } from '../common/Button';
+import { ConfirmDialog } from '../common/ConfirmDialog';
 import { ProjectManager } from '../project/ProjectManager';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { useProjects } from '../../hooks/useProjects';
@@ -10,6 +11,8 @@ import {
   setCurrentConversation,
   updateConversation,
   deleteConversation,
+  deleteMultipleConversations,
+  deleteAllConversations,
   createConversation,
 } from '../../store/slices/conversationSlice';
 import { clearMessages } from '../../store/slices/chatSlice';
@@ -26,11 +29,21 @@ export function ConversationList() {
   const { currentProjectId } = useProjects();
 
   const [isProjectManagerOpen, setIsProjectManagerOpen] = useState(false);
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showDeleteAllDialog, setShowDeleteAllDialog] = useState(false);
+  const [showDeleteSelectedDialog, setShowDeleteSelectedDialog] = useState(false);
 
   // Load conversations when project changes
   useEffect(() => {
     dispatch(loadConversations(currentProjectId));
   }, [dispatch, currentProjectId]);
+
+  // Reset selection mode when project changes
+  useEffect(() => {
+    setIsSelectionMode(false);
+    setSelectedIds(new Set());
+  }, [currentProjectId]);
 
   const handleNewConversation = async () => {
     if (!selectedModel) {
@@ -66,12 +79,64 @@ export function ConversationList() {
     }
   };
 
+  const handleToggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode);
+    setSelectedIds(new Set());
+  };
+
+  const handleToggleSelect = (id: string) => {
+    const newSelected = new Set(selectedIds);
+    if (newSelected.has(id)) {
+      newSelected.delete(id);
+    } else {
+      newSelected.add(id);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleSelectAll = () => {
+    if (selectedIds.size === conversations.length) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(conversations.map((c) => c.id)));
+    }
+  };
+
+  const handleDeleteSelected = async () => {
+    const conversationsToDelete = Array.from(selectedIds)
+      .map((id) => {
+        const conv = conversations.find((c) => c.id === id);
+        return conv ? { id, projectId: conv.projectId } : null;
+      })
+      .filter((c): c is { id: string; projectId: string | null } => c !== null);
+
+    await dispatch(deleteMultipleConversations(conversationsToDelete));
+
+    setShowDeleteSelectedDialog(false);
+    setSelectedIds(new Set());
+    setIsSelectionMode(false);
+  };
+
+  const handleDeleteAll = async () => {
+    await dispatch(deleteAllConversations(currentProjectId));
+    setShowDeleteAllDialog(false);
+  };
+
   return (
     <div className="flex h-full flex-col bg-surface border-r border-border w-64">
       {/* Header */}
       <div className="border-b border-border p-4">
         <div className="flex items-center justify-between mb-3">
           <h2 className="text-lg font-semibold text-text-primary">Conversations</h2>
+          {conversations.length > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleToggleSelectionMode}
+            >
+              {isSelectionMode ? 'Cancel' : 'Select'}
+            </Button>
+          )}
         </div>
 
         {/* Project Selector */}
@@ -79,22 +144,48 @@ export function ConversationList() {
           <ProjectSelector onManageProjects={() => setIsProjectManagerOpen(true)} />
         </div>
 
-        <Button onClick={handleNewConversation} className="w-full" size="sm">
-          <svg
-            className="h-4 w-4 mr-2"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M12 4v16m8-8H4"
-            />
-          </svg>
-          New Chat
-        </Button>
+        {/* Selection Mode Toolbar */}
+        {isSelectionMode && (
+          <div className="mb-3 flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={handleSelectAll}
+              className="flex-1"
+            >
+              {selectedIds.size === conversations.length ? 'Deselect All' : 'Select All'}
+            </Button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => setShowDeleteSelectedDialog(true)}
+              disabled={selectedIds.size === 0}
+              className="flex-1 bg-error hover:bg-error-hover disabled:bg-error disabled:opacity-50"
+            >
+              Delete ({selectedIds.size})
+            </Button>
+          </div>
+        )}
+
+        {/* New Chat Button */}
+        {!isSelectionMode && (
+          <Button onClick={handleNewConversation} className="w-full" size="sm">
+            <svg
+              className="h-4 w-4 mr-2"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M12 4v16m8-8H4"
+              />
+            </svg>
+            New Chat
+          </Button>
+        )}
       </div>
 
       {/* Conversation list */}
@@ -134,7 +225,10 @@ export function ConversationList() {
                 key={conversation.id}
                 conversation={conversation}
                 isActive={conversation.id === currentConversationId}
+                isSelectionMode={isSelectionMode}
+                isSelected={selectedIds.has(conversation.id)}
                 onClick={() => handleSelectConversation(conversation.id)}
+                onToggleSelect={handleToggleSelect}
                 onRename={handleRename}
                 onDelete={handleDelete}
               />
@@ -145,15 +239,61 @@ export function ConversationList() {
 
       {/* Footer info */}
       <div className="border-t border-border p-3">
-        <p className="text-xs text-text-secondary">
-          {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
-        </p>
+        {!isSelectionMode ? (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-text-secondary">
+              {conversations.length} conversation{conversations.length !== 1 ? 's' : ''}
+            </p>
+            {conversations.length > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setShowDeleteAllDialog(true)}
+                className="text-xs text-error hover:bg-error hover:bg-opacity-10"
+              >
+                Delete All
+              </Button>
+            )}
+          </div>
+        ) : (
+          <p className="text-xs text-text-secondary">
+            {selectedIds.size} selected
+          </p>
+        )}
       </div>
 
       {/* Project Manager Modal */}
       <ProjectManager
         isOpen={isProjectManagerOpen}
         onClose={() => setIsProjectManagerOpen(false)}
+      />
+
+      {/* Delete All Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteAllDialog}
+        onClose={() => setShowDeleteAllDialog(false)}
+        onConfirm={handleDeleteAll}
+        title="Delete All Conversations"
+        message={`Are you sure you want to delete all ${conversations.length} conversation${
+          conversations.length !== 1 ? 's' : ''
+        }? This action cannot be undone.`}
+        confirmText="Delete All"
+        isDestructive={true}
+        isLoading={isLoading}
+      />
+
+      {/* Delete Selected Confirmation Dialog */}
+      <ConfirmDialog
+        isOpen={showDeleteSelectedDialog}
+        onClose={() => setShowDeleteSelectedDialog(false)}
+        onConfirm={handleDeleteSelected}
+        title="Delete Selected Conversations"
+        message={`Are you sure you want to delete ${selectedIds.size} conversation${
+          selectedIds.size !== 1 ? 's' : ''
+        }? This action cannot be undone.`}
+        confirmText="Delete Selected"
+        isDestructive={true}
+        isLoading={isLoading}
       />
     </div>
   );
