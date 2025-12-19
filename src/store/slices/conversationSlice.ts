@@ -187,6 +187,49 @@ export const deleteConversation = createAsyncThunk(
   }
 );
 
+// Delete multiple conversations
+export const deleteMultipleConversations = createAsyncThunk(
+  'conversation/deleteMultiple',
+  async (
+    conversations: Array<{ id: string; projectId: string | null }>,
+    { rejectWithValue }
+  ) => {
+    try {
+      const result = await window.electron.conversation.deleteMultiple(conversations);
+
+      if (!result.success) {
+        return rejectWithValue(result.error || 'Failed to delete conversations');
+      }
+
+      return conversations.map((c) => c.id);
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to delete conversations'
+      );
+    }
+  }
+);
+
+// Delete all conversations
+export const deleteAllConversations = createAsyncThunk(
+  'conversation/deleteAll',
+  async (projectId: string | null, { rejectWithValue }) => {
+    try {
+      const result = await window.electron.conversation.deleteAll(projectId);
+
+      if (!result.success) {
+        return rejectWithValue(result.error || 'Failed to delete all conversations');
+      }
+
+      return null;
+    } catch (error) {
+      return rejectWithValue(
+        error instanceof Error ? error.message : 'Failed to delete all conversations'
+      );
+    }
+  }
+);
+
 const conversationSlice = createSlice({
   name: 'conversation',
   initialState,
@@ -304,6 +347,39 @@ const conversationSlice = createSlice({
         }
       })
       .addCase(deleteConversation.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+
+      // Delete multiple conversations
+      .addCase(deleteMultipleConversations.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(deleteMultipleConversations.fulfilled, (state, action) => {
+        state.isLoading = false;
+        const deletedIds = action.payload;
+        state.conversations = state.conversations.filter(
+          (c) => !deletedIds.includes(c.id)
+        );
+        if (state.currentConversationId && deletedIds.includes(state.currentConversationId)) {
+          state.currentConversationId = null;
+        }
+      })
+      .addCase(deleteMultipleConversations.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.payload as string;
+      })
+
+      // Delete all conversations
+      .addCase(deleteAllConversations.pending, (state) => {
+        state.isLoading = true;
+      })
+      .addCase(deleteAllConversations.fulfilled, (state) => {
+        state.isLoading = false;
+        state.conversations = [];
+        state.currentConversationId = null;
+      })
+      .addCase(deleteAllConversations.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
       });

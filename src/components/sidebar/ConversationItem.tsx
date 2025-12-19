@@ -5,7 +5,10 @@ import { format } from 'date-fns';
 interface ConversationItemProps {
   conversation: ConversationMetadata;
   isActive: boolean;
+  isSelectionMode?: boolean;
+  isSelected?: boolean;
   onClick: () => void;
+  onToggleSelect?: (id: string) => void;
   onRename: (id: string, newTitle: string) => void;
   onDelete: (id: string) => void;
 }
@@ -13,13 +16,24 @@ interface ConversationItemProps {
 export const ConversationItem = React.memo(function ConversationItem({
   conversation,
   isActive,
+  isSelectionMode = false,
+  isSelected = false,
   onClick,
+  onToggleSelect,
   onRename,
   onDelete,
 }: ConversationItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title);
   const [showMenu, setShowMenu] = useState(false);
+
+  const handleClick = () => {
+    if (isSelectionMode && onToggleSelect) {
+      onToggleSelect(conversation.id);
+    } else {
+      onClick();
+    }
+  };
 
   const handleRename = () => {
     if (editTitle.trim() && editTitle !== conversation.title) {
@@ -54,8 +68,21 @@ export const ConversationItem = React.memo(function ConversationItem({
           ? 'bg-accent text-white'
           : 'hover:bg-surface-hover text-text-primary'
       }`}
-      onClick={onClick}
+      onClick={handleClick}
     >
+      {/* Checkbox for selection mode */}
+      {isSelectionMode && (
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => {
+            e.stopPropagation();
+            onToggleSelect?.(conversation.id);
+          }}
+          className="h-4 w-4 rounded border-border text-accent focus:ring-accent"
+        />
+      )}
+
       {/* Chat icon */}
       <svg
         className={`h-4 w-4 flex-shrink-0 ${
