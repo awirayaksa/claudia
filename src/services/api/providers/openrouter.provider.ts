@@ -99,7 +99,7 @@ export class OpenRouterProvider implements IAPIProvider {
     abortSignal?: AbortSignal,
     _traceId?: string
   ): Promise<void> {
-    const { onChunk, onComplete, onError, onToolCalls } = callbacks;
+    const { onChunk, onComplete, onError, onToolCalls, onReasoning, onUsage } = callbacks;
 
     try {
       // Prepare headers
@@ -168,11 +168,22 @@ export class OpenRouterProvider implements IAPIProvider {
             const delta = json.choices?.[0]?.delta;
             const content = delta?.content;
             const toolCallDeltas = delta?.tool_calls;
+            const reasoningContent = delta?.reasoning;
+            const usage = json.usage;
 
             if (content) {
               accumulatedContent += content;
               chunkCount++;
               onChunk(content);
+            }
+
+            if (reasoningContent && onReasoning) {
+              onReasoning(reasoningContent);
+            }
+
+            // Handle usage data
+            if (usage && onUsage) {
+              onUsage(usage);
             }
 
             // Accumulate tool call deltas
@@ -210,7 +221,12 @@ export class OpenRouterProvider implements IAPIProvider {
 
             // Check if stream is done via finish_reason
             if (json.choices?.[0]?.finish_reason) {
-              // Send accumulated tool calls if any
+              // Send usage FIRST before anything else (including tool calls)
+              if (json.usage && onUsage) {
+                onUsage(json.usage);
+              }
+
+              // Then send accumulated tool calls if any
               if (accumulatedToolCalls.size > 0 && onToolCalls) {
                 const toolCallsArray = Array.from(accumulatedToolCalls.values()).map(tc => ({
                   ...tc,
@@ -223,7 +239,8 @@ export class OpenRouterProvider implements IAPIProvider {
                 onToolCalls(toolCallsArray);
               }
 
-              onComplete();
+              // NOTE: Don't call onComplete() here - usage data may arrive in subsequent chunks
+              // onComplete() will be called when stream actually ends (done=true or [DONE])
             }
           } catch (error) {
             // Continue processing other chunks even if one fails

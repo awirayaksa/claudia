@@ -2,6 +2,7 @@ import { format } from 'date-fns';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { ReasoningMessage } from './ReasoningMessage';
 import { useThrottledValue } from '../../hooks/useThrottledValue';
+import { useAppSelector } from '../../store';
 
 interface StreamingMessageProps {
   content: string;
@@ -11,6 +12,8 @@ interface StreamingMessageProps {
 
 export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessageProps) {
   const formattedTime = format(new Date(), 'h:mm a');
+
+  const { showReasoning } = useAppSelector((state) => state.settings.preferences);
 
   // Throttle markdown parsing to every 100ms for performance
   const throttledContent = useThrottledValue(content, 100);
@@ -53,7 +56,7 @@ export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessa
         </div>
 
         {/* Streaming reasoning - BEFORE content */}
-        {throttledReasoning && (
+        {showReasoning && throttledReasoning && (
           <ReasoningMessage reasoning={throttledReasoning} isStreaming={true} />
         )}
 
