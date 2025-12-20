@@ -243,6 +243,46 @@ const chatSlice = createSlice({
       .addCase(sendMessage.rejected, (state, action) => {
         state.isLoading = false;
         state.error = action.payload as string;
+      })
+      // Send streaming message pending
+      .addCase(sendStreamingMessage.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      // Send streaming message fulfilled
+      .addCase(sendStreamingMessage.fulfilled, (state) => {
+        state.isLoading = false;
+      })
+      // Send streaming message rejected
+      .addCase(sendStreamingMessage.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.error.message || 'Streaming failed';
+      })
+      // Send streaming message with tools pending
+      .addCase(sendStreamingMessageWithTools.pending, (state) => {
+        state.isLoading = true;
+        state.error = null;
+      })
+      // Send streaming message with tools fulfilled
+      .addCase(sendStreamingMessageWithTools.fulfilled, (state) => {
+        state.isLoading = false;
+      })
+      // Send streaming message with tools rejected
+      .addCase(sendStreamingMessageWithTools.rejected, (state, action) => {
+        state.isLoading = false;
+        state.error = action.error.message || 'Streaming with tools failed';
+      })
+      // Execute UI action pending
+      .addCase(executeUIAction.pending, (state) => {
+        state.error = null;
+      })
+      // Execute UI action fulfilled
+      .addCase(executeUIAction.fulfilled, () => {
+        // Don't modify isLoading - UI actions run in parallel with chat
+      })
+      // Execute UI action rejected
+      .addCase(executeUIAction.rejected, (state, action) => {
+        state.error = action.error.message || 'UI action failed';
       });
   },
 });
