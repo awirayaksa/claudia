@@ -11,6 +11,7 @@ interface ChatState {
   isStreaming: boolean;
   streamingMessageId: string | null;
   streamingContent: string;
+  streamingReasoning: string;
   error: string | null;
   abortController: AbortController | null;
   // Tool calling state
@@ -27,6 +28,7 @@ const initialState: ChatState = {
   isStreaming: false,
   streamingMessageId: null,
   streamingContent: '',
+  streamingReasoning: '',
   error: null,
   abortController: null,
   pendingToolCalls: [],
@@ -96,6 +98,7 @@ const chatSlice = createSlice({
       state.messages = [];
       state.error = null;
       state.streamingContent = '';
+      state.streamingReasoning = '';
       state.streamingMessageId = null;
       state.isStreaming = false;
       state.isLoading = false;
@@ -111,6 +114,7 @@ const chatSlice = createSlice({
     startStreaming: (state, action: PayloadAction<{ userMessageId: string; assistantMessageId: string; userContent: string; userAttachments?: Attachment[]; timestamp: string }>) => {
       state.isStreaming = true;
       state.streamingContent = '';
+      state.streamingReasoning = '';
       state.streamingMessageId = action.payload.assistantMessageId;
       state.error = null;
 
@@ -128,19 +132,24 @@ const chatSlice = createSlice({
     appendStreamingContent: (state, action: PayloadAction<string>) => {
       state.streamingContent += action.payload;
     },
+    appendStreamingReasoning: (state, action: PayloadAction<string>) => {
+      state.streamingReasoning += action.payload;
+    },
     completeStreaming: (state) => {
-      if (state.streamingMessageId && state.streamingContent) {
+      if (state.streamingMessageId && (state.streamingContent || state.streamingReasoning)) {
         // Add the complete assistant message
         state.messages.push({
           id: state.streamingMessageId,
           role: 'assistant',
           content: state.streamingContent,
+          reasoning: state.streamingReasoning || undefined,
           timestamp: new Date().toISOString(),
         });
       }
 
       state.isStreaming = false;
       state.streamingContent = '';
+      state.streamingReasoning = '';
       state.streamingMessageId = null;
       state.abortController = null;
     },
@@ -154,6 +163,7 @@ const chatSlice = createSlice({
       // Clear ALL streaming and tool-related state
       state.isStreaming = false;
       state.streamingContent = '';
+      state.streamingReasoning = '';
       state.streamingMessageId = null;
       state.abortController = null;
       state.isExecutingTools = false;
@@ -243,6 +253,7 @@ export const {
   setError,
   startStreaming,
   appendStreamingContent,
+  appendStreamingReasoning,
   completeStreaming,
   setAbortController,
   abortStreaming,
@@ -416,6 +427,9 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
                   dispatch(appendStreamingContent(chunk));
                 }
               },
+              onReasoning: (reasoning) => {
+                dispatch(appendStreamingReasoning(reasoning));
+              },
               onComplete: () => {
                 resolve();
               },
@@ -438,10 +452,12 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           // Add assistant message with tool calls
           const assistantMessageId = uuidv4();
           const assistantContent = (getState() as RootState).chat.streamingContent || '';
+          const assistantReasoning = (getState() as RootState).chat.streamingReasoning || '';
           const assistantMessage: Message = {
             id: assistantMessageId,
             role: 'assistant',
             content: assistantContent,
+            reasoning: assistantReasoning || undefined,
             timestamp: new Date().toISOString(),
             toolCalls: assistantToolCalls,
           };
