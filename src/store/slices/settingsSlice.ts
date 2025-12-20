@@ -24,6 +24,8 @@ interface SettingsState {
     temperature: number;
     logLevel: 'debug' | 'info' | 'warn' | 'error';
     enableFileLogging: boolean;
+    showReasoning: boolean;
+    showStatistics: boolean;
   };
 }
 
@@ -44,6 +46,8 @@ const initialState: SettingsState = {
     temperature: 0.7,
     logLevel: 'info',
     enableFileLogging: true,
+    showReasoning: false,
+    showStatistics: false,
   },
 };
 

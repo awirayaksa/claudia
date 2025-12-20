@@ -1,5 +1,6 @@
 // Open WebUI API Types
 import { ToolCall } from './message.types';
+import { MessageUsage } from './statistics.types';
 
 // Provider Types
 export type ProviderType = 'openwebui' | 'openrouter';
@@ -90,11 +91,7 @@ export interface ChatCompletionResponse {
     message: ChatMessage;
     finish_reason: string;
   }>;
-  usage?: {
-    prompt_tokens: number;
-    completion_tokens: number;
-    total_tokens: number;
-  };
+  usage?: MessageUsage;
 }
 
 export interface ChatCompletionChunk {
@@ -112,6 +109,7 @@ export interface ChatCompletionChunk {
     };
     finish_reason: string | null;
   }>;
+  usage?: MessageUsage;
 }
 
 export interface FileUploadResponse {
