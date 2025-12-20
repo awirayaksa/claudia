@@ -3,6 +3,7 @@ import { Message, Attachment } from '../../types/message.types';
 import { MessageAttachment } from './MessageAttachment';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { ToolCallMessage } from './ToolCallMessage';
+import { ReasoningMessage } from './ReasoningMessage';
 import { UIResourceDisplay } from './UIResourceDisplay';
 import { format } from 'date-fns';
 
@@ -131,6 +132,11 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
               )}
             </div>
           </div>
+
+          {/* Reasoning Block - BEFORE content */}
+          {!isUser && message.reasoning && (
+            <ReasoningMessage reasoning={message.reasoning} />
+          )}
 
           {/* Message content */}
           <div className={`text-sm ${isUser ? 'text-white' : 'text-text-primary'}`}>
