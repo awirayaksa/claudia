@@ -11,6 +11,7 @@ export function useChat() {
     isStreaming,
     streamingContent,
     error,
+    isExecutingTools,
   } = useAppSelector((state) => state.chat);
   const { selectedModel } = useAppSelector((state) => state.settings.api);
   const { streamingEnabled } = useAppSelector((state) => state.settings.preferences);
@@ -61,6 +62,7 @@ export function useChat() {
     isStreaming,
     streamingContent,
     error,
+    isExecutingTools,
     sendMessage: handleSendMessage,
     clearMessages: handleClearMessages,
     abortStreaming: handleAbortStreaming,

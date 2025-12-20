@@ -15,6 +15,8 @@ export interface ElectronAPI {
     load: (id: string, projectId: string | null) => Promise<any>;
     list: (projectId?: string | null) => Promise<any>;
     delete: (id: string, projectId: string | null) => Promise<any>;
+    deleteMultiple: (conversations: Array<{ id: string; projectId: string | null }>) => Promise<any>;
+    deleteAll: (projectId: string | null) => Promise<any>;
   };
   project: {
     create: (project: any) => Promise<any>;

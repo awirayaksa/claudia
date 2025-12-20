@@ -7,7 +7,9 @@ import { CompactModelSelector } from './CompactModelSelector';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
+  onAbort?: () => void;
   disabled?: boolean;
+  isGenerating?: boolean;
   placeholder?: string;
   selectedModel?: string;
   availableModels?: string[];
@@ -23,7 +25,9 @@ export interface ChatInputRef {
 
 export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   onSend,
+  onAbort,
   disabled = false,
+  isGenerating = false,
   placeholder = 'Type your message...',
   selectedModel,
   availableModels,
@@ -238,14 +242,24 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           />
         )}
 
-        {/* Send button */}
+        {/* Send/Stop button */}
         <Button
-          onClick={handleSend}
-          disabled={disabled || uploading || (!message.trim() && attachments.length === 0)}
+          onClick={isGenerating ? onAbort : handleSend}
+          disabled={!isGenerating && (disabled || uploading || (!message.trim() && attachments.length === 0))}
+          className={isGenerating ? 'bg-error hover:bg-error-dark' : ''}
+          title={isGenerating ? 'Stop generating' : 'Send message'}
         >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-          </svg>
+          {isGenerating ? (
+            // Stop icon
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          ) : (
+            // Send icon
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+            </svg>
+          )}
         </Button>
       </div>
 

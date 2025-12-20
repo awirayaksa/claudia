@@ -24,6 +24,7 @@ export function ChatWindow() {
     isStreaming,
     streamingContent,
     error,
+    isExecutingTools,
     sendMessage,
     abortStreaming,
   } = useChat();
@@ -75,23 +76,23 @@ export function ChatWindow() {
 
   // Auto-focus input after response completes
   useEffect(() => {
-    if (!isLoading && !isStreaming && messages.length > 0) {
-      // Use setTimeout to ensure the input is enabled before focusing
-      setTimeout(() => {
+    if (!isLoading && !isStreaming && !isExecutingTools && messages.length > 0) {
+      // Use requestAnimationFrame for immediate focus
+      requestAnimationFrame(() => {
         chatInputRef.current?.focus();
-      }, 100);
+      });
     }
-  }, [isLoading, isStreaming, messages.length]);
+  }, [isLoading, isStreaming, isExecutingTools, messages.length]);
 
   // Auto-focus input when a new conversation is created (no messages yet)
   useEffect(() => {
-    if (currentConversationId && messages.length === 0 && !isLoading && !isStreaming) {
-      // Use setTimeout to ensure the DOM is ready
-      setTimeout(() => {
+    if (currentConversationId && messages.length === 0 && !isLoading && !isStreaming && !isExecutingTools) {
+      // Use requestAnimationFrame for immediate focus
+      requestAnimationFrame(() => {
         chatInputRef.current?.focus();
-      }, 100);
+      });
     }
-  }, [currentConversationId, messages.length, isLoading, isStreaming]);
+  }, [currentConversationId, messages.length, isLoading, isStreaming, isExecutingTools]);
 
   // Track if we've loaded this conversation before to avoid clearing messages on create
   const loadedConversationRef = useRef<string | null>(null);
@@ -214,6 +215,14 @@ export function ChatWindow() {
     }
   };
 
+  const handleAbortStreaming = useCallback(() => {
+    abortStreaming();
+    // Immediate focus attempt after abort
+    requestAnimationFrame(() => {
+      chatInputRef.current?.focus();
+    });
+  }, [abortStreaming]);
+
   const handleEditMessage = useCallback((messageId: string, content: string, attachments?: Attachment[]) => {
     // 1. Abort any active streaming
     if (isStreaming) {
@@ -311,15 +320,41 @@ export function ChatWindow() {
                 key={message.id}
                 message={message}
                 onEdit={handleEditMessage}
-                disabled={isLoading || isStreaming}
+                disabled={isLoading || isStreaming || isExecutingTools}
               />
             ))}
             {/* Streaming message */}
-            {isStreaming && streamingContent && (
+            {isStreaming && (
               <StreamingMessage
                 content={streamingContent}
-                onAbort={abortStreaming}
               />
+            )}
+            {/* Show stop button during tool execution without streaming */}
+            {!isStreaming && isExecutingTools && (
+              <div className="flex justify-start py-2">
+                <div className="max-w-[70%] rounded-lg border border-border bg-surface px-4 py-3">
+                  <div className="mb-1 flex items-center justify-between gap-4">
+                    <button
+                      onClick={handleAbortStreaming}
+                      className="rounded p-1 text-xs text-text-secondary hover:bg-background hover:text-error"
+                      title="Stop generating"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                    <span className="text-xs text-text-secondary">Executing tools...</span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-2">
+                    <div className="flex gap-1">
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]"></div>
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]"></div>
+                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent"></div>
+                    </div>
+                    <span className="text-sm text-text-secondary">Processing...</span>
+                  </div>
+                </div>
+              </div>
             )}
             {/* Loading indicator for non-streaming */}
             {isLoading && !isStreaming && (
@@ -354,7 +389,9 @@ export function ChatWindow() {
       <ChatInput
         ref={chatInputRef}
         onSend={handleSend}
-        disabled={isLoading || isStreaming}
+        onAbort={handleAbortStreaming}
+        disabled={isLoading}
+        isGenerating={isStreaming || isExecutingTools}
         placeholder={`Message ${currentConversation?.model || pendingModel || selectedModel}...`}
         selectedModel={currentConversation?.model || pendingModel || selectedModel}
         availableModels={availableModels}
