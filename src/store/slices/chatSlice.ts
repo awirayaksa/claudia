@@ -151,10 +151,14 @@ const chatSlice = createSlice({
       if (state.abortController) {
         (state.abortController as any).abort();
       }
+      // Clear ALL streaming and tool-related state
       state.isStreaming = false;
       state.streamingContent = '';
       state.streamingMessageId = null;
       state.abortController = null;
+      state.isExecutingTools = false;
+      state.pendingToolCalls = [];
+      state.toolCallIteration = 0;
     },
     // Tool calling actions
     setToolCalls: (state, action: PayloadAction<ToolCall[]>) => {
@@ -379,6 +383,13 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     let shouldContinue = true;
 
     while (shouldContinue && iteration < MAX_TOOL_ITERATIONS) {
+      // Check if user aborted before starting new iteration
+      if (abortController.signal.aborted) {
+        dispatch(completeStreaming());
+        dispatch(clearToolCalls());
+        return;
+      }
+
       try {
         // Convert MCP tools to OpenAI format
         const openAITools = hasTools
@@ -447,6 +458,12 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
 
           // Clear streaming content for next iteration
           dispatch(completeStreaming());
+
+          // Check if user aborted before executing tools
+          if (abortController.signal.aborted) {
+            dispatch(clearToolCalls());
+            return;
+          }
 
           // Execute tools
           dispatch(setExecutingTools(true));
@@ -534,6 +551,12 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           shouldContinue = false;
         }
       } catch (error) {
+        // Don't show error if user aborted
+        if (error instanceof Error && error.name === 'AbortError') {
+          dispatch(completeStreaming());
+          dispatch(clearToolCalls());
+          return;
+        }
         dispatch(setError(error instanceof Error ? error.message : 'Unknown error'));
         dispatch(completeStreaming());
         dispatch(clearToolCalls());
