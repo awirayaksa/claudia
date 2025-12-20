@@ -108,6 +108,7 @@ export interface ChatCompletionChunk {
       role?: string;
       content?: string;
       tool_calls?: ToolCall[];
+      reasoning?: string;
     };
     finish_reason: string | null;
   }>;

@@ -1,17 +1,20 @@
 import { format } from 'date-fns';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { ReasoningMessage } from './ReasoningMessage';
 import { useThrottledValue } from '../../hooks/useThrottledValue';
 
 interface StreamingMessageProps {
   content: string;
+  reasoning?: string;
   onAbort?: () => void;
 }
 
-export function StreamingMessage({ content, onAbort }: StreamingMessageProps) {
+export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessageProps) {
   const formattedTime = format(new Date(), 'h:mm a');
 
   // Throttle markdown parsing to every 100ms for performance
   const throttledContent = useThrottledValue(content, 100);
+  const throttledReasoning = useThrottledValue(reasoning || '', 100);
 
   return (
     <div className="flex justify-start py-2">
@@ -48,6 +51,11 @@ export function StreamingMessage({ content, onAbort }: StreamingMessageProps) {
             </button>
           )}
         </div>
+
+        {/* Streaming reasoning - BEFORE content */}
+        {throttledReasoning && (
+          <ReasoningMessage reasoning={throttledReasoning} isStreaming={true} />
+        )}
 
         {/* Streaming content with live markdown rendering */}
         <div className="text-sm text-text-primary">

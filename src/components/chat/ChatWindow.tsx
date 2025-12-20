@@ -30,6 +30,7 @@ export function ChatWindow() {
   } = useChat();
 
   const editingMessage = useAppSelector((state) => state.chat.editingMessage);
+  const streamingReasoning = useAppSelector((state) => state.chat.streamingReasoning);
 
   const {
     currentConversationId,
@@ -327,6 +328,7 @@ export function ChatWindow() {
             {isStreaming && (
               <StreamingMessage
                 content={streamingContent}
+                reasoning={streamingReasoning}
               />
             )}
             {/* Show stop button during tool execution without streaming */}
