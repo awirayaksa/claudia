@@ -43,6 +43,8 @@ export interface Message {
   // For tool result messages
   tool_call_id?: string;
   name?: string;
+  // Reasoning/thinking content
+  reasoning?: string;
 }
 
 export interface ChatState {

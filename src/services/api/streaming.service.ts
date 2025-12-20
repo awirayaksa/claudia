@@ -7,6 +7,7 @@ export interface StreamCallbacks {
   onComplete: () => void;
   onError: (error: Error) => void;
   onToolCalls?: (toolCalls: ToolCall[]) => void;
+  onReasoning?: (reasoning: string) => void;
 }
 
 /**
@@ -20,7 +21,7 @@ export async function streamChatCompletion(
   abortSignal?: AbortSignal,
   _traceId?: string
 ): Promise<void> {
-  const { onChunk, onComplete, onError, onToolCalls } = callbacks;
+  const { onChunk, onComplete, onError, onToolCalls, onReasoning } = callbacks;
 
   // Normalize baseUrl - remove trailing slash to prevent double slashes
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
@@ -64,6 +65,7 @@ export async function streamChatCompletion(
 
     // Accumulate content and track chunks for logging
     let accumulatedContent = '';
+    let accumulatedReasoning = '';
     let chunkCount = 0;
 
     // Create SSE parser
@@ -82,11 +84,17 @@ export async function streamChatCompletion(
           const delta = json.choices?.[0]?.delta;
           const content = delta?.content;
           const toolCallDeltas = delta?.tool_calls;
+          const reasoningContent = delta?.reasoning;
 
           if (content) {
             accumulatedContent += content;
             chunkCount++;
             onChunk(content);
+          }
+
+          if (reasoningContent && onReasoning) {
+            accumulatedReasoning += reasoningContent;
+            onReasoning(reasoningContent);
           }
 
           // Accumulate tool call deltas
