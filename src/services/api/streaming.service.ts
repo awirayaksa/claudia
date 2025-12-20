@@ -1,6 +1,7 @@
 import { createParser, ParsedEvent, ReconnectInterval } from 'eventsource-parser';
 import { ChatCompletionRequest } from '../../types/api.types';
 import { ToolCall } from '../../types/message.types';
+import { MessageUsage } from '../../types/statistics.types';
 
 export interface StreamCallbacks {
   onChunk: (content: string) => void;
@@ -8,6 +9,7 @@ export interface StreamCallbacks {
   onError: (error: Error) => void;
   onToolCalls?: (toolCalls: ToolCall[]) => void;
   onReasoning?: (reasoning: string) => void;
+  onUsage?: (usage: MessageUsage) => void;
 }
 
 /**
@@ -21,7 +23,7 @@ export async function streamChatCompletion(
   abortSignal?: AbortSignal,
   _traceId?: string
 ): Promise<void> {
-  const { onChunk, onComplete, onError, onToolCalls, onReasoning } = callbacks;
+  const { onChunk, onComplete, onError, onToolCalls, onReasoning, onUsage } = callbacks;
 
   // Normalize baseUrl - remove trailing slash to prevent double slashes
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, '');
@@ -85,6 +87,7 @@ export async function streamChatCompletion(
           const content = delta?.content;
           const toolCallDeltas = delta?.tool_calls;
           const reasoningContent = delta?.reasoning;
+          const usage = json.usage;
 
           if (content) {
             accumulatedContent += content;
@@ -95,6 +98,11 @@ export async function streamChatCompletion(
           if (reasoningContent && onReasoning) {
             accumulatedReasoning += reasoningContent;
             onReasoning(reasoningContent);
+          }
+
+          // Handle usage data
+          if (usage && onUsage) {
+            onUsage(usage);
           }
 
           // Accumulate tool call deltas
@@ -132,7 +140,12 @@ export async function streamChatCompletion(
 
           // Check if stream is done via finish_reason
           if (json.choices?.[0]?.finish_reason) {
-            // Send accumulated tool calls if any
+            // Send usage FIRST before anything else (including tool calls)
+            if (json.usage && onUsage) {
+              onUsage(json.usage);
+            }
+
+            // Then send accumulated tool calls if any
             if (accumulatedToolCalls.size > 0 && onToolCalls) {
               const toolCallsArray = Array.from(accumulatedToolCalls.values()).map(tc => ({
                 ...tc,
@@ -145,7 +158,8 @@ export async function streamChatCompletion(
               onToolCalls(toolCallsArray);
             }
 
-            onComplete();
+            // NOTE: Don't call onComplete() here - usage data may arrive in subsequent chunks
+            // onComplete() will be called when stream actually ends (done=true or [DONE])
           }
         } catch (error) {
           // Continue processing other chunks even if one fails

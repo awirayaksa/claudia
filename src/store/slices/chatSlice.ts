@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Message, Attachment, ToolCall, ToolResult } from '../../types/message.types';
+import { MessageUsage } from '../../types/statistics.types';
 import { getAPIProvider } from '../../services/api/provider.service';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
 import { v4 as uuidv4 } from 'uuid';
@@ -12,6 +13,7 @@ interface ChatState {
   streamingMessageId: string | null;
   streamingContent: string;
   streamingReasoning: string;
+  streamingUsage: MessageUsage | null;
   error: string | null;
   abortController: AbortController | null;
   // Tool calling state
@@ -29,6 +31,7 @@ const initialState: ChatState = {
   streamingMessageId: null,
   streamingContent: '',
   streamingReasoning: '',
+  streamingUsage: null,
   error: null,
   abortController: null,
   pendingToolCalls: [],
@@ -99,6 +102,7 @@ const chatSlice = createSlice({
       state.error = null;
       state.streamingContent = '';
       state.streamingReasoning = '';
+      state.streamingUsage = null;
       state.streamingMessageId = null;
       state.isStreaming = false;
       state.isLoading = false;
@@ -115,6 +119,7 @@ const chatSlice = createSlice({
       state.isStreaming = true;
       state.streamingContent = '';
       state.streamingReasoning = '';
+      state.streamingUsage = null;
       state.streamingMessageId = action.payload.assistantMessageId;
       state.error = null;
 
@@ -135,21 +140,27 @@ const chatSlice = createSlice({
     appendStreamingReasoning: (state, action: PayloadAction<string>) => {
       state.streamingReasoning += action.payload;
     },
+    setStreamingUsage: (state, action: PayloadAction<MessageUsage>) => {
+      state.streamingUsage = action.payload;
+    },
     completeStreaming: (state) => {
       if (state.streamingMessageId && (state.streamingContent || state.streamingReasoning)) {
-        // Add the complete assistant message
-        state.messages.push({
+        const newMessage = {
           id: state.streamingMessageId,
-          role: 'assistant',
+          role: 'assistant' as const,
           content: state.streamingContent,
           reasoning: state.streamingReasoning || undefined,
+          usage: state.streamingUsage || undefined,
           timestamp: new Date().toISOString(),
-        });
+        };
+        // Add the complete assistant message
+        state.messages.push(newMessage);
       }
 
       state.isStreaming = false;
       state.streamingContent = '';
       state.streamingReasoning = '';
+      state.streamingUsage = null;
       state.streamingMessageId = null;
       state.abortController = null;
     },
@@ -164,6 +175,7 @@ const chatSlice = createSlice({
       state.isStreaming = false;
       state.streamingContent = '';
       state.streamingReasoning = '';
+      state.streamingUsage = null;
       state.streamingMessageId = null;
       state.abortController = null;
       state.isExecutingTools = false;
@@ -294,6 +306,7 @@ export const {
   startStreaming,
   appendStreamingContent,
   appendStreamingReasoning,
+  setStreamingUsage,
   completeStreaming,
   setAbortController,
   abortStreaming,
@@ -357,6 +370,12 @@ export const sendStreamingMessage = createAsyncThunk(
         {
           onChunk: (chunk) => {
             dispatch(appendStreamingContent(chunk));
+          },
+          onReasoning: (reasoning) => {
+            dispatch(appendStreamingReasoning(reasoning));
+          },
+          onUsage: (usage) => {
+            dispatch(setStreamingUsage(usage));
           },
           onComplete: () => {
             dispatch(completeStreaming());
@@ -469,6 +488,9 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
               },
               onReasoning: (reasoning) => {
                 dispatch(appendStreamingReasoning(reasoning));
+              },
+              onUsage: (usage) => {
+                dispatch(setStreamingUsage(usage));
               },
               onComplete: () => {
                 resolve();

@@ -4,8 +4,10 @@ import { MessageAttachment } from './MessageAttachment';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { ToolCallMessage } from './ToolCallMessage';
 import { ReasoningMessage } from './ReasoningMessage';
+import { MessageStatistics } from './MessageStatistics';
 import { UIResourceDisplay } from './UIResourceDisplay';
 import { format } from 'date-fns';
+import { useAppSelector } from '../../store';
 
 interface ChatMessageProps {
   message: Message;
@@ -18,6 +20,8 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
   const isSystem = message.role === 'system';
   const isTool = message.role === 'tool';
   const [copied, setCopied] = useState(false);
+
+  const { showReasoning, showStatistics } = useAppSelector((state) => state.settings.preferences);
 
   const formattedTime = format(new Date(message.timestamp), 'h:mm a');
 
@@ -133,9 +137,14 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
             </div>
           </div>
 
-          {/* Reasoning Block - BEFORE content */}
-          {!isUser && message.reasoning && (
+          {/* Reasoning Block - BEFORE statistics */}
+          {!isUser && showReasoning && message.reasoning && (
             <ReasoningMessage reasoning={message.reasoning} />
+          )}
+
+          {/* Statistics Block - AFTER reasoning, BEFORE content */}
+          {!isUser && showStatistics && message.usage && (
+            <MessageStatistics usage={message.usage} />
           )}
 
           {/* Message content */}
