@@ -4,6 +4,7 @@ import { Button } from '../common/Button';
 import { Attachment } from '../../types/message.types';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { CompactModelSelector } from './CompactModelSelector';
+import MCPServerBadges from './MCPServerBadges';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -178,6 +179,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           ))}
         </div>
       )}
+
+      {/* MCP Server Toggles */}
+      <MCPServerBadges disabled={disabled || uploading} />
 
       {/* Upload progress */}
       {uploading && Object.keys(progress).length > 0 && (

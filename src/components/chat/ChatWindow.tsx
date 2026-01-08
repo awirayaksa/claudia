@@ -172,6 +172,8 @@ export function ChatWindow() {
 
   const handleModelChange = async (newModel: string) => {
     try {
+      console.log('[ChatWindow] Model changed to:', newModel);
+
       // Update the provider-specific config
       const updatedConfig = { ...apiConfig };
 
@@ -180,6 +182,12 @@ export function ChatWindow() {
       } else if (apiConfig.provider === 'openrouter' && updatedConfig.openrouter) {
         updatedConfig.openrouter = { ...updatedConfig.openrouter, selectedModel: newModel };
       }
+
+      // IMPORTANT: Update the top-level selectedModel for backward compatibility
+      // (useChat hook reads from this)
+      updatedConfig.selectedModel = newModel;
+
+      console.log('[ChatWindow] Updated config:', updatedConfig);
 
       // Update global default
       dispatch(setApiConfig(updatedConfig));

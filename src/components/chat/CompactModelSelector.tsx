@@ -69,8 +69,10 @@ export function CompactModelSelector({
   const displayName = abbreviateModelName(value);
   const truncatedName = truncateModelName(displayName, 20);
 
-  // Sort models alphabetically
-  const sortedModels = [...models].sort((a, b) => a.localeCompare(b));
+  // Sort models alphabetically (ensure all models are strings)
+  const sortedModels = [...models]
+    .map((m) => (typeof m === 'string' ? m : String(m)))
+    .sort((a, b) => a.localeCompare(b));
 
   return (
     <div className="relative" onKeyDown={handleKeyDown}>

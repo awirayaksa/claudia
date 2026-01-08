@@ -22,6 +22,8 @@ export function useChat() {
         throw new Error('Please select a model in settings');
       }
 
+      console.log('[useChat] Sending message with model:', selectedModel);
+
       // Use streaming with tool calling if enabled, otherwise use regular message
       if (streamingEnabled) {
         await dispatch(sendStreamingMessageWithTools({ content, model: selectedModel, attachments }));

@@ -19,8 +19,10 @@ export class OpenWebUIProvider implements IAPIProvider {
   private config: OpenWebUIConfig;
 
   constructor(config: OpenWebUIConfig) {
+    console.log('[OpenWebUIProvider] Constructor - input baseUrl:', config.baseUrl);
     this.config = config;
     this.service = new OpenWebUIService(config.baseUrl, config.apiKey);
+    console.log('[OpenWebUIProvider] Constructor - this.config.baseUrl:', this.config.baseUrl);
   }
 
   getProviderType(): ProviderType {
@@ -65,8 +67,10 @@ export class OpenWebUIProvider implements IAPIProvider {
   }
 
   updateConfig(config: OpenWebUIConfig): void {
+    console.log('[OpenWebUIProvider] updateConfig - input baseUrl:', config.baseUrl);
     this.config = config;
     this.service.updateConfig(config.baseUrl, config.apiKey);
+    console.log('[OpenWebUIProvider] updateConfig - this.config.baseUrl:', this.config.baseUrl);
   }
 
   async uploadFile(file: File, onProgress?: (progress: number) => void): Promise<string> {
