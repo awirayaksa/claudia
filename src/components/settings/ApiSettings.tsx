@@ -26,8 +26,10 @@ export function ApiSettings() {
     message: string;
   } | null>(null);
 
-  // Sync local state with Redux store when it changes
+  // Sync local state with Redux store only on initial mount
+  // Don't sync on every Redux change to avoid overwriting unsaved form changes
   useEffect(() => {
+    console.log('[ApiSettings] Initial sync - api.openwebui.baseUrl:', api.openwebui?.baseUrl);
     setProvider(api.provider || 'openwebui');
     if (api.openwebui) {
       setOpenwebuiConfig(api.openwebui);
@@ -36,7 +38,13 @@ export function ApiSettings() {
       setOpenrouterConfig(api.openrouter);
     }
     setStreamingEnabled(preferences.streamingEnabled);
-  }, [api, preferences]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
+  // Sync streaming preference separately when it changes
+  useEffect(() => {
+    setStreamingEnabled(preferences.streamingEnabled);
+  }, [preferences.streamingEnabled]);
 
   const handleProviderChange = (newProvider: ProviderType) => {
     setProvider(newProvider);
@@ -47,6 +55,8 @@ export function ApiSettings() {
     setTesting(true);
     setTestResult(null);
 
+    console.log('[ApiSettings] Test connection - baseUrl BEFORE:', openwebuiConfig?.baseUrl);
+
     try {
       // Create a temporary provider instance with current form values
       const tempProvider = ProviderFactory.getProvider(
@@ -56,7 +66,11 @@ export function ApiSettings() {
           : openrouterConfig as OpenRouterConfig
       );
 
+      console.log('[ApiSettings] Test connection - baseUrl AFTER getProvider:', openwebuiConfig?.baseUrl);
+
       const models = await tempProvider.getModels();
+
+      console.log('[ApiSettings] Test connection - baseUrl AFTER getModels:', openwebuiConfig?.baseUrl);
 
       setTestResult({
         success: true,
@@ -68,10 +82,13 @@ export function ApiSettings() {
 
       // If no model selected, select the first one
       if (provider === 'openwebui' && !openwebuiConfig.selectedModel && models.length > 0) {
+        console.log('[ApiSettings] Setting selected model, baseUrl before:', openwebuiConfig?.baseUrl);
         setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: models[0].id });
       } else if (provider === 'openrouter' && !openrouterConfig.selectedModel && models.length > 0) {
         setOpenrouterConfig({ ...openrouterConfig, selectedModel: models[0].id });
       }
+
+      console.log('[ApiSettings] Test connection complete - baseUrl FINAL:', openwebuiConfig?.baseUrl);
     } catch (error) {
       setTestResult({
         success: false,
@@ -94,8 +111,15 @@ export function ApiSettings() {
       // Add provider-specific config and extract selectedModel
       let selectedModel = '';
       if (provider === 'openwebui') {
-        newApiConfig.openwebui = openwebuiConfig;
-        selectedModel = openwebuiConfig.selectedModel || '';
+        // Normalize baseUrl - remove trailing slashes and /api suffix
+        const normalizedConfig = { ...openwebuiConfig };
+        if (normalizedConfig.baseUrl) {
+          normalizedConfig.baseUrl = normalizedConfig.baseUrl
+            .replace(/\/+$/, '') // Remove trailing slashes
+            .replace(/\/api$/i, ''); // Remove /api suffix to prevent duplication
+        }
+        newApiConfig.openwebui = normalizedConfig;
+        selectedModel = normalizedConfig.selectedModel || '';
       } else if (provider === 'openrouter') {
         newApiConfig.openrouter = openrouterConfig;
         selectedModel = openrouterConfig.selectedModel || '';
@@ -113,6 +137,13 @@ export function ApiSettings() {
       // Update Redux store
       dispatch(setApiConfig(newApiConfig));
       dispatch(setPreferences({ streamingEnabled }));
+
+      // Update local form state to match what was saved (with normalized URLs)
+      if (provider === 'openwebui' && newApiConfig.openwebui) {
+        setOpenwebuiConfig(newApiConfig.openwebui);
+      } else if (provider === 'openrouter' && newApiConfig.openrouter) {
+        setOpenrouterConfig(newApiConfig.openrouter);
+      }
 
       setTestResult({
         success: true,

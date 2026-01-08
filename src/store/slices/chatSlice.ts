@@ -444,6 +444,14 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     const availableTools = ToolIntegrationService.getAvailableTools(mcpState);
     const hasTools = ToolIntegrationService.hasAvailableTools(mcpState);
 
+    console.log('[chatSlice] Sending message with tools:', {
+      availableToolCount: availableTools.length,
+      toolNames: availableTools.map(t => t.name),
+      readyServers: Object.entries(mcpState.serverStates)
+        .filter(([_, state]) => state.status === 'ready')
+        .map(([id, state]) => ({ id, name: state.config.name, toolCount: state.tools.length })),
+    });
+
     // Create abort controller
     const abortController = new AbortController();
     dispatch(setAbortController(abortController as any));

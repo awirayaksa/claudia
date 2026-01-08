@@ -144,7 +144,7 @@ function createWindow() {
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
   } else {
     // Development: load from vite dev server
-    mainWindow.loadURL('http://localhost:5173');
+    mainWindow.loadURL('http://localhost:5175');
     mainWindow.webContents.openDevTools();
   }
 

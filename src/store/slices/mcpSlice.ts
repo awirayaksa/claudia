@@ -714,6 +714,26 @@ function rebuildAvailablePromptsHelper(state: MCPState) {
 }
 
 // ============================================================================
+// Selectors
+// ============================================================================
+
+/**
+ * Selects enabled MCP servers with their current state and tool count
+ * Used by chat input to display server badges
+ */
+export const selectEnabledMCPServers = (state: { mcp: MCPState }) => {
+  const { servers, serverStates } = state.mcp;
+  return Object.values(servers)
+    .filter(server => server.enabled)
+    .map(server => ({
+      config: server,
+      state: serverStates[server.id],
+      status: serverStates[server.id]?.status || 'stopped',
+      toolCount: serverStates[server.id]?.tools?.length || 0,
+    }));
+};
+
+// ============================================================================
 // Exports
 // ============================================================================
 

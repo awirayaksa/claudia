@@ -41,14 +41,27 @@ function App() {
         if (config) {
           // Load API settings with new provider structure
           if (config.api && typeof config.api === 'object') {
+            // Ensure availableModels are strings (handle legacy object format)
+            const rawModels = config.api.availableModels || [];
+            const availableModels = rawModels.map((m: any) =>
+              typeof m === 'string' ? m : m?.id || String(m)
+            );
+
             const apiConfig: any = {
               provider: config.api.provider || 'openwebui',
-              availableModels: config.api.availableModels || [],
+              availableModels,
             };
 
             // Include provider-specific configs
             if (config.api.openwebui) {
-              apiConfig.openwebui = config.api.openwebui;
+              // Normalize baseUrl - remove trailing slashes and /api suffix
+              const normalizedOpenWebUI = { ...config.api.openwebui };
+              if (normalizedOpenWebUI.baseUrl) {
+                normalizedOpenWebUI.baseUrl = normalizedOpenWebUI.baseUrl
+                  .replace(/\/+$/, '') // Remove trailing slashes
+                  .replace(/\/api$/i, ''); // Remove /api suffix to prevent duplication
+              }
+              apiConfig.openwebui = normalizedOpenWebUI;
             }
             if (config.api.openrouter) {
               apiConfig.openrouter = config.api.openrouter;
