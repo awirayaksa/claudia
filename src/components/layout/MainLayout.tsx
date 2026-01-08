@@ -1,5 +1,5 @@
 import { useAppSelector, useAppDispatch } from '../../store';
-import { setSettingsOpen } from '../../store/slices/uiSlice';
+import { setSettingsOpen, toggleSidebar } from '../../store/slices/uiSlice';
 import { clearMessages } from '../../store/slices/chatSlice';
 import { SettingsPanel } from '../settings/SettingsPanel';
 import { ChatWindow } from '../chat/ChatWindow';
@@ -35,6 +35,29 @@ export function MainLayout() {
         {/* Header */}
         <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-4">
           <div className="flex items-center gap-2">
+            {/* Sidebar toggle button */}
+            <button
+              onClick={() => dispatch(toggleSidebar())}
+              className="rounded p-2 text-text-primary hover:bg-background transition-colors"
+              aria-label="Toggle sidebar"
+              title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
+              </svg>
+            </button>
+
             {hasMessages ? (
               <div>
                 <h1 className="text-base font-semibold text-text-primary">Chat</h1>
