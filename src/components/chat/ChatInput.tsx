@@ -18,6 +18,7 @@ interface ChatInputProps {
   initialMessage?: string;
   initialAttachments?: Attachment[];
   onCancelEdit?: () => void;
+  variant?: 'centered' | 'default';
 }
 
 export interface ChatInputRef {
@@ -30,6 +31,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   disabled = false,
   isGenerating = false,
   placeholder = 'Type your message...',
+  variant = 'default',
   selectedModel,
   availableModels,
   onModelChange,
@@ -137,7 +139,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   return (
     <div
       {...getRootProps()}
-      className={`border-t border-border bg-surface p-4 ${isDragActive ? 'bg-accent bg-opacity-10' : ''
+      className={`p-4 ${variant === 'default' ? 'border-t border-border bg-surface' : ''} ${isDragActive ? 'bg-accent bg-opacity-10' : ''
         }`}
     >
       <input {...getInputProps()} />

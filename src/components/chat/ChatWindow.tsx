@@ -295,35 +295,61 @@ export function ChatWindow() {
 
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      {/* Messages area */}
-      <div
-        ref={messagesContainerRef}
-        className="flex-1 overflow-y-auto bg-background p-4"
-      >
-        {messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center text-center">
-            <svg
-              className="mb-4 h-12 w-12 text-text-secondary opacity-50"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+      {messages.length === 0 ? (
+        /* Empty state - centered input */
+        <div className="flex flex-1 flex-col items-center bg-background pt-52 px-8">
+          <div className="w-full max-w-3xl">
+            {/* Welcome message */}
+            <div className="mb-8 flex flex-col items-center text-center">
+              <svg
+                className="mb-4 h-12 w-12 text-text-secondary opacity-50"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={1.5}
+                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+                />
+              </svg>
+              <h3 className="mb-2 text-lg font-medium text-text-primary">
+                Start a conversation
+              </h3>
+              <p className="text-sm text-text-secondary">
+                Type a message below to begin chatting with {selectedModel}
+              </p>
+            </div>
+
+            {/* Centered input with rounded style */}
+            <div className="rounded-3xl border border-border bg-surface shadow-sm overflow-hidden">
+              <ChatInput
+                ref={chatInputRef}
+                variant="centered"
+                onSend={handleSend}
+                onAbort={handleAbortStreaming}
+                disabled={isLoading}
+                isGenerating={isStreaming || isExecutingTools}
+                placeholder={`Message ${currentConversation?.model || pendingModel || selectedModel}...`}
+                selectedModel={currentConversation?.model || pendingModel || selectedModel}
+                availableModels={availableModels}
+                onModelChange={handleModelChange}
+                initialMessage={editingMessage?.content}
+                initialAttachments={editingMessage?.attachments}
+                onCancelEdit={handleCancelEdit}
               />
-            </svg>
-            <h3 className="mb-2 text-lg font-medium text-text-primary">
-              Start a conversation
-            </h3>
-            <p className="text-sm text-text-secondary">
-              Type a message below to begin chatting with {selectedModel}
-            </p>
+            </div>
           </div>
-        ) : (
-          <>
+        </div>
+      ) : (
+        /* Chat with messages - normal layout */
+        <>
+          {/* Messages area */}
+          <div
+            ref={messagesContainerRef}
+            className="flex-1 overflow-y-auto bg-background p-4"
+          >
             {messages.map((message) => (
               <ChatMessage
                 key={message.id}
@@ -384,32 +410,32 @@ export function ChatWindow() {
               </div>
             )}
             <div ref={messagesEndRef} />
-          </>
-        )}
-      </div>
+          </div>
 
-      {/* Error display */}
-      {error && (
-        <div className="border-t border-error bg-error bg-opacity-10 px-4 py-2">
-          <p className="text-sm text-error" style={{ color: 'white' }}>{error}</p>
-        </div>
+          {/* Error display */}
+          {error && (
+            <div className="border-t border-error bg-error bg-opacity-10 px-4 py-2">
+              <p className="text-sm text-error" style={{ color: 'white' }}>{error}</p>
+            </div>
+          )}
+
+          {/* Input area */}
+          <ChatInput
+            ref={chatInputRef}
+            onSend={handleSend}
+            onAbort={handleAbortStreaming}
+            disabled={isLoading}
+            isGenerating={isStreaming || isExecutingTools}
+            placeholder={`Message ${currentConversation?.model || pendingModel || selectedModel}...`}
+            selectedModel={currentConversation?.model || pendingModel || selectedModel}
+            availableModels={availableModels}
+            onModelChange={handleModelChange}
+            initialMessage={editingMessage?.content}
+            initialAttachments={editingMessage?.attachments}
+            onCancelEdit={handleCancelEdit}
+          />
+        </>
       )}
-
-      {/* Input area */}
-      <ChatInput
-        ref={chatInputRef}
-        onSend={handleSend}
-        onAbort={handleAbortStreaming}
-        disabled={isLoading}
-        isGenerating={isStreaming || isExecutingTools}
-        placeholder={`Message ${currentConversation?.model || pendingModel || selectedModel}...`}
-        selectedModel={currentConversation?.model || pendingModel || selectedModel}
-        availableModels={availableModels}
-        onModelChange={handleModelChange}
-        initialMessage={editingMessage?.content}
-        initialAttachments={editingMessage?.attachments}
-        onCancelEdit={handleCancelEdit}
-      />
     </div>
   );
 }
