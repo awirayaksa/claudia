@@ -26,6 +26,21 @@ export interface ElectronAPI {
     list: () => Promise<any>;
   };
   platform: string;
+  window: {
+    setTitle: (title: string) => Promise<void>;
+    setBackgroundColor: (color: string) => Promise<void>;
+    minimize: () => Promise<void>;
+    maximize: () => Promise<void>;
+    close: () => Promise<void>;
+    isMaximized: () => Promise<boolean>;
+  };
+  icon: {
+    select: () => Promise<string | null>;
+    upload: (sourcePath: string) => Promise<string>;
+    apply: (iconPath: string) => Promise<{ success: boolean; requiresRestart: boolean }>;
+    reset: () => Promise<void>;
+    getPreview: (iconPath: string) => Promise<string | null>;
+  };
   onMenuEvent: (channel: string, callback: () => void) => (() => void) | undefined;
   mcp: {
     // Server management

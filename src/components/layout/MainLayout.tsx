@@ -5,6 +5,7 @@ import { SettingsPanel } from '../settings/SettingsPanel';
 import { ChatWindow } from '../chat/ChatWindow';
 import { ConversationList } from '../sidebar/ConversationList';
 import { Button } from '../common/Button';
+import { TitleBar } from './TitleBar';
 
 export function MainLayout() {
   const dispatch = useAppDispatch();
@@ -26,12 +27,16 @@ export function MainLayout() {
   };
 
   return (
-    <div className="flex h-full w-full overflow-hidden">
-      {/* Sidebar with conversation list */}
-      {sidebarOpen && <ConversationList />}
+    <div className="flex flex-col h-full w-full overflow-hidden">
+      {/* Custom title bar */}
+      <TitleBar />
 
-      {/* Main content area */}
-      <main className="flex flex-1 flex-col overflow-hidden">
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar with conversation list */}
+        {sidebarOpen && <ConversationList />}
+
+        {/* Main content area */}
+        <main className="flex flex-1 flex-col overflow-hidden">
         {/* Header */}
         <header className="flex h-14 items-center justify-between border-b border-border bg-surface px-4">
           <div className="flex items-center gap-2">
@@ -92,6 +97,7 @@ export function MainLayout() {
         {/* Chat area */}
         <ChatWindow />
       </main>
+      </div>
     </div>
   );
 }
