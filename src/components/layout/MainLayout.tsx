@@ -11,7 +11,8 @@ export function MainLayout() {
   const dispatch = useAppDispatch();
   const { sidebarOpen } = useAppSelector((state) => state.ui);
   const { messages } = useAppSelector((state) => state.chat);
-  const { api } = useAppSelector((state) => state.settings);
+  const { api, appearance } = useAppSelector((state) => state.settings);
+  const appTitle = appearance.customization?.appTitle || 'Claudia';
 
   // Determine selected model based on provider
   const selectedModel = api.provider === 'openrouter'
@@ -70,7 +71,7 @@ export function MainLayout() {
               </div>
             ) : (
               <>
-                <h1 className="text-lg font-semibold text-text-primary">Claudia</h1>
+                <h1 className="text-lg font-semibold text-text-primary">{appTitle}</h1>
                 <span className="rounded bg-accent px-2 py-1 text-xs text-white">Alpha</span>
               </>
             )}
