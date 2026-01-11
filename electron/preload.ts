@@ -39,6 +39,25 @@ contextBridge.exposeInMainWorld('electron', {
   // Platform information
   platform: process.platform,
 
+  // Window operations
+  window: {
+    setTitle: (title: string) => ipcRenderer.invoke('window:setTitle', title),
+    setBackgroundColor: (color: string) => ipcRenderer.invoke('window:setBackgroundColor', color),
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    close: () => ipcRenderer.invoke('window:close'),
+    isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+  },
+
+  // Icon operations
+  icon: {
+    select: () => ipcRenderer.invoke('icon:select'),
+    upload: (sourcePath: string) => ipcRenderer.invoke('icon:upload', sourcePath),
+    apply: (iconPath: string) => ipcRenderer.invoke('icon:apply', iconPath),
+    reset: () => ipcRenderer.invoke('icon:reset'),
+    getPreview: (iconPath: string) => ipcRenderer.invoke('icon:getPreview', iconPath),
+  },
+
   // Menu event listeners
   onMenuEvent: (channel: string, callback: () => void) => {
     const validChannels = [
@@ -209,6 +228,21 @@ export interface ElectronAPI {
     list: () => Promise<any>;
   };
   platform: string;
+  window: {
+    setTitle: (title: string) => Promise<void>;
+    setBackgroundColor: (color: string) => Promise<void>;
+    minimize: () => Promise<void>;
+    maximize: () => Promise<void>;
+    close: () => Promise<void>;
+    isMaximized: () => Promise<boolean>;
+  };
+  icon: {
+    select: () => Promise<string | null>;
+    upload: (sourcePath: string) => Promise<string>;
+    apply: (iconPath: string) => Promise<{ success: boolean; requiresRestart: boolean }>;
+    reset: () => Promise<void>;
+    getPreview: (iconPath: string) => Promise<string | null>;
+  };
   onMenuEvent: (channel: string, callback: () => void) => (() => void) | undefined;
   mcp: {
     // Server management

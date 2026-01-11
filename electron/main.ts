@@ -1,5 +1,6 @@
 import { app, BrowserWindow, ipcMain, Menu } from 'electron';
 import * as path from 'path';
+import * as fs from 'fs';
 import { store } from './services/store.service';
 import { registerConfigHandlers } from './handlers/config.handler';
 import { registerConversationHandlers } from './handlers/conversation.handler';
@@ -11,8 +12,17 @@ import {
   initializePluginManager,
   cleanupPluginManager,
 } from './handlers/plugin.handler';
+import { registerIconHandlers } from './handlers/icon.handler';
 
 let mainWindow: BrowserWindow | null = null;
+
+/**
+ * Get the custom app title from config or return default
+ */
+function getAppTitle(): string {
+  const config = store.get('config');
+  return config?.appearance?.customization?.appTitle || 'Claudia';
+}
 
 function createMenu() {
   const template: any[] = [
@@ -82,7 +92,7 @@ function createMenu() {
       label: 'Help',
       submenu: [
         {
-          label: 'About Claudia',
+          label: `About ${getAppTitle()}`,
           click: () => {
             mainWindow?.webContents.send('menu:about');
           },
@@ -102,8 +112,28 @@ function createWindow() {
     height: 800,
   }) as { width: number; height: number; x?: number; y?: number };
 
-  // Get icon path
-  const iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
+  // Get config for customization
+  const config = store.get('config');
+  const customIconPath = config?.appearance?.customization?.iconPath;
+  const windowTitle = config?.appearance?.customization?.appTitle || 'Claudia';
+  const accentColor = config?.appearance?.customization?.accentColor;
+  const theme = config?.appearance?.theme || 'system';
+
+  // Determine icon path (use custom if exists, otherwise default)
+  let iconPath: string;
+  if (customIconPath && fs.existsSync(customIconPath)) {
+    iconPath = customIconPath;
+  } else {
+    iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
+  }
+
+  // Determine background color (use accent color or default based on theme)
+  let backgroundColor = '#1a1a1a'; // Default dark
+  if (accentColor) {
+    backgroundColor = accentColor;
+  } else if (theme === 'light') {
+    backgroundColor = '#FAF9F7';
+  }
 
   mainWindow = new BrowserWindow({
     width: windowState.width,
@@ -112,7 +142,10 @@ function createWindow() {
     y: windowState.y,
     minWidth: 800,
     minHeight: 600,
+    title: windowTitle,
     icon: iconPath,
+    frame: false, // Remove default frame to enable custom title bar
+    titleBarStyle: 'hidden', // Hide title bar but keep traffic lights on macOS
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -120,7 +153,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
     },
     show: false, // Don't show until ready-to-show
-    backgroundColor: '#1a1a1a', // Dark background to match theme
+    backgroundColor: backgroundColor,
   });
 
   // Save window state on resize/move
@@ -173,6 +206,48 @@ app.whenReady().then(async () => {
   registerProjectHandlers();
   registerMCPHandlers();
   registerPluginHandlers();
+  registerIconHandlers(() => mainWindow);
+
+  // Window title handler
+  ipcMain.handle('window:setTitle', (_, title: string) => {
+    if (mainWindow) {
+      mainWindow.setTitle(title || 'Claudia');
+    }
+  });
+
+  // Window background color handler
+  ipcMain.handle('window:setBackgroundColor', (_, color: string) => {
+    if (mainWindow) {
+      mainWindow.setBackgroundColor(color);
+    }
+  });
+
+  // Window control handlers
+  ipcMain.handle('window:minimize', () => {
+    if (mainWindow) {
+      mainWindow.minimize();
+    }
+  });
+
+  ipcMain.handle('window:maximize', () => {
+    if (mainWindow) {
+      if (mainWindow.isMaximized()) {
+        mainWindow.unmaximize();
+      } else {
+        mainWindow.maximize();
+      }
+    }
+  });
+
+  ipcMain.handle('window:close', () => {
+    if (mainWindow) {
+      mainWindow.close();
+    }
+  });
+
+  ipcMain.handle('window:isMaximized', () => {
+    return mainWindow?.isMaximized() || false;
+  });
 
   // Initialize plugin manager
   await initializePluginManager();

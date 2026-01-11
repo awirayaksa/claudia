@@ -16,6 +16,11 @@ interface SettingsState {
     theme: 'light' | 'dark' | 'system';
     fontSize: 'small' | 'medium' | 'large';
     sidebarWidth: number;
+    customization?: {
+      accentColor?: string;
+      appTitle?: string;
+      iconPath?: string;
+    };
   };
   preferences: {
     saveHistory: boolean;

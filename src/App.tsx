@@ -1,9 +1,11 @@
 import { useEffect } from 'react';
 import { MainLayout } from './components/layout/MainLayout';
 import { useTheme } from './hooks/useTheme';
+import { useAccentColor } from './hooks/useAccentColor';
+import { useAppTitle } from './hooks/useAppTitle';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { useConversations } from './hooks/useConversations';
-import { useAppDispatch } from './store';
+import { useAppDispatch, useAppSelector } from './store';
 import { setApiConfig, setAppearance, setPreferences } from './store/slices/settingsSlice';
 import { setSettingsOpen, toggleSidebar } from './store/slices/uiSlice';
 import { discoverPlugins, loadPluginConfigs, refreshActivePlugins } from './store/slices/pluginSlice';
@@ -11,6 +13,7 @@ import packageJson from '../package.json';
 
 function App() {
   const dispatch = useAppDispatch();
+  const appearance = useAppSelector((state) => state.settings.appearance);
   const { create: createConversation } = useConversations();
 
   // Initialize plugins on app start (runs once on mount)
@@ -116,8 +119,8 @@ function App() {
     });
 
     const cleanupAbout = window.electron.onMenuEvent('menu:about', () => {
-      // TODO: Show about dialog
-      alert(`Claudia - Open WebUI/Open Router Desktop Client\nVersion ${packageJson.version}`);
+      const appTitle = appearance.customization?.appTitle || 'Claudia';
+      alert(`${appTitle} - Open WebUI/Open Router Desktop Client\nVersion ${packageJson.version}`);
     });
 
     // Cleanup listeners on unmount
@@ -127,10 +130,16 @@ function App() {
       cleanupNewChat?.();
       cleanupAbout?.();
     };
-  }, [dispatch, createConversation]);
+  }, [dispatch, createConversation, appearance.customization?.appTitle]);
 
   // Initialize theme on app load
   useTheme();
+
+  // Apply custom accent color
+  useAccentColor();
+
+  // Apply custom app title
+  useAppTitle();
 
   // Enable keyboard shortcuts
   useKeyboardShortcuts();

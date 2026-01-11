@@ -1,0 +1,40 @@
+changelog:
+  exclude:
+    labels:
+      - ignore-for-release
+      - skip-changelog
+  categories:
+    - title: 🚀 Features
+      labels:
+        - feature
+        - enhancement
+      # Matches commit messages starting with these prefixes
+      commits:
+        - feat
+        - feature
+    - title: 🐛 Bug Fixes
+      labels:
+        - bug
+        - fix
+      commits:
+        - fix
+        - bugfix
+    - title: 📚 Documentation
+      labels:
+        - documentation
+      commits:
+        - docs
+    - title: 🔧 Maintenance & Chores
+      commits:
+        - chore
+        - refactor
+        - perf
+        - test
+        - ci
+    - title: 📦 Dependencies
+      commits:
+        - deps
+        - dependency
+    - title: Other Changes
+      labels:
+        - "*"
