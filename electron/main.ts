@@ -249,6 +249,16 @@ app.whenReady().then(async () => {
     return mainWindow?.isMaximized() || false;
   });
 
+  // Show application menu as popup
+  ipcMain.handle('window:showMenu', (event, x: number, y: number) => {
+    if (mainWindow) {
+      const menu = Menu.getApplicationMenu();
+      if (menu) {
+        menu.popup({ window: mainWindow, x, y });
+      }
+    }
+  });
+
   // Initialize plugin manager
   await initializePluginManager();
 

@@ -33,6 +33,7 @@ export interface ElectronAPI {
     maximize: () => Promise<void>;
     close: () => Promise<void>;
     isMaximized: () => Promise<boolean>;
+    showMenu: (x: number, y: number) => Promise<void>;
   };
   icon: {
     select: () => Promise<string | null>;
