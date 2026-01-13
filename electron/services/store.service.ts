@@ -4,6 +4,7 @@ import { MCPServerConfig } from '../../src/types/mcp.types';
 import { PluginConfig } from '../../src/types/plugin.types';
 
 interface StoreSchema {
+  version?: string; // App version for migration tracking
   config: {
     api: {
       provider: 'openwebui' | 'openrouter';
@@ -244,4 +245,82 @@ export function setConfig(config: Partial<StoreSchema['config']>) {
 
   console.log('[Store] Merged config.api:', JSON.stringify(mergedConfig.api, null, 2));
   store.set('config', mergedConfig);
+}
+
+/**
+ * Migrate settings to ensure all required fields exist with proper defaults
+ */
+function migrateSettings() {
+  const config = store.get('config');
+  let needsSave = false;
+
+  // Ensure preferences exist with all required fields
+  if (!config.preferences) {
+    console.log('[Store Migration] Adding missing preferences object');
+    config.preferences = {
+      saveHistory: true,
+      streamingEnabled: true,
+      maxTokens: 2048,
+      temperature: 0.7,
+      logLevel: 'info',
+      enableFileLogging: true,
+      showReasoning: false,
+      showStatistics: false,
+    };
+    needsSave = true;
+  } else {
+    // Check for missing fields in preferences
+    if (config.preferences.showReasoning === undefined) {
+      console.log('[Store Migration] Adding showReasoning field');
+      config.preferences.showReasoning = false;
+      needsSave = true;
+    }
+    if (config.preferences.showStatistics === undefined) {
+      console.log('[Store Migration] Adding showStatistics field');
+      config.preferences.showStatistics = false;
+      needsSave = true;
+    }
+  }
+
+  if (needsSave) {
+    console.log('[Store Migration] Saving migrated config');
+    store.set('config', config);
+  }
+}
+
+/**
+ * Check app version and perform migration/cache clearing if needed
+ * @param currentVersion - Current app version from package.json
+ * @param session - Electron session for cache clearing
+ */
+export async function checkVersionAndMigrate(
+  currentVersion: string,
+  session: Electron.Session
+): Promise<void> {
+  const storedVersion = store.get('version');
+
+  console.log(`[Store] Current version: ${currentVersion}, Stored version: ${storedVersion || 'none'}`);
+
+  // If version changed or missing, perform migration and cache clearing
+  if (!storedVersion || storedVersion !== currentVersion) {
+    console.log('[Store] Version mismatch detected, performing migration and cache clearing');
+
+    // Migrate settings to ensure all fields exist
+    migrateSettings();
+
+    // Clear session cache to prevent old code from being loaded
+    try {
+      console.log('[Store] Clearing session cache...');
+      await session.clearCache();
+      console.log('[Store] Cache cleared successfully');
+    } catch (error) {
+      console.error('[Store] Failed to clear cache:', error);
+    }
+
+    // Update stored version
+    store.set('version', currentVersion);
+    console.log('[Store] Version updated to:', currentVersion);
+  } else {
+    console.log('[Store] Version unchanged, skipping migration');
+  }
 }
