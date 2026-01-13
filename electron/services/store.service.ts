@@ -39,6 +39,10 @@ interface StoreSchema {
       streamingEnabled: boolean;
       maxTokens: number;
       temperature: number;
+      logLevel: 'debug' | 'info' | 'warn' | 'error';
+      enableFileLogging: boolean;
+      showReasoning: boolean;
+      showStatistics: boolean;
     };
   };
   windowState: {
@@ -81,6 +85,10 @@ export const store = new Store<StoreSchema>({
         streamingEnabled: true,
         maxTokens: 2048,
         temperature: 0.7,
+        logLevel: 'info',
+        enableFileLogging: true,
+        showReasoning: false,
+        showStatistics: false,
       },
     },
     windowState: {

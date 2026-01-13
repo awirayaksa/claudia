@@ -38,13 +38,29 @@ export function TitleBar() {
     window.electron.window.close();
   };
 
+  const handleShowMenu = (e: React.MouseEvent) => {
+    const rect = (e.target as HTMLElement).getBoundingClientRect();
+    window.electron.window.showMenu(Math.round(rect.left), Math.round(rect.bottom));
+  };
+
   return (
     <div
       className="flex items-center justify-between h-8 bg-accent text-white select-none"
       style={{ WebkitAppRegion: 'drag' } as any}
     >
       {/* App title and icon */}
-      <div className="flex items-center gap-2 pl-3">
+      <div className="flex items-center gap-2 pl-1">
+        {/* Menu button */}
+        <button
+          onClick={handleShowMenu}
+          className="h-8 px-3 hover:bg-black hover:bg-opacity-20 transition-colors flex items-center"
+          style={{ WebkitAppRegion: 'no-drag' } as any}
+          title="Menu"
+        >
+          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M3 12h18M3 6h18M3 18h18" />
+          </svg>
+        </button>
         {iconPreview ? (
           <img src={iconPreview} alt="App icon" className="w-4 h-4" />
         ) : (

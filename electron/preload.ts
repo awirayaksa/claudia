@@ -47,6 +47,7 @@ contextBridge.exposeInMainWorld('electron', {
     maximize: () => ipcRenderer.invoke('window:maximize'),
     close: () => ipcRenderer.invoke('window:close'),
     isMaximized: () => ipcRenderer.invoke('window:isMaximized'),
+    showMenu: (x: number, y: number) => ipcRenderer.invoke('window:showMenu', x, y),
   },
 
   // Icon operations
@@ -235,6 +236,7 @@ export interface ElectronAPI {
     maximize: () => Promise<void>;
     close: () => Promise<void>;
     isMaximized: () => Promise<boolean>;
+    showMenu: (x: number, y: number) => Promise<void>;
   };
   icon: {
     select: () => Promise<string | null>;
