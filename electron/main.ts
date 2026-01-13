@@ -1,7 +1,7 @@
-import { app, BrowserWindow, ipcMain, Menu } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { store } from './services/store.service';
+import { store, checkVersionAndMigrate } from './services/store.service';
 import { registerConfigHandlers } from './handlers/config.handler';
 import { registerConversationHandlers } from './handlers/conversation.handler';
 import { registerProjectHandlers } from './handlers/project.handler';
@@ -200,6 +200,11 @@ function saveWindowState() {
 
 // App lifecycle
 app.whenReady().then(async () => {
+  // Check version and migrate settings/clear cache if needed
+  const packageJson = require(path.join(__dirname, '..', 'package.json'));
+  const currentVersion = packageJson.version;
+  await checkVersionAndMigrate(currentVersion, session.defaultSession);
+
   // Register IPC handlers
   registerConfigHandlers();
   registerConversationHandlers();
