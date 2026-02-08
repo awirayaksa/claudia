@@ -2,6 +2,7 @@ import Store from 'electron-store';
 import { safeStorage } from 'electron';
 import { MCPServerConfig } from '../../src/types/mcp.types';
 import { PluginConfig } from '../../src/types/plugin.types';
+import { getAllBuiltinServerDefinitions } from './builtin-mcp/registry';
 
 interface StoreSchema {
   version?: string; // App version for migration tracking
@@ -285,6 +286,39 @@ function migrateSettings() {
   if (needsSave) {
     console.log('[Store Migration] Saving migrated config');
     store.set('config', config);
+  }
+}
+
+/**
+ * Seed built-in MCP servers if they don't already exist.
+ * Called during app startup to ensure built-in servers are always available.
+ */
+export function seedBuiltinServers(): void {
+  const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
+  const definitions = getAllBuiltinServerDefinitions();
+  let needsSave = false;
+
+  for (const def of definitions) {
+    if (!servers[def.id]) {
+      console.log(`[Store] Seeding built-in MCP server: ${def.name} (${def.id})`);
+      servers[def.id] = {
+        id: def.id,
+        name: def.name,
+        transport: 'builtin',
+        enabled: false,
+        builtin: true,
+        builtinId: def.id,
+        metadata: {
+          description: def.description,
+        },
+      };
+      needsSave = true;
+    }
+  }
+
+  if (needsSave) {
+    store.set('mcp.servers', servers);
+    console.log('[Store] Built-in servers seeded');
   }
 }
 

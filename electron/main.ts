@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
-import { store, checkVersionAndMigrate } from './services/store.service';
+import { store, checkVersionAndMigrate, seedBuiltinServers } from './services/store.service';
 import { registerConfigHandlers } from './handlers/config.handler';
 import { registerConversationHandlers } from './handlers/conversation.handler';
 import { registerProjectHandlers } from './handlers/project.handler';
@@ -205,6 +205,9 @@ app.whenReady().then(async () => {
   const currentVersion = packageJson.version;
   await checkVersionAndMigrate(currentVersion, session.defaultSession);
 
+  // Seed built-in MCP servers (adds them if missing, preserves existing config)
+  seedBuiltinServers();
+
   // Register IPC handlers
   registerConfigHandlers();
   registerConversationHandlers();
@@ -306,6 +309,14 @@ ipcMain.handle('file:select', async () => {
       { name: 'Documents', extensions: ['pdf', 'docx', 'pptx', 'txt', 'csv'] },
       { name: 'All Files', extensions: ['*'] },
     ],
+  });
+  return result.filePaths;
+});
+
+ipcMain.handle('file:selectDirectories', async () => {
+  const { dialog } = require('electron');
+  const result = await dialog.showOpenDialog({
+    properties: ['openDirectory', 'multiSelections'],
   });
   return result.filePaths;
 });

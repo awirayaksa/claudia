@@ -5,7 +5,7 @@
 // MCP Server Configuration
 // ============================================================================
 
-export type MCPTransportType = 'stdio' | 'streamable-http' | 'sse';
+export type MCPTransportType = 'stdio' | 'streamable-http' | 'sse' | 'builtin';
 
 export interface MCPServerConfig {
   id: string; // UUID
@@ -17,6 +17,9 @@ export interface MCPServerConfig {
   transport: MCPTransportType; // Transport protocol
   autoStart?: boolean; // Auto-start on app launch (default: false)
   enabled: boolean; // Whether server is enabled
+  builtin?: boolean; // true for built-in servers
+  builtinId?: string; // e.g., 'filesystem', 'office'
+  builtinConfig?: Record<string, unknown>; // server-specific config (e.g., allowedDirectories)
   metadata?: {
     description?: string;
     author?: string;

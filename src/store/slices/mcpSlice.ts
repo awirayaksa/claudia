@@ -733,6 +733,20 @@ export const selectEnabledMCPServers = (state: { mcp: MCPState }) => {
     }));
 };
 
+/**
+ * Selects built-in MCP servers
+ */
+export const selectBuiltinServers = (state: { mcp: MCPState }) => {
+  return Object.values(state.mcp.servers).filter(server => server.builtin === true);
+};
+
+/**
+ * Selects custom (non built-in) MCP servers
+ */
+export const selectCustomServers = (state: { mcp: MCPState }) => {
+  return Object.values(state.mcp.servers).filter(server => !server.builtin);
+};
+
 // ============================================================================
 // Exports
 // ============================================================================
