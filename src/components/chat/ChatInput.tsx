@@ -23,6 +23,7 @@ interface ChatInputProps {
 
 export interface ChatInputRef {
   focus: () => void;
+  addFiles: (files: File[]) => void;
 }
 
 export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
@@ -46,10 +47,13 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
   const { uploadFiles, uploading, progress, error: uploadError } = useFileUpload();
 
-  // Expose focus method to parent component
+  // Expose methods to parent component
   useImperativeHandle(ref, () => ({
     focus: () => {
       textareaRef.current?.focus();
+    },
+    addFiles: (files: File[]) => {
+      handleFilesSelected(files);
     },
   }));
 

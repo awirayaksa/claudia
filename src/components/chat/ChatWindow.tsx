@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, DragEvent } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
@@ -255,6 +255,45 @@ export function ChatWindow() {
     dispatch(setEditingMessage(null));
   }, [dispatch]);
 
+  // Window-level drag-and-drop for file attachments
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const dragCounterRef = useRef(0);
+
+  const handleDragEnter = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current++;
+    if (e.dataTransfer.types.includes('Files')) {
+      setIsDraggingOver(true);
+    }
+  }, []);
+
+  const handleDragLeave = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current--;
+    if (dragCounterRef.current === 0) {
+      setIsDraggingOver(false);
+    }
+  }, []);
+
+  const handleDragOver = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  }, []);
+
+  const handleDrop = useCallback((e: DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounterRef.current = 0;
+    setIsDraggingOver(false);
+
+    const files = Array.from(e.dataTransfer.files);
+    if (files.length > 0) {
+      chatInputRef.current?.addFiles(files);
+    }
+  }, []);
+
   // Show configuration prompt if not configured
   if (!isConfigured) {
     return (
@@ -294,7 +333,25 @@ export function ChatWindow() {
   }
 
   return (
-    <div className="flex flex-1 flex-col overflow-hidden">
+    <div
+      className="flex flex-1 flex-col overflow-hidden relative"
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
+      {/* Full-window drop overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-background bg-opacity-80 backdrop-blur-sm">
+          <div className="rounded-2xl border-2 border-dashed border-accent bg-surface px-12 py-10 text-center shadow-lg">
+            <svg className="mx-auto mb-3 h-12 w-12 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <p className="text-lg font-medium text-accent">Drop files to attach</p>
+            <p className="mt-1 text-sm text-text-secondary">Images, PDFs, and documents</p>
+          </div>
+        </div>
+      )}
       {messages.length === 0 ? (
         /* Empty state - centered input */
         <div className="flex flex-1 flex-col items-center bg-background pt-52 px-8">
