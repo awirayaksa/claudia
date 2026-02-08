@@ -189,7 +189,7 @@ export function MCPSettings() {
   const getServerInfo = (server: MCPServerConfig): string => {
     if (server.transport === 'stdio') {
       return `${server.command || ''} ${(server.args || []).join(' ')}`.trim();
-    } else if (server.transport === 'streamable-http') {
+    } else if (server.transport === 'streamable-http' || server.transport === 'sse') {
       return server.url || '';
     }
     return '';
@@ -203,7 +203,7 @@ export function MCPSettings() {
       case 'streamable-http':
         return 'HTTP';
       case 'sse':
-        return 'SSE (legacy)';
+        return 'SSE';
       default:
         return transport;
     }

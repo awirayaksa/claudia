@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   ToolListChangedNotificationSchema,
@@ -110,6 +111,8 @@ export class MCPClientWrapper extends EventEmitter {
         await this.createStdioTransport();
       } else if (this.config.transport === 'streamable-http') {
         await this.createHttpTransport();
+      } else if (this.config.transport === 'sse') {
+        await this.createSseTransport();
       } else {
         throw new Error(`Unknown transport: ${this.config.transport}`);
       }
@@ -229,6 +232,20 @@ export class MCPClientWrapper extends EventEmitter {
     });
 
     this.transport = new StreamableHTTPClientTransport(
+      new URL(this.config.url)
+    );
+  }
+
+  private async createSseTransport(): Promise<void> {
+    if (!this.config.url) {
+      throw new Error('URL is required for SSE transport');
+    }
+
+    console.log(`[MCP ${this.config.name}] Creating SSE transport:`, {
+      url: this.config.url,
+    });
+
+    this.transport = new SSEClientTransport(
       new URL(this.config.url)
     );
   }
