@@ -3,12 +3,14 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
+import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
 import {
   ToolListChangedNotificationSchema,
   ResourceListChangedNotificationSchema,
   PromptListChangedNotificationSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import {
   MCPServerConfig,
   MCPServerStatus,
@@ -20,6 +22,7 @@ import {
   MCPResourceContent,
   MCPPromptMessage,
 } from '../../src/types/mcp.types';
+import { getBuiltinServerDefinition } from './builtin-mcp/registry';
 
 // ============================================================================
 // MCP Client Wrapper - Uses official SDK
@@ -28,6 +31,7 @@ import {
 export class MCPClientWrapper extends EventEmitter {
   private client: Client | null = null;
   private transport: Transport | null = null;
+  private builtinServer: McpServer | null = null;
   private _status: MCPServerStatus = 'stopped';
   private _capabilities?: MCPServerCapabilities;
   private _tools: MCPTool[] = [];
@@ -107,7 +111,9 @@ export class MCPClientWrapper extends EventEmitter {
 
     try {
       // Create transport based on config
-      if (this.config.transport === 'stdio') {
+      if (this.config.transport === 'builtin') {
+        await this.createBuiltinTransport();
+      } else if (this.config.transport === 'stdio') {
         await this.createStdioTransport();
       } else if (this.config.transport === 'streamable-http') {
         await this.createHttpTransport();
@@ -250,6 +256,34 @@ export class MCPClientWrapper extends EventEmitter {
     );
   }
 
+  private async createBuiltinTransport(): Promise<void> {
+    if (!this.config.builtinId) {
+      throw new Error('builtinId is required for builtin transport');
+    }
+
+    const definition = getBuiltinServerDefinition(this.config.builtinId);
+    if (!definition) {
+      throw new Error(`Unknown built-in server: ${this.config.builtinId}`);
+    }
+
+    console.log(`[MCP ${this.config.name}] Creating in-process builtin transport:`, {
+      builtinId: this.config.builtinId,
+    });
+
+    // Create the in-process MCP server
+    this.builtinServer = definition.createServer(this.config.builtinConfig);
+
+    // Create linked transport pair
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+
+    // Connect the server side
+    await this.builtinServer.connect(serverTransport);
+
+    // Use the client side as our transport
+    this.transport = clientTransport;
+    this.addLog(`Built-in server "${definition.name}" initialized in-process`);
+  }
+
   private mapCapabilities(serverCaps: any): MCPServerCapabilities {
     return {
       tools: serverCaps?.tools ? { listChanged: !!serverCaps.tools.listChanged } : undefined,
@@ -332,6 +366,16 @@ export class MCPClientWrapper extends EventEmitter {
         console.error(`[MCP ${this.config.name}] Error closing transport:`, error);
       }
       this.transport = null;
+    }
+
+    // Close built-in server
+    if (this.builtinServer) {
+      try {
+        await this.builtinServer.close();
+      } catch (error) {
+        console.error(`[MCP ${this.config.name}] Error closing builtin server:`, error);
+      }
+      this.builtinServer = null;
     }
 
     this._capabilities = undefined;

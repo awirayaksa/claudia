@@ -15,7 +15,11 @@ function validateConfig(config: MCPServerConfig): void {
     throw new Error('Invalid server configuration: missing id or name');
   }
 
-  if (config.transport === 'stdio') {
+  if (config.transport === 'builtin') {
+    if (!config.builtinId) {
+      throw new Error('Invalid server configuration: builtinId is required for builtin transport');
+    }
+  } else if (config.transport === 'stdio') {
     if (!config.command) {
       throw new Error('Invalid server configuration: command is required for stdio transport');
     }
@@ -181,6 +185,29 @@ export function registerMCPHandlers() {
 
   ipcMain.handle('mcp:config:save', async (_event, config: MCPServerConfig) => {
     try {
+      // Get existing servers
+      const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
+      const existing = servers[config.id];
+
+      // Protect built-in servers: only allow changing enabled, autoStart, and builtinConfig
+      if (existing?.builtin) {
+        const updated: MCPServerConfig = {
+          ...existing,
+          enabled: config.enabled,
+          autoStart: config.autoStart,
+          builtinConfig: config.builtinConfig ?? existing.builtinConfig,
+        };
+        servers[config.id] = updated;
+        store.set('mcp.servers', servers);
+
+        console.log('[MCP] Updated built-in server config:', updated.name, {
+          enabled: updated.enabled,
+          autoStart: updated.autoStart,
+        });
+
+        return { success: true };
+      }
+
       // Validate config based on transport type
       validateConfig(config);
 
@@ -203,9 +230,6 @@ export function registerMCPHandlers() {
         envKeys: Object.keys(config.env || {}),
       });
 
-      // Get existing servers
-      const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
-
       // Save config
       servers[config.id] = config;
       store.set('mcp.servers', servers);
@@ -222,11 +246,17 @@ export function registerMCPHandlers() {
 
   ipcMain.handle('mcp:config:delete', async (_event, serverId: string) => {
     try {
+      // Protect built-in servers from deletion
+      const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
+      const config = servers[serverId];
+      if (config?.builtin) {
+        throw new Error('Built-in servers cannot be deleted');
+      }
+
       // Stop server if running
       await manager.stopServer(serverId);
 
       // Delete config from store
-      const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
       delete servers[serverId];
       store.set('mcp.servers', servers);
 

@@ -17,6 +17,7 @@ import {
 import { MCPServerConfig } from '../../types/mcp.types';
 import { Button } from '../common/Button';
 import { MCPServerModal } from './MCPServerModal';
+import { BuiltinMCPSection } from './BuiltinMCPSection';
 
 export function MCPSettings() {
   const dispatch = useAppDispatch();
@@ -209,7 +210,8 @@ export function MCPSettings() {
     }
   };
 
-  const serverList = Object.values(servers);
+  const customServers = Object.values(servers).filter((s) => !s.builtin);
+  const serverList = customServers;
 
   return (
     <div className="space-y-6">
@@ -231,7 +233,10 @@ export function MCPSettings() {
         </div>
       )}
 
-      {/* Server List */}
+      {/* Built-in Servers */}
+      <BuiltinMCPSection onViewLogs={handleViewLogs} />
+
+      {/* Custom Server List */}
       <div className="space-y-2">
         {isLoadingServers ? (
           <div className="flex items-center justify-center p-8 text-text-secondary">

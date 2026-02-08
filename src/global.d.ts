@@ -7,6 +7,7 @@ export interface ElectronAPI {
   };
   file: {
     select: () => Promise<string[]>;
+    selectDirectories: () => Promise<string[]>;
     read: (path: string) => Promise<Buffer>;
     save: (path: string, data: any) => Promise<void>;
   };

@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('electron', {
   // File operations
   file: {
     select: () => ipcRenderer.invoke('file:select'),
+    selectDirectories: () => ipcRenderer.invoke('file:selectDirectories'),
     read: (path: string) => ipcRenderer.invoke('file:read', path),
     save: (path: string, data: any) => ipcRenderer.invoke('file:save', path, data),
   },
