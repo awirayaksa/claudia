@@ -44,7 +44,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const { uploadFiles, uploading, progress } = useFileUpload();
+  const { uploadFiles, uploading, progress, error: uploadError } = useFileUpload();
 
   // Expose focus method to parent component
   useImperativeHandle(ref, () => ({
@@ -99,12 +99,49 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
   };
 
+  const readFileAsBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return;
 
-    const uploaded = await uploadFiles(files);
-    if (uploaded.length > 0) {
-      setAttachments((prev) => [...prev, ...uploaded]);
+    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
+    const otherFiles = files.filter((f) => !f.type.startsWith('image/'));
+
+    // Read images as base64 locally (no server upload needed)
+    const imageAttachments: Attachment[] = [];
+    for (const file of imageFiles) {
+      try {
+        const data = await readFileAsBase64(file);
+        imageAttachments.push({
+          id: crypto.randomUUID(),
+          type: 'image',
+          name: file.name,
+          size: file.size,
+          mimeType: file.type,
+          data,
+        });
+      } catch {
+        console.error('Failed to read image file:', file.name);
+      }
+    }
+
+    if (imageAttachments.length > 0) {
+      setAttachments((prev) => [...prev, ...imageAttachments]);
+    }
+
+    // Upload non-image files to server
+    if (otherFiles.length > 0) {
+      const uploaded = await uploadFiles(otherFiles);
+      if (uploaded.length > 0) {
+        setAttachments((prev) => [...prev, ...uploaded]);
+      }
     }
   };
 
@@ -189,6 +226,13 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       {uploading && Object.keys(progress).length > 0 && (
         <div className="mb-3 text-xs text-text-secondary">
           Uploading files...
+        </div>
+      )}
+
+      {/* Upload error */}
+      {uploadError && (
+        <div className="mb-3 text-xs text-error">
+          {uploadError}
         </div>
       )}
 

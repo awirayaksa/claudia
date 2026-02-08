@@ -10,6 +10,7 @@ export interface Attachment {
   mimeType: string;
   url?: string;
   localPath?: string;
+  data?: string; // base64 data URI for inline embedding (e.g. images)
 }
 
 // Tool calling types (OpenAI function calling format)

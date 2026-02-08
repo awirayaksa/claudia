@@ -60,9 +60,22 @@ export interface OpenAITool {
   };
 }
 
+// Multi-part content for vision/image support (OpenAI format)
+export interface TextContentPart {
+  type: 'text';
+  text: string;
+}
+
+export interface ImageUrlContentPart {
+  type: 'image_url';
+  image_url: { url: string };
+}
+
+export type ContentPart = TextContentPart | ImageUrlContentPart;
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | null;
+  content: string | ContentPart[] | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string; // For tool role messages
   name?: string; // Tool name for tool role messages

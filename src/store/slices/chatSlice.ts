@@ -1,10 +1,43 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Message, Attachment, ToolCall, ToolResult } from '../../types/message.types';
 import { MessageUsage } from '../../types/statistics.types';
+import { ContentPart } from '../../types/api.types';
 import { getAPIProvider } from '../../services/api/provider.service';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
 import { v4 as uuidv4 } from 'uuid';
 import type { RootState } from '../index';
+
+/**
+ * Build message content with attachments in OpenAI multi-part format.
+ * Images are embedded as image_url content parts.
+ */
+function buildMessageContent(
+  text: string,
+  attachments?: Attachment[]
+): string | ContentPart[] {
+  const imageAttachments = attachments?.filter(
+    (a) => a.type === 'image' && a.data
+  );
+
+  if (!imageAttachments || imageAttachments.length === 0) {
+    return text;
+  }
+
+  const parts: ContentPart[] = [];
+
+  if (text) {
+    parts.push({ type: 'text', text });
+  }
+
+  for (const img of imageAttachments) {
+    parts.push({
+      type: 'image_url',
+      image_url: { url: img.data! },
+    });
+  }
+
+  return parts;
+}
 
 interface ChatState {
   messages: Message[];
@@ -52,16 +85,16 @@ export const sendMessage = createAsyncThunk(
       const provider = getAPIProvider();
       const temperature = state.settings.preferences.temperature;
 
-      // Get all messages for context
+      // Get all messages for context (include attachments for prior messages)
       const messages = state.chat.messages.map((msg: Message) => ({
         role: msg.role,
-        content: msg.content,
+        content: buildMessageContent(msg.content, msg.attachments),
       }));
 
-      // Add the new user message
+      // Add the new user message with attachments
       messages.push({
         role: 'user' as const,
-        content,
+        content: buildMessageContent(content, attachments),
       });
 
       // Call the API
@@ -72,7 +105,9 @@ export const sendMessage = createAsyncThunk(
         temperature: temperature,
       });
 
-      const assistantContent = response.choices[0].message.content;
+      // Assistant responses are always plain text strings
+      const rawContent = response.choices[0].message.content;
+      const assistantContent = typeof rawContent === 'string' ? rawContent : '';
 
       return {
         userMessageId: uuidv4(),
@@ -344,16 +379,16 @@ export const sendStreamingMessage = createAsyncThunk(
       timestamp,
     }));
 
-    // Get all messages for context
+    // Get all messages for context (include attachments for prior messages)
     const messages = state.chat.messages.map((msg: Message) => ({
       role: msg.role,
-      content: msg.content,
+      content: buildMessageContent(msg.content, msg.attachments),
     }));
 
-    // Add the new user message
+    // Add the new user message with attachments
     messages.push({
       role: 'user' as const,
-      content,
+      content: buildMessageContent(content, attachments),
     });
 
     // Create abort controller
@@ -421,19 +456,19 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     // Clear tool state
     dispatch(clearToolCalls());
 
-    // Get all messages for context
+    // Get all messages for context (include attachments for prior messages)
     let messages = state.chat.messages.map((msg: Message) => ({
       role: msg.role,
-      content: msg.content,
+      content: buildMessageContent(msg.content, msg.attachments),
       tool_calls: msg.toolCalls,
       tool_call_id: msg.tool_call_id,
       name: msg.name,
     }));
 
-    // Add the new user message
+    // Add the new user message with attachments
     messages.push({
       role: 'user' as const,
-      content,
+      content: buildMessageContent(content, attachments),
       tool_calls: undefined,
       tool_call_id: undefined,
       name: undefined,

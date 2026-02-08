@@ -13,11 +13,13 @@ export function MessageAttachment({ attachment }: MessageAttachmentProps) {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  if (isImage && attachment.url) {
+  const imageSrc = attachment.data || attachment.url;
+
+  if (isImage && imageSrc) {
     return (
       <div className="mt-2 rounded overflow-hidden border border-border">
         <img
-          src={attachment.url}
+          src={imageSrc}
           alt={attachment.name}
           className="max-w-full max-h-64 object-contain"
         />
