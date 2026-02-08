@@ -23,23 +23,15 @@ function validateConfig(config: MCPServerConfig): void {
     if (!config.url) {
       throw new Error('Invalid server configuration: url is required for streamable-http transport');
     }
+  } else if (config.transport === 'sse') {
+    if (!config.url) {
+      throw new Error('Invalid server configuration: url is required for SSE transport');
+    }
   } else {
     throw new Error(`Invalid server configuration: unknown transport type "${config.transport}"`);
   }
 }
 
-// Helper to migrate old config format
-function migrateConfig(config: MCPServerConfig): MCPServerConfig {
-  // Migrate 'sse' transport to 'streamable-http'
-  if ((config.transport as string) === 'sse') {
-    console.log(`[MCP] Migrating server "${config.name}" from 'sse' to 'streamable-http' transport`);
-    return {
-      ...config,
-      transport: 'streamable-http',
-    };
-  }
-  return config;
-}
 
 export function registerMCPHandlers() {
   const manager = getMCPServerManager();
@@ -52,14 +44,11 @@ export function registerMCPHandlers() {
     try {
       // Load config from store
       const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
-      let config = servers[serverId];
+      const config = servers[serverId];
 
       if (!config) {
         throw new Error(`Server configuration not found: ${serverId}`);
       }
-
-      // Migrate old config format if needed
-      config = migrateConfig(config);
 
       // Debug logging
       console.log('[MCP] Starting server:', config.name, {
@@ -97,14 +86,11 @@ export function registerMCPHandlers() {
     try {
       // Load config from store
       const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
-      let config = servers[serverId];
+      const config = servers[serverId];
 
       if (!config) {
         throw new Error(`Server configuration not found: ${serverId}`);
       }
-
-      // Migrate old config format if needed
-      config = migrateConfig(config);
 
       await manager.restartServer(serverId, config);
       return { success: true };
@@ -164,24 +150,7 @@ export function registerMCPHandlers() {
     try {
       const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
 
-      // Migrate old configs
-      const migratedServers: Record<string, MCPServerConfig> = {};
-      let needsSave = false;
-
-      for (const [id, config] of Object.entries(servers)) {
-        const migrated = migrateConfig(config);
-        migratedServers[id] = migrated;
-        if (migrated !== config) {
-          needsSave = true;
-        }
-      }
-
-      // Save migrated configs if needed
-      if (needsSave) {
-        store.set('mcp.servers', migratedServers);
-      }
-
-      return { success: true, servers: migratedServers };
+      return { success: true, servers };
     } catch (error) {
       console.error('[MCP] Failed to list configs:', error);
       return {
@@ -194,14 +163,11 @@ export function registerMCPHandlers() {
   ipcMain.handle('mcp:config:get', async (_event, serverId: string) => {
     try {
       const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
-      let config = servers[serverId];
+      const config = servers[serverId];
 
       if (!config) {
         throw new Error(`Server configuration not found: ${serverId}`);
       }
-
-      // Migrate old config format if needed
-      config = migrateConfig(config);
 
       return { success: true, config };
     } catch (error) {

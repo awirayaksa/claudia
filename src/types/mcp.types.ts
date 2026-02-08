@@ -5,7 +5,7 @@
 // MCP Server Configuration
 // ============================================================================
 
-export type MCPTransportType = 'stdio' | 'streamable-http';
+export type MCPTransportType = 'stdio' | 'streamable-http' | 'sse';
 
 export interface MCPServerConfig {
   id: string; // UUID

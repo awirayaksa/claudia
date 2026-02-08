@@ -30,11 +30,7 @@ export function MCPServerModal({ isOpen, onClose, onSave, initialConfig }: MCPSe
   useEffect(() => {
     if (initialConfig) {
       setName(initialConfig.name);
-      // Handle migration from old 'sse' to 'streamable-http'
-      const transportValue = initialConfig.transport === 'sse' as MCPTransportType
-        ? 'streamable-http'
-        : initialConfig.transport;
-      setTransport(transportValue as MCPTransportType);
+      setTransport(initialConfig.transport);
       setCommand(initialConfig.command || '');
       setArgs((initialConfig.args || []).join('\n'));
       setUrl(initialConfig.url || '');
@@ -66,9 +62,9 @@ export function MCPServerModal({ isOpen, onClose, onSave, initialConfig }: MCPSe
       if (!command.trim()) {
         newErrors.command = 'Command is required for stdio transport';
       }
-    } else if (transport === 'streamable-http') {
+    } else if (transport === 'streamable-http' || transport === 'sse') {
       if (!url.trim()) {
-        newErrors.url = 'URL is required for HTTP transport';
+        newErrors.url = `URL is required for ${transport === 'sse' ? 'SSE' : 'HTTP'} transport`;
       } else {
         try {
           new URL(url.trim());
@@ -113,7 +109,7 @@ export function MCPServerModal({ isOpen, onClose, onSave, initialConfig }: MCPSe
         },
         {} as Record<string, string>
       );
-    } else if (transport === 'streamable-http') {
+    } else if (transport === 'streamable-http' || transport === 'sse') {
       config.url = url.trim();
     }
 
@@ -180,11 +176,14 @@ export function MCPServerModal({ isOpen, onClose, onSave, initialConfig }: MCPSe
           >
             <option value="stdio">Standard I/O (Local Process)</option>
             <option value="streamable-http">Streamable HTTP (Remote Server)</option>
+            <option value="sse">SSE (Remote Server)</option>
           </select>
           <p className="mt-1 text-xs text-text-secondary">
             {transport === 'stdio'
               ? 'Spawns a local process and communicates via stdin/stdout'
-              : 'Connects to a remote MCP server via HTTP'}
+              : transport === 'streamable-http'
+                ? 'Connects to a remote MCP server via HTTP'
+                : 'Connects to a remote MCP server via Server-Sent Events'}
           </p>
         </div>
 
@@ -275,8 +274,8 @@ export function MCPServerModal({ isOpen, onClose, onSave, initialConfig }: MCPSe
           </>
         )}
 
-        {/* HTTP-specific fields */}
-        {transport === 'streamable-http' && (
+        {/* HTTP/SSE-specific fields */}
+        {(transport === 'streamable-http' || transport === 'sse') && (
           <div>
             <label className="mb-1 block text-sm font-medium text-text-primary">
               Server URL <span className="text-error">*</span>
@@ -292,7 +291,9 @@ export function MCPServerModal({ isOpen, onClose, onSave, initialConfig }: MCPSe
             />
             {errors.url && <p className="mt-1 text-xs text-error">{errors.url}</p>}
             <p className="mt-1 text-xs text-text-secondary">
-              The HTTP endpoint of the remote MCP server
+              {transport === 'sse'
+                ? 'The SSE endpoint of the remote MCP server'
+                : 'The HTTP endpoint of the remote MCP server'}
             </p>
           </div>
         )}
