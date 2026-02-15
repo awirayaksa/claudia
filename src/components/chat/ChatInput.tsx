@@ -94,6 +94,31 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     }
   };
 
+  const handlePaste = async (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    const files: File[] = [];
+
+    // Extract files from clipboard
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.kind === 'file') {
+        const file = item.getAsFile();
+        if (file) {
+          files.push(file);
+        }
+      }
+    }
+
+    // If files were found, handle them
+    if (files.length > 0) {
+      e.preventDefault(); // Prevent default paste behavior for files
+      await handleFilesSelected(files);
+    }
+    // Otherwise, allow normal text paste
+  };
+
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     setMessage(e.target.value);
 
@@ -279,6 +304,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           value={message}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           placeholder={placeholder}
           disabled={disabled || uploading}
           rows={1}
@@ -318,7 +344,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       </div>
 
       <p className="mt-2 text-xs text-text-secondary">
-        Press Enter to send, Shift+Enter for new line • Drag & drop files or click 📎
+        Press Enter to send, Shift+Enter for new line • Drag & drop, paste, or click 📎 to attach files
       </p>
     </div>
   );
