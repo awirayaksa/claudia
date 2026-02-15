@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { abbreviateModelName, truncateModelName } from '../../utils/modelHelpers';
 
 interface CompactModelSelectorProps {
@@ -15,6 +16,7 @@ export function CompactModelSelector({
   disabled = false,
 }: CompactModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
+  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const selectedItemRef = useRef<HTMLButtonElement>(null);
@@ -35,6 +37,18 @@ export function CompactModelSelector({
     if (isOpen) {
       document.addEventListener('mousedown', handleClickOutside);
       return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [isOpen]);
+
+  // Calculate dropdown position when it opens
+  useEffect(() => {
+    if (isOpen && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      setDropdownPosition({
+        top: rect.top - 8, // 8px margin above button (mb-2 = 0.5rem = 8px)
+        left: rect.left,
+        width: rect.width,
+      });
     }
   }, [isOpen]);
 
@@ -100,10 +114,15 @@ export function CompactModelSelector({
         </svg>
       </button>
 
-      {isOpen && (
+      {isOpen && createPortal(
         <div
           ref={dropdownRef}
-          className="absolute bottom-full left-0 mb-2 w-64 rounded-lg border border-border bg-surface shadow-lg"
+          className="fixed z-50 w-64 rounded-lg border border-border bg-surface shadow-lg"
+          style={{
+            top: `${dropdownPosition.top}px`,
+            left: `${dropdownPosition.left}px`,
+            transform: 'translateY(-100%)',
+          }}
           role="listbox"
           aria-label="Available models"
         >
@@ -149,7 +168,8 @@ export function CompactModelSelector({
               })
             )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
