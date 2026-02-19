@@ -321,6 +321,32 @@ ipcMain.handle('file:selectDirectories', async () => {
   return result.filePaths;
 });
 
+ipcMain.handle('file:listDirectory', async (_event, dirPath: string) => {
+  try {
+    if (!path.isAbsolute(dirPath) || !fs.existsSync(dirPath)) {
+      return { success: false, entries: [], error: 'Invalid directory path' };
+    }
+    const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    return {
+      success: true,
+      entries: entries.map((e) => ({ name: e.name, isDirectory: e.isDirectory() })),
+    };
+  } catch (err) {
+    return { success: false, entries: [], error: String(err) };
+  }
+});
+
+ipcMain.handle('file:read', async (_event, filePath: string) => {
+  try {
+    if (!path.isAbsolute(filePath) || !fs.existsSync(filePath)) {
+      throw new Error('Invalid file path');
+    }
+    return fs.readFileSync(filePath, 'utf-8');
+  } catch (err) {
+    throw new Error(String(err));
+  }
+});
+
 // Basic error handling
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);

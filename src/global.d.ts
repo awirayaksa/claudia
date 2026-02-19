@@ -8,8 +8,13 @@ export interface ElectronAPI {
   file: {
     select: () => Promise<string[]>;
     selectDirectories: () => Promise<string[]>;
-    read: (path: string) => Promise<Buffer>;
+    read: (path: string) => Promise<string>;
     save: (path: string, data: any) => Promise<void>;
+    listDirectory: (dirPath: string) => Promise<{
+      success: boolean;
+      entries: Array<{ name: string; isDirectory: boolean }>;
+      error?: string;
+    }>;
   };
   conversation: {
     save: (conversation: any) => Promise<any>;

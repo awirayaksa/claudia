@@ -1,10 +1,13 @@
-import React, { useState, useRef, KeyboardEvent, forwardRef, useImperativeHandle, useEffect } from 'react';
+import React, { useState, useRef, KeyboardEvent, forwardRef, useImperativeHandle, useEffect, useCallback, useMemo } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Button } from '../common/Button';
 import { Attachment } from '../../types/message.types';
 import { useFileUpload } from '../../hooks/useFileUpload';
 import { CompactModelSelector } from './CompactModelSelector';
 import MCPServerBadges from './MCPServerBadges';
+import { FileMentionDropdown } from './FileMentionDropdown';
+import { useFileMention } from '../../hooks/useFileMention';
+import { useAppSelector } from '../../store';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -24,6 +27,34 @@ interface ChatInputProps {
 export interface ChatInputRef {
   focus: () => void;
   addFiles: (files: File[]) => void;
+}
+
+async function expandFileMentions(message: string, baseDir: string): Promise<string> {
+  const mentionRegex = /@([\w.\-\/]+)/g;
+  const matches = [...message.matchAll(mentionRegex)];
+  if (!matches.length) return message;
+
+  const uniquePaths = [...new Set(matches.map((m) => m[1]))];
+  const contentMap: Record<string, string> = {};
+
+  // TODO: add file size guard in a future version
+  await Promise.all(
+    uniquePaths.map(async (relPath) => {
+      const absPath = `${baseDir}/${relPath}`.replace(/\\/g, '/');
+      try {
+        const content = await window.electron.file.read(absPath);
+        contentMap[relPath] = typeof content === 'string' ? content : String(content);
+      } catch {
+        // Silently skip — likely a directory mention, not a file
+      }
+    })
+  );
+
+  return message.replace(mentionRegex, (_match, relPath) =>
+    contentMap[relPath] !== undefined
+      ? `<file path="${relPath}">\n${contentMap[relPath]}\n</file>`
+      : _match
+  );
 }
 
 export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
@@ -46,6 +77,19 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { uploadFiles, uploading, progress, error: uploadError } = useFileUpload();
+
+  // Redux selectors for filesystem mention feature
+  const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
+  const serverStates = useAppSelector((state) => state.mcp.serverStates);
+  const isFilesystemReady = useMemo(
+    () =>
+      Object.values(serverStates).some(
+        (s) => s.config.builtinId === 'builtin-filesystem-001' && s.status === 'ready'
+      ),
+    [serverStates]
+  );
+
+  const fileMention = useFileMention(filesystemDirectory, isFilesystemReady);
 
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
@@ -74,7 +118,11 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
   const handleSend = async () => {
     if ((message.trim() || attachments.length > 0) && !disabled && !uploading) {
-      onSend(message.trim(), attachments.length > 0 ? attachments : undefined);
+      fileMention.close();
+      const expandedMessage = filesystemDirectory
+        ? await expandFileMentions(message, filesystemDirectory)
+        : message;
+      onSend(expandedMessage.trim(), attachments.length > 0 ? attachments : undefined);
       setMessage('');
       setAttachments([]);
       // Reset textarea height
@@ -87,6 +135,25 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    // Intercept keyboard events for the mention dropdown first
+    if (fileMention.isOpen) {
+      const result = fileMention.handleKeyDown(e);
+      if (result.consumed) {
+        e.preventDefault();
+        if (result.newValue !== undefined) {
+          setMessage(result.newValue);
+          requestAnimationFrame(() => {
+            textareaRef.current?.setSelectionRange(result.newCursorPos!, result.newCursorPos!);
+            if (result.keepOpen) {
+              // Directory was selected — re-trigger to load subdirectory listing
+              fileMention.handleChange(result.newValue!, result.newCursorPos!);
+            }
+          });
+        }
+        return;
+      }
+    }
+
     // Send on Enter, new line on Shift+Enter
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -120,13 +187,38 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setMessage(e.target.value);
+    const value = e.target.value;
+    setMessage(value);
 
     // Auto-resize textarea
     const textarea = e.target;
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+
+    // Trigger mention detection
+    fileMention.handleChange(value, e.target.selectionStart ?? value.length);
   };
+
+  const handleMentionSelect = useCallback(
+    (entry: { name: string; isDirectory: boolean }) => {
+      const cursorPos = textareaRef.current?.selectionStart ?? message.length;
+      const { newValue, newCursorPos, keepOpen } = fileMention.selectEntry(
+        entry,
+        message,
+        cursorPos
+      );
+      setMessage(newValue);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+        if (keepOpen) {
+          // Directory selected — re-trigger handleChange to fetch subdirectory listing
+          fileMention.handleChange(newValue, newCursorPos);
+        }
+      });
+    },
+    [message, fileMention]
+  );
 
   const readFileAsBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -305,6 +397,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           onChange={handleInput}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
+          onBlur={() => setTimeout(() => fileMention.close(), 150)}
           placeholder={placeholder}
           disabled={disabled || uploading}
           rows={1}
@@ -342,6 +435,16 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           )}
         </Button>
       </div>
+
+      {/* File mention dropdown */}
+      <FileMentionDropdown
+        isOpen={fileMention.isOpen}
+        entries={fileMention.filteredEntries}
+        activeIndex={fileMention.activeIndex}
+        anchorRef={textareaRef}
+        onSelect={handleMentionSelect}
+        onClose={fileMention.close}
+      />
 
       <p className="mt-2 text-xs text-text-secondary">
         Press Enter to send, Shift+Enter for new line • Drag & drop, paste, or click 📎 to attach files
