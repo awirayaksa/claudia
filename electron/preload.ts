@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electron', {
     selectDirectories: () => ipcRenderer.invoke('file:selectDirectories'),
     read: (path: string) => ipcRenderer.invoke('file:read', path),
     save: (path: string, data: any) => ipcRenderer.invoke('file:save', path, data),
+    listDirectory: (dirPath: string) => ipcRenderer.invoke('file:listDirectory', dirPath),
   },
 
   // Conversation operations
@@ -213,8 +214,13 @@ export interface ElectronAPI {
   };
   file: {
     select: () => Promise<string[]>;
-    read: (path: string) => Promise<Buffer>;
+    read: (path: string) => Promise<string>;
     save: (path: string, data: any) => Promise<void>;
+    listDirectory: (dirPath: string) => Promise<{
+      success: boolean;
+      entries: Array<{ name: string; isDirectory: boolean }>;
+      error?: string;
+    }>;
   };
   conversation: {
     save: (conversation: any) => Promise<any>;
