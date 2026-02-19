@@ -2,12 +2,13 @@ import { useEffect, useRef, useState, useCallback, DragEvent } from 'react';
 import { ChatMessage } from './ChatMessage';
 import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
+import { FilesystemDirectoryBar } from './FilesystemDirectoryBar';
 import { useChat } from '../../hooks/useChat';
 import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { Attachment } from '../../types/message.types';
-import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage } from '../../store/slices/chatSlice';
+import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage, setFilesystemDirectory } from '../../store/slices/chatSlice';
 import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
 
@@ -31,6 +32,8 @@ export function ChatWindow() {
 
   const editingMessage = useAppSelector((state) => state.chat.editingMessage);
   const streamingReasoning = useAppSelector((state) => state.chat.streamingReasoning);
+  const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
+  const serverStates = useAppSelector((state) => state.mcp.serverStates);
 
   const {
     currentConversationId,
@@ -122,6 +125,28 @@ export function ChatWindow() {
         .catch((error) => {
           console.error('Failed to load conversation:', error);
         });
+    }
+  }, [currentConversationId]);
+
+  // Clear per-session filesystem directory when switching conversations
+  const prevConversationIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const prev = prevConversationIdRef.current;
+    prevConversationIdRef.current = currentConversationId;
+
+    if (prev !== null && prev !== currentConversationId && filesystemDirectory) {
+      dispatch(setFilesystemDirectory(null));
+
+      // Find the filesystem server and restart it with empty allowed dirs
+      const filesystemEntry = Object.entries(serverStates).find(
+        ([, s]) => s.config.builtinId === 'builtin-filesystem-001' && s.status === 'ready'
+      );
+      if (filesystemEntry) {
+        const [serverId] = filesystemEntry;
+        window.electron.mcp.restartWithBuiltinConfig(serverId, { allowedDirectories: [] }).catch((err) => {
+          console.error('[ChatWindow] Failed to clear filesystem dirs on conversation switch:', err);
+        });
+      }
     }
   }, [currentConversationId]);
 
@@ -379,6 +404,9 @@ export function ChatWindow() {
               </p>
             </div>
 
+            {/* Filesystem directory bar */}
+            <FilesystemDirectoryBar disabled={isLoading || isStreaming || isExecutingTools} />
+
             {/* Centered input with rounded style */}
             <div className="rounded-3xl border border-border bg-surface shadow-sm overflow-hidden">
               <ChatInput
@@ -475,6 +503,9 @@ export function ChatWindow() {
               <p className="text-sm text-error" style={{ color: 'white' }}>{error}</p>
             </div>
           )}
+
+          {/* Filesystem directory bar */}
+          <FilesystemDirectoryBar disabled={isLoading || isStreaming || isExecutingTools} />
 
           {/* Input area */}
           <ChatInput

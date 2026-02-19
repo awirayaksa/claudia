@@ -1,6 +1,5 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
@@ -29,12 +28,36 @@ function assertPathAllowed(targetPath: string, allowedDirs: string[]): void {
   }
 }
 
+/**
+ * Resolve a requested path against the allowed directories.
+ *
+ * The model often sends root-relative paths like "/hello.txt" or bare names
+ * like "hello.txt" when a working directory is configured. This function
+ * first tries the path as an absolute path; if it falls outside every allowed
+ * directory it retries by stripping leading separators and joining with the
+ * first allowed directory (i.e. the configured working directory).
+ */
+function resolveRequestedPath(requestedPath: string, allowedDirs: string[]): string {
+  const absoluteResolved = path.resolve(requestedPath);
+
+  if (allowedDirs.length === 0 || isPathAllowed(absoluteResolved, allowedDirs)) {
+    return absoluteResolved;
+  }
+
+  // Fall back: treat as relative to the working directory (first allowed dir)
+  const stripped = requestedPath.replace(/^[/\\]+/, '');
+  if (stripped) {
+    const relativeResolved = path.resolve(allowedDirs[0], stripped);
+    if (isPathAllowed(relativeResolved, allowedDirs)) {
+      return relativeResolved;
+    }
+  }
+
+  return absoluteResolved; // Will fail assertPathAllowed with a clear error
+}
+
 function getDefaultAllowedDirectories(): string[] {
-  const home = os.homedir();
-  return [
-    path.join(home, 'Desktop'),
-    path.join(home, 'Documents'),
-  ];
+  return [];
 }
 
 // ============================================================================
@@ -98,13 +121,13 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- read_file ----
   server.tool(
     'read_file',
-    'Read the contents of a file. Returns the file text with UTF-8 encoding by default.',
+    'Read the contents of a file. Returns the file text with UTF-8 encoding by default. Paths are resolved relative to the configured working directory, so you can pass just a filename like "hello.txt".',
     {
-      path: z.string().describe('Absolute path to the file to read'),
+      path: z.string().describe('Path to the file. Can be an absolute path or a filename/relative path resolved against the working directory.'),
       encoding: z.string().optional().describe('File encoding (default: utf-8)'),
     },
     async ({ path: filePath, encoding }) => {
-      const resolvedPath = path.resolve(filePath);
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
       const content = await fs.promises.readFile(
@@ -118,14 +141,14 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- write_file ----
   server.tool(
     'write_file',
-    'Write content to a file. Creates the file if it does not exist, overwrites if it does.',
+    'Write content to a file. Creates the file if it does not exist, overwrites if it does. Paths are resolved relative to the configured working directory.',
     {
-      path: z.string().describe('Absolute path to the file to write'),
+      path: z.string().describe('Path to the file. Can be an absolute path or a filename/relative path resolved against the working directory.'),
       content: z.string().describe('Content to write to the file'),
       encoding: z.string().optional().describe('File encoding (default: utf-8)'),
     },
     async ({ path: filePath, content, encoding }) => {
-      const resolvedPath = path.resolve(filePath);
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
       // Ensure parent directory exists
@@ -145,16 +168,16 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- edit_file ----
   server.tool(
     'edit_file',
-    'Apply text replacements to a file. Each replacement specifies old text to find and new text to replace it with.',
+    'Apply text replacements to a file. Each replacement specifies old text to find and new text to replace it with. Paths are resolved relative to the configured working directory.',
     {
-      path: z.string().describe('Absolute path to the file to edit'),
+      path: z.string().describe('Path to the file. Can be an absolute path or a filename/relative path resolved against the working directory.'),
       replacements: z.array(z.object({
         old_text: z.string().describe('Text to search for'),
         new_text: z.string().describe('Text to replace with'),
       })).describe('List of replacements to apply'),
     },
     async ({ path: filePath, replacements }) => {
-      const resolvedPath = path.resolve(filePath);
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
       let content = await fs.promises.readFile(resolvedPath, 'utf-8');
@@ -183,12 +206,12 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- create_directory ----
   server.tool(
     'create_directory',
-    'Create a directory (and any necessary parent directories).',
+    'Create a directory (and any necessary parent directories). Paths are resolved relative to the configured working directory.',
     {
-      path: z.string().describe('Absolute path of the directory to create'),
+      path: z.string().describe('Path of the directory to create. Can be an absolute path or a name/relative path resolved against the working directory.'),
     },
     async ({ path: dirPath }) => {
-      const resolvedPath = path.resolve(dirPath);
+      const resolvedPath = resolveRequestedPath(dirPath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
       await fs.promises.mkdir(resolvedPath, { recursive: true });
@@ -201,12 +224,12 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- list_directory ----
   server.tool(
     'list_directory',
-    'List the contents of a directory with file metadata (type, size, modified date).',
+    'List the contents of a directory with file metadata (type, size, modified date). Paths are resolved relative to the configured working directory.',
     {
-      path: z.string().describe('Absolute path of the directory to list'),
+      path: z.string().describe('Path of the directory to list. Can be an absolute path or a name/relative path resolved against the working directory.'),
     },
     async ({ path: dirPath }) => {
-      const resolvedPath = path.resolve(dirPath);
+      const resolvedPath = resolveRequestedPath(dirPath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
       const entries = await fs.promises.readdir(resolvedPath, { withFileTypes: true });
@@ -235,14 +258,14 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- move_file ----
   server.tool(
     'move_file',
-    'Move or rename a file or directory.',
+    'Move or rename a file or directory. Paths are resolved relative to the configured working directory.',
     {
-      source: z.string().describe('Absolute path of the source file/directory'),
-      destination: z.string().describe('Absolute path of the destination'),
+      source: z.string().describe('Path of the source file/directory. Can be absolute or relative to the working directory.'),
+      destination: z.string().describe('Path of the destination. Can be absolute or relative to the working directory.'),
     },
     async ({ source, destination }) => {
-      const resolvedSource = path.resolve(source);
-      const resolvedDest = path.resolve(destination);
+      const resolvedSource = resolveRequestedPath(source, allowedDirs);
+      const resolvedDest = resolveRequestedPath(destination, allowedDirs);
       assertPathAllowed(resolvedSource, allowedDirs);
       assertPathAllowed(resolvedDest, allowedDirs);
 
@@ -256,13 +279,13 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- search_files ----
   server.tool(
     'search_files',
-    'Recursively search for files by name pattern within allowed directories.',
+    'Recursively search for files by name pattern within allowed directories. Paths are resolved relative to the configured working directory.',
     {
-      path: z.string().describe('Absolute path of the directory to search in'),
+      path: z.string().describe('Path of the directory to search in. Can be absolute or relative to the working directory.'),
       pattern: z.string().describe('File name pattern to search for (case-insensitive substring match)'),
     },
     async ({ path: searchPath, pattern }) => {
-      const resolvedPath = path.resolve(searchPath);
+      const resolvedPath = resolveRequestedPath(searchPath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
       const results = await searchFilesRecursive(resolvedPath, pattern, allowedDirs);
@@ -276,12 +299,12 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- get_file_info ----
   server.tool(
     'get_file_info',
-    'Get detailed information about a file or directory (size, timestamps, permissions).',
+    'Get detailed information about a file or directory (size, timestamps, permissions). Paths are resolved relative to the configured working directory.',
     {
-      path: z.string().describe('Absolute path of the file or directory'),
+      path: z.string().describe('Path of the file or directory. Can be absolute or relative to the working directory.'),
     },
     async ({ path: filePath }) => {
-      const resolvedPath = path.resolve(filePath);
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
       const stat = await fs.promises.stat(resolvedPath);
@@ -301,12 +324,12 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- list_allowed_directories ----
   server.tool(
     'list_allowed_directories',
-    'Returns the list of directories this server is allowed to access.',
+    'Returns the working directory and the list of directories this server is allowed to access. Call this first if you are unsure what directory to use.',
     {},
     async () => {
       const text = allowedDirs.length > 0
-        ? `Allowed directories:\n${allowedDirs.join('\n')}`
-        : 'No directories are configured. Ask the user to configure allowed directories in Settings > MCP.';
+        ? `Working directory (first entry is used to resolve relative paths):\n${allowedDirs[0]}\n\nAll allowed directories:\n${allowedDirs.join('\n')}`
+        : 'No working directory is configured. Ask the user to set one using the directory bar above the chat input.';
       return { content: [{ type: 'text' as const, text }] };
     }
   );

@@ -49,6 +49,7 @@ export interface ElectronAPI {
     startServer: (serverId: string) => Promise<any>;
     stopServer: (serverId: string) => Promise<any>;
     restartServer: (serverId: string) => Promise<any>;
+    restartWithBuiltinConfig: (serverId: string, builtinConfig: Record<string, unknown>) => Promise<any>;
     getServerStatus: (serverId: string) => Promise<any>;
     getLogs: (serverId: string) => Promise<any>;
     clearLogs: (serverId: string) => Promise<any>;

@@ -81,6 +81,8 @@ contextBridge.exposeInMainWorld('electron', {
     startServer: (serverId: string) => ipcRenderer.invoke('mcp:server:start', serverId),
     stopServer: (serverId: string) => ipcRenderer.invoke('mcp:server:stop', serverId),
     restartServer: (serverId: string) => ipcRenderer.invoke('mcp:server:restart', serverId),
+    restartWithBuiltinConfig: (serverId: string, builtinConfig: Record<string, unknown>) =>
+      ipcRenderer.invoke('mcp:server:restartWithBuiltinConfig', serverId, builtinConfig),
     getServerStatus: (serverId: string) => ipcRenderer.invoke('mcp:server:getStatus', serverId),
     getLogs: (serverId: string) => ipcRenderer.invoke('mcp:server:getLogs', serverId),
     clearLogs: (serverId: string) => ipcRenderer.invoke('mcp:server:clearLogs', serverId),
@@ -252,6 +254,7 @@ export interface ElectronAPI {
     startServer: (serverId: string) => Promise<any>;
     stopServer: (serverId: string) => Promise<any>;
     restartServer: (serverId: string) => Promise<any>;
+    restartWithBuiltinConfig: (serverId: string, builtinConfig: Record<string, unknown>) => Promise<any>;
     getServerStatus: (serverId: string) => Promise<any>;
     getLogs: (serverId: string) => Promise<any>;
     clearLogs: (serverId: string) => Promise<any>;
