@@ -21,7 +21,7 @@ let mainWindow: BrowserWindow | null = null;
  */
 function getAppTitle(): string {
   const config = store.get('config');
-  return config?.appearance?.customization?.appTitle || 'Claudia';
+  return config?.appearance?.customization?.appTitle || 'ASKMAI Desktop';
 }
 
 function createMenu() {
@@ -115,7 +115,7 @@ function createWindow() {
   // Get config for customization
   const config = store.get('config');
   const customIconPath = config?.appearance?.customization?.iconPath;
-  const windowTitle = config?.appearance?.customization?.appTitle || 'Claudia';
+  const windowTitle = config?.appearance?.customization?.appTitle || 'ASKMAI Desktop';
   const accentColor = config?.appearance?.customization?.accentColor;
   const theme = config?.appearance?.theme || 'system';
 
@@ -128,7 +128,7 @@ function createWindow() {
   }
 
   // Determine background color (use accent color or default based on theme)
-  let backgroundColor = '#1a1a1a'; // Default dark
+  let backgroundColor = '#c1a76c'; // Default brand accent color
   if (accentColor) {
     backgroundColor = accentColor;
   } else if (theme === 'light') {
@@ -219,7 +219,7 @@ app.whenReady().then(async () => {
   // Window title handler
   ipcMain.handle('window:setTitle', (_, title: string) => {
     if (mainWindow) {
-      mainWindow.setTitle(title || 'Claudia');
+      mainWindow.setTitle(title || 'ASKMAI Desktop');
     }
   });
 

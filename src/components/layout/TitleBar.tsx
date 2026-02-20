@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useAppSelector } from '../../store';
+import jacLogo from '../../assets/jac_logo.ico';
 
 export function TitleBar() {
   const appearance = useAppSelector((state) => state.settings.appearance);
-  const appTitle = appearance.customization?.appTitle || 'Claudia';
+  const appTitle = appearance.customization?.appTitle || 'ASKMAI Desktop';
   const [isMaximized, setIsMaximized] = useState(false);
   const [iconPreview, setIconPreview] = useState<string | null>(null);
 
@@ -61,13 +62,7 @@ export function TitleBar() {
             <path d="M3 12h18M3 6h18M3 18h18" />
           </svg>
         </button>
-        {iconPreview ? (
-          <img src={iconPreview} alt="App icon" className="w-4 h-4" />
-        ) : (
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z" />
-          </svg>
-        )}
+        <img src={iconPreview || jacLogo} alt="App icon" className="w-4 h-4" />
         <span className="text-sm font-medium">{appTitle}</span>
       </div>
 
