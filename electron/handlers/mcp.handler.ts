@@ -107,6 +107,39 @@ export function registerMCPHandlers() {
     }
   });
 
+  // Restart a builtin server with a runtime config override (no disk save).
+  // Used for per-session filesystem directory configuration.
+  ipcMain.handle(
+    'mcp:server:restartWithBuiltinConfig',
+    async (_event, serverId: string, builtinConfigOverride: Record<string, unknown>) => {
+      try {
+        const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
+        const storedConfig = servers[serverId];
+
+        if (!storedConfig) {
+          throw new Error(`Server configuration not found: ${serverId}`);
+        }
+
+        const mergedConfig: MCPServerConfig = {
+          ...storedConfig,
+          builtinConfig: {
+            ...storedConfig.builtinConfig,
+            ...builtinConfigOverride,
+          },
+        };
+
+        await manager.restartServer(serverId, mergedConfig);
+        return { success: true };
+      } catch (error) {
+        console.error('[MCP] Failed to restart server with builtin config:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to restart server',
+        };
+      }
+    }
+  );
+
   ipcMain.handle('mcp:server:getStatus', async (_event, serverId: string) => {
     try {
       const status = manager.getServerStatus(serverId);
