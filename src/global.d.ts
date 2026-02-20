@@ -8,8 +8,13 @@ export interface ElectronAPI {
   file: {
     select: () => Promise<string[]>;
     selectDirectories: () => Promise<string[]>;
-    read: (path: string) => Promise<Buffer>;
+    read: (path: string) => Promise<string>;
     save: (path: string, data: any) => Promise<void>;
+    listDirectory: (dirPath: string) => Promise<{
+      success: boolean;
+      entries: Array<{ name: string; isDirectory: boolean }>;
+      error?: string;
+    }>;
   };
   conversation: {
     save: (conversation: any) => Promise<any>;
@@ -49,6 +54,7 @@ export interface ElectronAPI {
     startServer: (serverId: string) => Promise<any>;
     stopServer: (serverId: string) => Promise<any>;
     restartServer: (serverId: string) => Promise<any>;
+    restartWithBuiltinConfig: (serverId: string, builtinConfig: Record<string, unknown>) => Promise<any>;
     getServerStatus: (serverId: string) => Promise<any>;
     getLogs: (serverId: string) => Promise<any>;
     clearLogs: (serverId: string) => Promise<any>;

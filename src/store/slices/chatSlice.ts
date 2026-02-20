@@ -55,6 +55,8 @@ interface ChatState {
   toolCallIteration: number;
   // Edit state
   editingMessage: { id: string; content: string; attachments?: Attachment[] } | null;
+  // Per-session filesystem directory (volatile, not persisted)
+  filesystemDirectory: string | null;
 }
 
 const initialState: ChatState = {
@@ -71,6 +73,7 @@ const initialState: ChatState = {
   isExecutingTools: false,
   toolCallIteration: 0,
   editingMessage: null,
+  filesystemDirectory: null,
 };
 
 // Async thunk for sending a message
@@ -257,6 +260,9 @@ const chatSlice = createSlice({
     ) => {
       state.editingMessage = action.payload;
     },
+    setFilesystemDirectory: (state, action: PayloadAction<string | null>) => {
+      state.filesystemDirectory = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -353,6 +359,7 @@ export const {
   updateMessageToolResults,
   deleteMessagesAfter,
   setEditingMessage,
+  setFilesystemDirectory,
 } = chatSlice.actions;
 
 // Thunk for sending streaming message

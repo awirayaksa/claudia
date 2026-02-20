@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('electron', {
     selectDirectories: () => ipcRenderer.invoke('file:selectDirectories'),
     read: (path: string) => ipcRenderer.invoke('file:read', path),
     save: (path: string, data: any) => ipcRenderer.invoke('file:save', path, data),
+    listDirectory: (dirPath: string) => ipcRenderer.invoke('file:listDirectory', dirPath),
   },
 
   // Conversation operations
@@ -81,6 +82,8 @@ contextBridge.exposeInMainWorld('electron', {
     startServer: (serverId: string) => ipcRenderer.invoke('mcp:server:start', serverId),
     stopServer: (serverId: string) => ipcRenderer.invoke('mcp:server:stop', serverId),
     restartServer: (serverId: string) => ipcRenderer.invoke('mcp:server:restart', serverId),
+    restartWithBuiltinConfig: (serverId: string, builtinConfig: Record<string, unknown>) =>
+      ipcRenderer.invoke('mcp:server:restartWithBuiltinConfig', serverId, builtinConfig),
     getServerStatus: (serverId: string) => ipcRenderer.invoke('mcp:server:getStatus', serverId),
     getLogs: (serverId: string) => ipcRenderer.invoke('mcp:server:getLogs', serverId),
     clearLogs: (serverId: string) => ipcRenderer.invoke('mcp:server:clearLogs', serverId),
@@ -211,8 +214,13 @@ export interface ElectronAPI {
   };
   file: {
     select: () => Promise<string[]>;
-    read: (path: string) => Promise<Buffer>;
+    read: (path: string) => Promise<string>;
     save: (path: string, data: any) => Promise<void>;
+    listDirectory: (dirPath: string) => Promise<{
+      success: boolean;
+      entries: Array<{ name: string; isDirectory: boolean }>;
+      error?: string;
+    }>;
   };
   conversation: {
     save: (conversation: any) => Promise<any>;
@@ -252,6 +260,7 @@ export interface ElectronAPI {
     startServer: (serverId: string) => Promise<any>;
     stopServer: (serverId: string) => Promise<any>;
     restartServer: (serverId: string) => Promise<any>;
+    restartWithBuiltinConfig: (serverId: string, builtinConfig: Record<string, unknown>) => Promise<any>;
     getServerStatus: (serverId: string) => Promise<any>;
     getLogs: (serverId: string) => Promise<any>;
     clearLogs: (serverId: string) => Promise<any>;

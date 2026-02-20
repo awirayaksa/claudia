@@ -1,12 +1,9 @@
-import { useState } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store';
 import {
   startMCPServer,
   stopMCPServer,
-  saveMCPServer,
   selectBuiltinServers,
 } from '../../store/slices/mcpSlice';
-import { MCPServerConfig } from '../../types/mcp.types';
 import { Button } from '../common/Button';
 
 interface BuiltinMCPSectionProps {
@@ -17,7 +14,6 @@ export function BuiltinMCPSection({ onViewLogs }: BuiltinMCPSectionProps) {
   const dispatch = useAppDispatch();
   const builtinServers = useAppSelector(selectBuiltinServers);
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
-  const [configuringDirs, setConfiguringDirs] = useState<string | null>(null);
 
   if (builtinServers.length === 0) return null;
 
@@ -34,57 +30,6 @@ export function BuiltinMCPSection({ onViewLogs }: BuiltinMCPSectionProps) {
       await dispatch(stopMCPServer(serverId)).unwrap();
     } catch (error) {
       console.error('Failed to stop server:', error);
-    }
-  };
-
-  const handleConfigureDirectories = async (server: MCPServerConfig) => {
-    try {
-      const paths = await window.electron.file.selectDirectories();
-      if (paths && paths.length > 0) {
-        const currentDirs = (server.builtinConfig?.allowedDirectories as string[]) || [];
-        const newDirs = [...new Set([...currentDirs, ...paths])];
-
-        const updatedConfig: MCPServerConfig = {
-          ...server,
-          builtinConfig: {
-            ...server.builtinConfig,
-            allowedDirectories: newDirs,
-          },
-        };
-
-        await dispatch(saveMCPServer(updatedConfig)).unwrap();
-
-        // If server is running, it needs a restart for the config to take effect
-        const state = serverStates[server.id];
-        if (state?.status === 'ready') {
-          await dispatch(stopMCPServer(server.id)).unwrap();
-          await dispatch(startMCPServer(server.id)).unwrap();
-        }
-      }
-    } catch (error) {
-      console.error('Failed to configure directories:', error);
-    }
-  };
-
-  const handleRemoveDirectory = async (server: MCPServerConfig, dirToRemove: string) => {
-    const currentDirs = (server.builtinConfig?.allowedDirectories as string[]) || [];
-    const newDirs = currentDirs.filter((d) => d !== dirToRemove);
-
-    const updatedConfig: MCPServerConfig = {
-      ...server,
-      builtinConfig: {
-        ...server.builtinConfig,
-        allowedDirectories: newDirs,
-      },
-    };
-
-    await dispatch(saveMCPServer(updatedConfig)).unwrap();
-
-    // Restart if running
-    const state = serverStates[server.id];
-    if (state?.status === 'ready') {
-      await dispatch(stopMCPServer(server.id)).unwrap();
-      await dispatch(startMCPServer(server.id)).unwrap();
     }
   };
 
@@ -111,10 +56,6 @@ export function BuiltinMCPSection({ onViewLogs }: BuiltinMCPSectionProps) {
         const prompts = state?.prompts || [];
         const serverError = state?.error;
         const sc = statusConfig[status] || statusConfig.stopped;
-
-        const isFilesystem = server.builtinId === 'builtin-filesystem-001';
-        const allowedDirs = (server.builtinConfig?.allowedDirectories as string[]) || [];
-        const showDirConfig = configuringDirs === server.id;
 
         return (
           <div
@@ -193,58 +134,7 @@ export function BuiltinMCPSection({ onViewLogs }: BuiltinMCPSectionProps) {
               >
                 View Logs
               </Button>
-
-              {isFilesystem && (
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => setConfiguringDirs(showDirConfig ? null : server.id)}
-                >
-                  {showDirConfig ? 'Hide Directories' : 'Configure Directories'}
-                </Button>
-              )}
             </div>
-
-            {/* Filesystem directory config panel */}
-            {isFilesystem && showDirConfig && (
-              <div className="mt-3 pt-3 border-t border-border">
-                <div className="text-xs text-text-secondary mb-2">
-                  Allowed directories (the filesystem server can only access files within these folders):
-                </div>
-
-                {allowedDirs.length > 0 ? (
-                  <div className="space-y-1 mb-2">
-                    {allowedDirs.map((dir) => (
-                      <div
-                        key={dir}
-                        className="flex items-center justify-between rounded bg-background px-2 py-1 text-xs"
-                      >
-                        <span className="font-mono text-text-primary truncate mr-2">{dir}</span>
-                        <button
-                          onClick={() => handleRemoveDirectory(server, dir)}
-                          className="text-text-secondary hover:text-error transition-colors shrink-0"
-                          title="Remove directory"
-                        >
-                          &times;
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-xs text-text-secondary italic mb-2">
-                    No directories configured. Default: Desktop and Documents.
-                  </div>
-                )}
-
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  onClick={() => handleConfigureDirectories(server)}
-                >
-                  + Add Directory
-                </Button>
-              </div>
-            )}
           </div>
         );
       })}
