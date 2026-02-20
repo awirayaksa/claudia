@@ -1,6 +1,12 @@
-import { ipcMain, dialog, nativeImage, app, BrowserWindow } from 'electron';
+import { ipcMain, dialog, nativeImage, app, BrowserWindow, Tray } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+
+let getTray: (() => Tray | null) | null = null;
+
+export function setTrayGetter(getter: () => Tray | null) {
+  getTray = getter;
+}
 
 /**
  * Register IPC handlers for icon customization
@@ -62,6 +68,10 @@ export function registerIconHandlers(getMainWindow: () => BrowserWindow | null) 
       if (fs.existsSync(iconPath)) {
         const icon = nativeImage.createFromPath(iconPath);
         mainWindow.setIcon(icon);
+        const tray = getTray?.();
+        if (tray) {
+          tray.setImage(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
+        }
         return { success: true, requiresRestart: false };
       }
       return { success: false, requiresRestart: true };
@@ -82,6 +92,14 @@ export function registerIconHandlers(getMainWindow: () => BrowserWindow | null) 
         mainWindow.setIcon(icon);
       } catch (error) {
         console.error('Failed to reset icon:', error);
+      }
+    }
+    const tray = getTray?.();
+    if (tray && fs.existsSync(defaultIconPath)) {
+      try {
+        tray.setImage(nativeImage.createFromPath(defaultIconPath).resize({ width: 16, height: 16 }));
+      } catch (error) {
+        console.error('Failed to reset tray icon:', error);
       }
     }
   });

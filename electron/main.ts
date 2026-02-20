@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, session } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, session } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { store, checkVersionAndMigrate, seedBuiltinServers } from './services/store.service';
@@ -12,9 +12,11 @@ import {
   initializePluginManager,
   cleanupPluginManager,
 } from './handlers/plugin.handler';
-import { registerIconHandlers } from './handlers/icon.handler';
+import { registerIconHandlers, setTrayGetter } from './handlers/icon.handler';
 
 let mainWindow: BrowserWindow | null = null;
+let tray: Tray | null = null;
+let isQuitting = false;
 
 /**
  * Get the custom app title from config or return default
@@ -22,6 +24,58 @@ let mainWindow: BrowserWindow | null = null;
 function getAppTitle(): string {
   const config = store.get('config');
   return config?.appearance?.customization?.appTitle || 'Claudia';
+}
+
+/**
+ * Resolve the current icon path: custom if set and exists, otherwise default
+ */
+function getIconPath(): string {
+  const config = store.get('config');
+  const customIconPath = config?.appearance?.customization?.iconPath;
+  if (customIconPath && fs.existsSync(customIconPath)) return customIconPath;
+  return path.join(__dirname, '..', 'build', 'icon.ico');
+}
+
+function showWindow() {
+  if (!mainWindow) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function updateTrayMenu() {
+  if (!tray) return;
+  const appTitle = getAppTitle();
+  tray.setToolTip(appTitle);
+  const contextMenu = Menu.buildFromTemplate([
+    { label: `Show ${appTitle}`, click: () => showWindow() },
+    { type: 'separator' },
+    {
+      label: 'Quit',
+      click: () => {
+        isQuitting = true;
+        app.quit();
+      },
+    },
+  ]);
+  tray.setContextMenu(contextMenu);
+}
+
+function createTray() {
+  const iconPath = getIconPath();
+  const icon = nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 });
+  tray = new Tray(icon);
+  updateTrayMenu();
+
+  tray.on('click', () => {
+    if (mainWindow?.isVisible()) {
+      mainWindow.hide();
+    } else {
+      showWindow();
+    }
+  });
+
+  tray.on('double-click', () => showWindow());
 }
 
 function createMenu() {
@@ -114,18 +168,12 @@ function createWindow() {
 
   // Get config for customization
   const config = store.get('config');
-  const customIconPath = config?.appearance?.customization?.iconPath;
   const windowTitle = config?.appearance?.customization?.appTitle || 'Claudia';
   const accentColor = config?.appearance?.customization?.accentColor;
   const theme = config?.appearance?.theme || 'system';
 
   // Determine icon path (use custom if exists, otherwise default)
-  let iconPath: string;
-  if (customIconPath && fs.existsSync(customIconPath)) {
-    iconPath = customIconPath;
-  } else {
-    iconPath = path.join(__dirname, '..', 'build', 'icon.ico');
-  }
+  const iconPath = getIconPath();
 
   // Determine background color (use accent color or default based on theme)
   let backgroundColor = '#1a1a1a'; // Default dark
@@ -181,6 +229,27 @@ function createWindow() {
     mainWindow.webContents.openDevTools();
   }
 
+  mainWindow.on('close', (event) => {
+    if (!isQuitting) {
+      event.preventDefault();
+      mainWindow?.hide();
+
+      // First-time balloon notification on Windows
+      if (process.platform === 'win32' && tray) {
+        const shown = store.get('shownTrayNotification', false) as boolean;
+        if (!shown) {
+          const appTitle = getAppTitle();
+          tray.displayBalloon({
+            iconType: 'info',
+            title: appTitle,
+            content: `${appTitle} is still running in the background.`,
+          });
+          store.set('shownTrayNotification', true);
+        }
+      }
+    }
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
@@ -218,9 +287,8 @@ app.whenReady().then(async () => {
 
   // Window title handler
   ipcMain.handle('window:setTitle', (_, title: string) => {
-    if (mainWindow) {
-      mainWindow.setTitle(title || 'Claudia');
-    }
+    if (mainWindow) mainWindow.setTitle(title || 'Claudia');
+    updateTrayMenu();
   });
 
   // Window background color handler
@@ -274,6 +342,8 @@ app.whenReady().then(async () => {
   createMenu();
 
   createWindow();
+  createTray();
+  setTrayGetter(() => tray);
 
   app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked
@@ -283,17 +353,20 @@ app.whenReady().then(async () => {
   });
 });
 
-// Quit when all windows are closed
+// App stays alive in system tray — do not quit when window is closed
 app.on('window-all-closed', () => {
-  // On macOS, apps typically stay active until explicitly quit
-  if (process.platform !== 'darwin') {
-    app.quit();
-  }
+  // Window is hidden (not destroyed) when user clicks close, so this only
+  // fires when the window is truly destroyed (i.e., during quit). Do nothing.
 });
 
 // Clean up MCP servers and plugins before quit
 app.on('before-quit', async (event) => {
   event.preventDefault();
+  isQuitting = true;
+  if (tray) {
+    tray.destroy();
+    tray = null;
+  }
   await cleanupMCPServers();
   await cleanupPluginManager();
   app.exit();
