@@ -9,7 +9,7 @@ export function useAppTitle() {
   const { customization } = useAppSelector((state) => state.settings.appearance);
 
   useEffect(() => {
-    const title = customization?.appTitle || 'Claudia';
+    const title = customization?.appTitle || 'ASKMAI Desktop';
 
     // Update browser tab title
     document.title = title;

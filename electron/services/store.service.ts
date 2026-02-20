@@ -81,6 +81,10 @@ export const store = new Store<StoreSchema>({
         theme: 'system',
         fontSize: 'medium',
         sidebarWidth: 280,
+        customization: {
+          accentColor: '#c1a76c',
+          appTitle: 'ASKMAI Desktop',
+        },
       },
       preferences: {
         saveHistory: true,
