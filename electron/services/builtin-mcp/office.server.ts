@@ -1,4 +1,7 @@
 import { spawn } from 'child_process';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
@@ -266,6 +269,128 @@ export function createOfficeServer(_config?: Record<string, unknown>): McpServer
 
       const { stdout } = await runPowerShell(script);
       return { content: [{ type: 'text' as const, text: stdout }] };
+    }
+  );
+
+  // ---- word_create_document ----
+  server.tool(
+    'word_create_document',
+    'Create a Microsoft Word document (.docx) with the given text content and save it to disk. ' +
+    'Does NOT require Microsoft Word to be installed. ' +
+    'IMPORTANT: If the Filesystem tool is active and has a working directory configured ' +
+    '(check with list_allowed_directories), pass that path as save_directory so the file ' +
+    'lands where the user expects it. ' +
+    'If save_directory is omitted, the file is saved to the user\'s Documents folder. ' +
+    'Returns the full absolute path of the saved file.',
+    {
+      filename: z.string().describe(
+        'File name, e.g. "funny.docx". The .docx extension is added automatically if missing.'
+      ),
+      content: z.string().describe(
+        'Text content for the document. Each line (separated by \\n) becomes its own paragraph.'
+      ),
+      save_directory: z.string().optional().describe(
+        'Absolute path of the folder where the file should be saved. ' +
+        'Use the Filesystem working directory here when it is configured. ' +
+        'Defaults to the user\'s Documents folder.'
+      ),
+    },
+    async ({ filename, content, save_directory }) => {
+      assertWindows();
+
+      const safeFilename = filename.endsWith('.docx') ? filename : `${filename}.docx`;
+      const tempDir = path.join(os.tmpdir(), `claudia-docx-${Date.now()}`);
+
+      try {
+        // ------------------------------------------------------------------
+        // Build the Open XML directory structure that makes a valid .docx
+        // (a .docx is just a ZIP of XML files — no Word installation needed)
+        // ------------------------------------------------------------------
+        await fs.promises.mkdir(path.join(tempDir, '_rels'), { recursive: true });
+        await fs.promises.mkdir(path.join(tempDir, 'word', '_rels'), { recursive: true });
+
+        const escapeXml = (s: string) =>
+          s.replace(/&/g, '&amp;')
+           .replace(/</g, '&lt;')
+           .replace(/>/g, '&gt;')
+           .replace(/"/g, '&quot;')
+           .replace(/'/g, '&apos;');
+
+        const paragraphs = content
+          .split(/\r?\n/)
+          .map((line) => `<w:p><w:r><w:t xml:space="preserve">${escapeXml(line)}</w:t></w:r></w:p>`)
+          .join('\n    ');
+
+        await fs.promises.writeFile(
+          path.join(tempDir, '[Content_Types].xml'),
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+  <Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+  <Default Extension="xml" ContentType="application/xml"/>
+  <Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`
+        );
+
+        await fs.promises.writeFile(
+          path.join(tempDir, '_rels', '.rels'),
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+  <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>
+</Relationships>`
+        );
+
+        await fs.promises.writeFile(
+          path.join(tempDir, 'word', '_rels', 'document.xml.rels'),
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+</Relationships>`
+        );
+
+        await fs.promises.writeFile(
+          path.join(tempDir, 'word', 'document.xml'),
+          `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    ${paragraphs}
+    <w:sectPr/>
+  </w:body>
+</w:document>`
+        );
+
+        // ------------------------------------------------------------------
+        // Resolve save directory: explicit arg → PS Documents folder lookup
+        // ------------------------------------------------------------------
+        let saveDir = save_directory || '';
+        if (!saveDir) {
+          const { stdout: docsDir } = await runPowerShell(
+            `[Environment]::GetFolderPath('MyDocuments')`,
+            5000
+          );
+          saveDir = docsDir.trim() || path.join(os.homedir(), 'Documents');
+        }
+        await fs.promises.mkdir(saveDir, { recursive: true });
+
+        const outputPath = path.join(saveDir, safeFilename);
+
+        // ------------------------------------------------------------------
+        // ZIP the temp directory into a .docx using .NET ZipFile
+        // (available on all Windows versions, no Office required, ~1 second)
+        // ------------------------------------------------------------------
+        const esc = (s: string) => s.replace(/'/g, "''");
+        const script = `
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          if (Test-Path '${esc(outputPath)}') { Remove-Item '${esc(outputPath)}' -Force }
+          [System.IO.Compression.ZipFile]::CreateFromDirectory('${esc(tempDir)}', '${esc(outputPath)}')
+          "Saved: ${esc(outputPath)}"
+        `;
+
+        const { stdout } = await runPowerShell(script, 15000);
+        return { content: [{ type: 'text' as const, text: stdout || `Saved: ${outputPath}` }] };
+      } finally {
+        // Clean up temp directory
+        fs.promises.rm(tempDir, { recursive: true, force: true }).catch(() => {});
+      }
     }
   );
 

@@ -81,7 +81,7 @@ export class ToolIntegrationService {
   ): Promise<ToolResult> {
     const toolName = toolCall.function.name;
     const serverId = this.findServerForTool(toolName, mcpState);
-    const TOOL_TIMEOUT_MS = 30000; // 30 seconds
+    const TOOL_TIMEOUT_MS = 120000; // 120 seconds (Word COM launch can take 20+ seconds)
 
     if (!serverId) {
       return {

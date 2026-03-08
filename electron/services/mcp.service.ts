@@ -418,10 +418,11 @@ export class MCPClientWrapper extends EventEmitter {
     this.addLog(`Calling tool: ${name}`);
 
     try {
-      const result = await this.client.callTool({
-        name,
-        arguments: args,
-      });
+      const result = await this.client.callTool(
+        { name, arguments: args },
+        undefined,
+        { timeout: 120000 }
+      );
 
       return {
         content: (result.content || []).map((item) => ({
