@@ -29,32 +29,12 @@ export interface ChatInputRef {
   addFiles: (files: File[]) => void;
 }
 
-async function expandFileMentions(message: string, baseDir: string): Promise<string> {
-  const mentionRegex = /@([\w.\-\/]+)/g;
-  const matches = [...message.matchAll(mentionRegex)];
-  if (!matches.length) return message;
-
-  const uniquePaths = [...new Set(matches.map((m) => m[1]))];
-  const contentMap: Record<string, string> = {};
-
-  // TODO: add file size guard in a future version
-  await Promise.all(
-    uniquePaths.map(async (relPath) => {
-      const absPath = `${baseDir}/${relPath}`.replace(/\\/g, '/');
-      try {
-        const content = await window.electron.file.read(absPath);
-        contentMap[relPath] = typeof content === 'string' ? content : String(content);
-      } catch {
-        // Silently skip — likely a directory mention, not a file
-      }
-    })
-  );
-
-  return message.replace(mentionRegex, (_match, relPath) =>
-    contentMap[relPath] !== undefined
-      ? `<file path="${relPath}">\n${contentMap[relPath]}\n</file>`
-      : _match
-  );
+function expandFileMentions(message: string, baseDir: string): string {
+  const mentionRegex = /@([\w.\-\/\\]+)/g;
+  return message.replace(mentionRegex, (_match, relPath) => {
+    const absPath = `${baseDir}/${relPath}`.replace(/\\/g, '/');
+    return absPath;
+  });
 }
 
 export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
@@ -124,7 +104,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     if ((message.trim() || attachments.length > 0) && !disabled && !uploading) {
       fileMention.close();
       const expandedMessage = filesystemDirectory
-        ? await expandFileMentions(message, filesystemDirectory)
+        ? expandFileMentions(message, filesystemDirectory)
         : message;
       onSend(expandedMessage.trim(), attachments.length > 0 ? attachments : undefined);
       setMessage('');
