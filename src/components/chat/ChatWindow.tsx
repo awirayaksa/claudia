@@ -3,6 +3,7 @@ import { ChatMessage } from './ChatMessage';
 import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { FilesystemDirectoryBar } from './FilesystemDirectoryBar';
+import { TextSelectionMenu } from './TextSelectionMenu';
 import { useChat } from '../../hooks/useChat';
 import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
@@ -430,6 +431,9 @@ export function ChatWindow() {
       ) : (
         /* Chat with messages - normal layout */
         <>
+          {/* Text selection context menu (portal-rendered, fixed positioning) */}
+          <TextSelectionMenu containerRef={messagesContainerRef} />
+
           {/* Messages area */}
           <div
             ref={messagesContainerRef}
