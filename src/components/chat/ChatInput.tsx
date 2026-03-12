@@ -1,4 +1,4 @@
-import React, { useState, useRef, KeyboardEvent, forwardRef, useImperativeHandle, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, KeyboardEvent, forwardRef, useImperativeHandle, useEffect, useCallback, useMemo, MouseEvent } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Button } from '../common/Button';
 import { Attachment } from '../../types/message.types';
@@ -75,6 +75,10 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const { uploadFiles, uploading, progress, error: uploadError } = useFileUpload();
 
@@ -185,6 +189,76 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     }
     // Otherwise, allow normal text paste
   };
+
+  const handleContextMenu = (e: MouseEvent<HTMLTextAreaElement>) => {
+    e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
+  };
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  const insertTextAtCursor = useCallback((text: string) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const newValue = message.slice(0, start) + text + message.slice(end);
+    setMessage(newValue);
+    // Restore cursor position after the inserted text
+    requestAnimationFrame(() => {
+      textarea.selectionStart = textarea.selectionEnd = start + text.length;
+      textarea.focus();
+      // Trigger auto-resize
+      textarea.style.height = 'auto';
+      textarea.style.height = `${Math.min(textarea.scrollHeight, 200)}px`;
+    });
+  }, [message]);
+
+  const handleContextPaste = useCallback(async () => {
+    closeContextMenu();
+    try {
+      const text = await navigator.clipboard.readText();
+      insertTextAtCursor(text);
+    } catch {
+      // Fallback: focus textarea and let browser handle Ctrl+V
+      textareaRef.current?.focus();
+    }
+  }, [closeContextMenu, insertTextAtCursor]);
+
+  const handleContextPasteAsPlainText = useCallback(async () => {
+    closeContextMenu();
+    try {
+      const text = await navigator.clipboard.readText();
+      // Strip HTML tags and decode common HTML entities
+      const stripped = text
+        .replace(/<[^>]*>/g, '')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&nbsp;/g, ' ')
+        .replace(/\r\n/g, '\n')
+        .replace(/\r/g, '\n');
+      insertTextAtCursor(stripped);
+    } catch {
+      textareaRef.current?.focus();
+    }
+  }, [closeContextMenu, insertTextAtCursor]);
+
+  // Close context menu on outside click or scroll
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleClose = () => closeContextMenu();
+    document.addEventListener('mousedown', handleClose);
+    document.addEventListener('scroll', handleClose, true);
+    return () => {
+      document.removeEventListener('mousedown', handleClose);
+      document.removeEventListener('scroll', handleClose, true);
+    };
+  }, [contextMenu, closeContextMenu]);
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value;
@@ -397,6 +471,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           onChange={handleInput}
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
+          onContextMenu={handleContextMenu}
           onBlur={() => setTimeout(() => fileMention.close(), 150)}
           placeholder={placeholder}
           disabled={disabled || uploading}
@@ -445,6 +520,35 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         onSelect={handleMentionSelect}
         onClose={fileMention.close}
       />
+
+      {/* Input context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-50 min-w-[160px] overflow-hidden rounded-lg border border-border bg-surface shadow-lg py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onMouseDown={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={handleContextPaste}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-text-primary hover:bg-background transition-colors"
+          >
+            <svg className="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+            </svg>
+            Paste
+          </button>
+          <button
+            onClick={handleContextPasteAsPlainText}
+            className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-text-primary hover:bg-background transition-colors"
+          >
+            <svg className="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M12 12h.01M8 12h.01M16 12h.01" />
+            </svg>
+            Paste as plain text
+          </button>
+        </div>
+      )}
 
       <p className="mt-2 text-xs text-text-secondary">
         Press Enter to send, Shift+Enter for new line • Drag & drop, paste, or click 📎 to attach files
