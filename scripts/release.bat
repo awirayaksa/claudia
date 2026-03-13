@@ -85,7 +85,7 @@ if errorlevel 1 (
 echo.
 echo Pushing to GitHub...
 git push
-git push --tags
+git push origin "v%NEW_VERSION%"
 
 if errorlevel 1 (
     echo [ERROR] Failed to push to GitHub!
