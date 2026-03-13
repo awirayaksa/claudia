@@ -84,7 +84,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host ""
 Write-Host "Pushing to GitHub..." -ForegroundColor Cyan
 git push
-git push --tags
+git push origin "v$newVersion"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "❌ Failed to push to GitHub!" -ForegroundColor Red
