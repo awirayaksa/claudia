@@ -4,7 +4,7 @@ import { setPreferences } from '../../store/slices/settingsSlice';
 
 export function PreferencesSettings() {
   const dispatch = useAppDispatch();
-  const { temperature, showReasoning, showStatistics } = useAppSelector((state) => state.settings.preferences);
+  const { temperature, showReasoning, showStatistics, systemPrompt, systemPromptFileName } = useAppSelector((state) => state.settings.preferences);
 
   const handleTemperatureChange = async (value: number) => {
     dispatch(setPreferences({ temperature: value }));
@@ -19,6 +19,24 @@ export function PreferencesSettings() {
   const handleShowStatisticsChange = async (value: boolean) => {
     dispatch(setPreferences({ showStatistics: value }));
     await window.electron.config.set({ preferences: { showStatistics: value } });
+  };
+
+  const handleSystemPromptChange = async (value: string) => {
+    dispatch(setPreferences({ systemPrompt: value, systemPromptFileName: '' }));
+    await window.electron.config.set({ preferences: { systemPrompt: value, systemPromptFileName: '' } });
+  };
+
+  const handleSelectFile = async () => {
+    const result = await window.electron.systemPrompt.selectFile();
+    if (result) {
+      dispatch(setPreferences({ systemPrompt: result.content, systemPromptFileName: result.fileName }));
+      await window.electron.config.set({ preferences: { systemPrompt: result.content, systemPromptFileName: result.fileName } });
+    }
+  };
+
+  const handleReset = async () => {
+    dispatch(setPreferences({ systemPrompt: '', systemPromptFileName: '' }));
+    await window.electron.config.set({ preferences: { systemPrompt: '', systemPromptFileName: '' } });
   };
 
   return (
@@ -48,6 +66,43 @@ export function PreferencesSettings() {
           <strong className="text-text-primary">Note:</strong> Token limits are managed by your API provider (OpenRouter).
           If you encounter token limit errors, you may need to upgrade your account or use a different model.
         </p>
+      </div>
+
+      <div>
+        <h3 className="mb-4 text-lg font-semibold text-text-primary">System Prompt</h3>
+        <p className="mb-4 text-sm text-text-secondary">
+          Applied to all chat sessions globally. Leave empty for no system prompt.
+        </p>
+        {systemPromptFileName && (
+          <p className="mb-2 text-xs text-text-secondary">
+            Loaded from file: <span className="font-medium text-text-primary">{systemPromptFileName}</span>
+          </p>
+        )}
+        <textarea
+          value={systemPrompt}
+          onChange={(e) => handleSystemPromptChange(e.target.value)}
+          placeholder="Enter a system prompt, or select a .txt / .md file below..."
+          rows={6}
+          className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-2 focus:ring-accent hover:border-accent resize-y"
+        />
+        <div className="mt-2 flex gap-2">
+          <button
+            type="button"
+            onClick={handleSelectFile}
+            className="rounded border border-border bg-surface px-3 py-1.5 text-sm text-text-primary hover:border-accent hover:bg-background transition-colors"
+          >
+            Select .txt or .md file
+          </button>
+          {systemPrompt && (
+            <button
+              type="button"
+              onClick={handleReset}
+              className="rounded border border-border bg-surface px-3 py-1.5 text-sm text-text-secondary hover:border-red-500 hover:text-red-500 transition-colors"
+            >
+              Reset
+            </button>
+          )}
+        </div>
       </div>
 
       <div>

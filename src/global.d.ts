@@ -41,6 +41,9 @@ export interface ElectronAPI {
     isMaximized: () => Promise<boolean>;
     showMenu: (x: number, y: number) => Promise<void>;
   };
+  systemPrompt: {
+    selectFile: () => Promise<{ content: string; fileName: string } | null>;
+  };
   icon: {
     select: () => Promise<string | null>;
     upload: (sourcePath: string) => Promise<string>;

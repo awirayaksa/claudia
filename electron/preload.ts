@@ -52,6 +52,11 @@ contextBridge.exposeInMainWorld('electron', {
     showMenu: (x: number, y: number) => ipcRenderer.invoke('window:showMenu', x, y),
   },
 
+  // System prompt operations
+  systemPrompt: {
+    selectFile: () => ipcRenderer.invoke('systemPrompt:selectFile'),
+  },
+
   // Icon operations
   icon: {
     select: () => ipcRenderer.invoke('icon:select'),

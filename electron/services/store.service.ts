@@ -45,6 +45,8 @@ interface StoreSchema {
       enableFileLogging: boolean;
       showReasoning: boolean;
       showStatistics: boolean;
+      systemPrompt: string;
+      systemPromptFileName: string;
     };
   };
   windowState: {
@@ -91,6 +93,8 @@ export const store = new Store<StoreSchema>({
         enableFileLogging: true,
         showReasoning: false,
         showStatistics: false,
+        systemPrompt: '',
+        systemPromptFileName: '',
       },
     },
     windowState: {
@@ -279,6 +283,16 @@ function migrateSettings() {
     if (config.preferences.showStatistics === undefined) {
       console.log('[Store Migration] Adding showStatistics field');
       config.preferences.showStatistics = false;
+      needsSave = true;
+    }
+    if (config.preferences.systemPrompt === undefined) {
+      console.log('[Store Migration] Adding systemPrompt field');
+      config.preferences.systemPrompt = '';
+      needsSave = true;
+    }
+    if (config.preferences.systemPromptFileName === undefined) {
+      console.log('[Store Migration] Adding systemPromptFileName field');
+      config.preferences.systemPromptFileName = '';
       needsSave = true;
     }
   }

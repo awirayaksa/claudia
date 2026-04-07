@@ -13,6 +13,7 @@ import {
   cleanupPluginManager,
 } from './handlers/plugin.handler';
 import { registerIconHandlers, setTrayGetter } from './handlers/icon.handler';
+import { registerSystemPromptHandlers } from './handlers/system-prompt.handler';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -284,6 +285,7 @@ app.whenReady().then(async () => {
   registerMCPHandlers();
   registerPluginHandlers();
   registerIconHandlers(() => mainWindow);
+  registerSystemPromptHandlers();
 
   // Window title handler
   ipcMain.handle('window:setTitle', (_, title: string) => {

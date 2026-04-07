@@ -100,6 +100,12 @@ export const sendMessage = createAsyncThunk(
         content: buildMessageContent(content, attachments),
       });
 
+      // Prepend global system prompt if set (only to API payload, not stored in chat state)
+      const systemPrompt = state.settings.preferences.systemPrompt;
+      if (systemPrompt) {
+        messages.unshift({ role: 'system' as const, content: systemPrompt });
+      }
+
       // Call the API
       const response = await provider.chatCompletion({
         model,
@@ -398,6 +404,12 @@ export const sendStreamingMessage = createAsyncThunk(
       content: buildMessageContent(content, attachments),
     });
 
+    // Prepend global system prompt if set (only to API payload, not stored in chat state)
+    const systemPrompt = state.settings.preferences.systemPrompt;
+    if (systemPrompt) {
+      messages.unshift({ role: 'system' as const, content: systemPrompt });
+    }
+
     // Create abort controller
     const abortController = new AbortController();
     dispatch(setAbortController(abortController as any));
@@ -480,6 +492,18 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
       tool_call_id: undefined,
       name: undefined,
     });
+
+    // Prepend global system prompt if set (only to API payload, not stored in chat state)
+    const systemPromptText = state.settings.preferences.systemPrompt;
+    if (systemPromptText) {
+      messages.unshift({
+        role: 'system' as const,
+        content: systemPromptText,
+        tool_calls: undefined,
+        tool_call_id: undefined,
+        name: undefined,
+      });
+    }
 
     // Get available MCP tools
     const mcpState = state.mcp;

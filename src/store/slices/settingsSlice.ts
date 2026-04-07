@@ -31,6 +31,8 @@ interface SettingsState {
     enableFileLogging: boolean;
     showReasoning: boolean;
     showStatistics: boolean;
+    systemPrompt: string;
+    systemPromptFileName: string;
   };
 }
 
@@ -53,6 +55,8 @@ const initialState: SettingsState = {
     enableFileLogging: true,
     showReasoning: false,
     showStatistics: false,
+    systemPrompt: '',
+    systemPromptFileName: '',
   },
 };
 
