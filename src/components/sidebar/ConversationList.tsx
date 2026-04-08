@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ConversationItem } from './ConversationItem';
 import { ProjectSelector } from './ProjectSelector';
+import { UpdateNotification } from './UpdateNotification';
 import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
 import { ProjectManager } from '../project/ProjectManager';
@@ -236,6 +237,9 @@ export function ConversationList() {
           </div>
         )}
       </div>
+
+      {/* Auto-update notification */}
+      <UpdateNotification />
 
       {/* Footer info */}
       <div className="border-t border-border p-3">

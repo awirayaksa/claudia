@@ -209,6 +209,22 @@ contextBridge.exposeInMainWorld('electron', {
       return () => ipcRenderer.removeListener('logger:entry', callback);
     },
   },
+
+  // Auto-updater (portable builds)
+  updater: {
+    check: () => ipcRenderer.invoke('updater:check'),
+    getStatus: () => ipcRenderer.invoke('updater:getStatus'),
+    relaunch: () => ipcRenderer.invoke('updater:relaunch'),
+    restartCheck: () => ipcRenderer.invoke('updater:restartCheck'),
+    onStatusChanged: (callback: (status: any) => void) => {
+      ipcRenderer.on('updater:status-changed', (_event, data) => callback(data));
+      return () => ipcRenderer.removeListener('updater:status-changed', callback);
+    },
+    onDownloadProgress: (callback: (percent: number) => void) => {
+      ipcRenderer.on('updater:download-progress', (_event, percent) => callback(percent));
+      return () => ipcRenderer.removeListener('updater:download-progress', callback);
+    },
+  },
 });
 
 // Type definitions for TypeScript (will create separate types file later)
@@ -326,6 +342,14 @@ export interface ElectronAPI {
     openLogsFolder: () => Promise<void>;
     getLogDirectory: () => Promise<string | null>;
     onLogEntry: (callback: (entry: any) => void) => () => void;
+  };
+  updater: {
+    check: () => Promise<any>;
+    getStatus: () => Promise<any>;
+    relaunch: () => Promise<void>;
+    restartCheck: () => Promise<void>;
+    onStatusChanged: (callback: (status: any) => void) => () => void;
+    onDownloadProgress: (callback: (percent: number) => void) => () => void;
   };
 }
 

@@ -111,6 +111,14 @@ export interface ElectronAPI {
     getLogDirectory: () => Promise<string | null>;
     onLogEntry: (callback: (entry: any) => void) => () => void;
   };
+  updater: {
+    check: () => Promise<any>;
+    getStatus: () => Promise<any>;
+    relaunch: () => Promise<void>;
+    restartCheck: () => Promise<void>;
+    onStatusChanged: (callback: (status: any) => void) => () => void;
+    onDownloadProgress: (callback: (percent: number) => void) => () => void;
+  };
 }
 
 declare global {

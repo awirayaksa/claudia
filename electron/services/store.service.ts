@@ -47,6 +47,7 @@ interface StoreSchema {
       showStatistics: boolean;
       systemPrompt: string;
       systemPromptFileName: string;
+      updateCheckUrl: string;
     };
   };
   windowState: {
@@ -95,6 +96,7 @@ export const store = new Store<StoreSchema>({
         showStatistics: false,
         systemPrompt: '',
         systemPromptFileName: '',
+        updateCheckUrl: '',
       },
     },
     windowState: {
@@ -293,6 +295,11 @@ function migrateSettings() {
     if (config.preferences.systemPromptFileName === undefined) {
       console.log('[Store Migration] Adding systemPromptFileName field');
       config.preferences.systemPromptFileName = '';
+      needsSave = true;
+    }
+    if (config.preferences.updateCheckUrl === undefined) {
+      console.log('[Store Migration] Adding updateCheckUrl field');
+      config.preferences.updateCheckUrl = '';
       needsSave = true;
     }
   }

@@ -14,10 +14,13 @@ import {
 } from './handlers/plugin.handler';
 import { registerIconHandlers, setTrayGetter } from './handlers/icon.handler';
 import { registerSystemPromptHandlers } from './handlers/system-prompt.handler';
+import { AutoUpdaterService } from './services/auto-updater.service';
+import { registerUpdaterHandlers } from './handlers/updater.handler';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuitting = false;
+const updaterService = new AutoUpdaterService();
 
 /**
  * Get the custom app title from config or return default
@@ -150,6 +153,26 @@ function createMenu() {
           label: `About ${getAppTitle()}`,
           click: () => {
             mainWindow?.webContents.send('menu:about');
+          },
+        },
+        { type: 'separator' },
+        {
+          label: 'Check for Updates...',
+          click: async () => {
+            const config = store.get('config');
+            const url = config?.preferences?.updateCheckUrl;
+            if (!url) {
+              const { dialog } = require('electron');
+              dialog.showMessageBox({
+                type: 'info',
+                title: 'Check for Updates',
+                message: 'No update URL configured.',
+                detail: 'Please set an Update Check URL in Settings → Preferences → Auto Update.',
+                buttons: ['OK'],
+              });
+              return;
+            }
+            await updaterService.checkForUpdate(url);
           },
         },
       ],
@@ -286,6 +309,7 @@ app.whenReady().then(async () => {
   registerPluginHandlers();
   registerIconHandlers(() => mainWindow);
   registerSystemPromptHandlers();
+  registerUpdaterHandlers(() => mainWindow, updaterService);
 
   // Window title handler
   ipcMain.handle('window:setTitle', (_, title: string) => {
@@ -346,6 +370,13 @@ app.whenReady().then(async () => {
   createWindow();
   createTray();
   setTrayGetter(() => tray);
+
+  // Start periodic update check if URL is configured
+  const initialConfig = store.get('config');
+  const updateCheckUrl = initialConfig?.preferences?.updateCheckUrl;
+  if (updateCheckUrl) {
+    updaterService.startPeriodicCheck(updateCheckUrl, 30 * 60 * 1000);
+  }
 
   app.on('activate', () => {
     // On macOS, re-create window when dock icon is clicked

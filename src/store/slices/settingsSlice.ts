@@ -33,6 +33,7 @@ interface SettingsState {
     showStatistics: boolean;
     systemPrompt: string;
     systemPromptFileName: string;
+    updateCheckUrl: string;
   };
 }
 
@@ -57,6 +58,7 @@ const initialState: SettingsState = {
     showStatistics: false,
     systemPrompt: '',
     systemPromptFileName: '',
+    updateCheckUrl: '',
   },
 };
 

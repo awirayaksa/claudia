@@ -4,7 +4,7 @@ import { setPreferences } from '../../store/slices/settingsSlice';
 
 export function PreferencesSettings() {
   const dispatch = useAppDispatch();
-  const { temperature, showReasoning, showStatistics, systemPrompt, systemPromptFileName } = useAppSelector((state) => state.settings.preferences);
+  const { temperature, showReasoning, showStatistics, systemPrompt, systemPromptFileName, updateCheckUrl } = useAppSelector((state) => state.settings.preferences);
 
   const handleTemperatureChange = async (value: number) => {
     dispatch(setPreferences({ temperature: value }));
@@ -37,6 +37,13 @@ export function PreferencesSettings() {
   const handleReset = async () => {
     dispatch(setPreferences({ systemPrompt: '', systemPromptFileName: '' }));
     await window.electron.config.set({ preferences: { systemPrompt: '', systemPromptFileName: '' } });
+  };
+
+  const handleUpdateCheckUrlChange = async (value: string) => {
+    dispatch(setPreferences({ updateCheckUrl: value }));
+    await window.electron.config.set({ preferences: { updateCheckUrl: value } });
+    // Restart the periodic check with the new URL
+    await window.electron.updater.restartCheck();
   };
 
   return (
@@ -144,6 +151,22 @@ export function PreferencesSettings() {
             </div>
           </div>
         </label>
+      </div>
+
+      <div>
+        <h3 className="mb-4 text-lg font-semibold text-text-primary">Auto Update</h3>
+        <p className="mb-4 text-sm text-text-secondary">
+          Automatically check for newer portable versions. The URL must point to a JSON manifest file
+          with <code className="rounded bg-surface px-1 py-0.5 text-xs font-mono text-text-primary">{"{ \"version\": \"x.y.z\", \"url\": \"...\" }"}</code>.
+        </p>
+        <Input
+          label="Update Check URL"
+          type="url"
+          value={updateCheckUrl}
+          onChange={(e) => handleUpdateCheckUrlChange(e.target.value)}
+          placeholder="https://example.com/releases/latest.json"
+          helperText="Leave empty to disable automatic update checks"
+        />
       </div>
     </div>
   );
