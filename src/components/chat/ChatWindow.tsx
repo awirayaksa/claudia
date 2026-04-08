@@ -12,6 +12,7 @@ import { Attachment } from '../../types/message.types';
 import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage, setFilesystemDirectory } from '../../store/slices/chatSlice';
 import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
+import { getAPIProvider } from '../../services/api/provider.service';
 
 export function ChatWindow() {
   const dispatch = useAppDispatch();
@@ -19,6 +20,7 @@ export function ChatWindow() {
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const chatInputRef = useRef<ChatInputRef>(null);
+  const titleGeneratedRef = useRef<Set<string>>(new Set());
 
   const {
     messages,
@@ -151,6 +153,50 @@ export function ChatWindow() {
     }
   }, [currentConversationId]);
 
+  const generateConversationTitle = useCallback(async (
+    conversationId: string,
+    firstUserMessage: string,
+    firstAssistantMessage: string,
+    model: string
+  ) => {
+    if (titleGeneratedRef.current.has(conversationId)) return;
+    titleGeneratedRef.current.add(conversationId);
+
+    try {
+      const provider = getAPIProvider();
+      const response = await provider.chatCompletion({
+        model,
+        messages: [
+          {
+            role: 'system',
+            content: 'Generate a very short title (3-6 words) for this conversation. Reply with only the title, no quotes, no punctuation at the end.',
+          },
+          {
+            role: 'user',
+            content: firstUserMessage.slice(0, 500),
+          },
+          {
+            role: 'assistant',
+            content: firstAssistantMessage.slice(0, 500),
+          },
+        ],
+        stream: false,
+        max_tokens: 30,
+        temperature: 0.3,
+      });
+
+      const rawTitle = response.choices[0]?.message?.content;
+      if (rawTitle && typeof rawTitle === 'string') {
+        const title = rawTitle.trim().replace(/^["']|["']$/g, '').slice(0, 60);
+        if (title) {
+          updateConversation(conversationId, { title });
+        }
+      }
+    } catch (error) {
+      console.error('Failed to generate conversation title:', error);
+    }
+  }, [updateConversation]);
+
   // Auto-save conversation when messages change
   useEffect(() => {
     if (messages.length === 0 || !currentConversationId || !currentConversation) {
@@ -174,13 +220,21 @@ export function ChatWindow() {
         messageCount: messages.length,
       };
 
-      // Auto-generate title from first user message if still "New Conversation"
-      if (conversation.title === 'New Conversation' && messages.length > 0) {
+      // Auto-generate title from first exchange if still "New Conversation"
+      if (conversation.title === 'New Conversation' && !titleGeneratedRef.current.has(currentConversationId)) {
         const firstUserMessage = messages.find((m) => m.role === 'user');
-        if (firstUserMessage) {
-          const title = firstUserMessage.content.slice(0, 50) + (firstUserMessage.content.length > 50 ? '...' : '');
-          conversation.title = title;
-          updateConversation(currentConversationId, { title });
+        const firstAssistantMessage = messages.find((m) => m.role === 'assistant');
+        if (firstUserMessage && firstAssistantMessage) {
+          // Set a temporary truncated title immediately as placeholder
+          const tempTitle = firstUserMessage.content.slice(0, 50) + (firstUserMessage.content.length > 50 ? '...' : '');
+          conversation.title = tempTitle;
+          // Kick off async AI title generation (will update Redux + disk when done)
+          generateConversationTitle(
+            currentConversationId,
+            firstUserMessage.content,
+            firstAssistantMessage.content,
+            currentConversation.model
+          );
         }
       }
 
@@ -194,7 +248,7 @@ export function ChatWindow() {
         clearTimeout(saveTimeoutRef.current);
       }
     };
-  }, [messages, currentConversationId, currentConversation, saveConversation, updateConversation]);
+  }, [messages, currentConversationId, currentConversation, saveConversation, updateConversation, generateConversationTitle]);
 
   const handleModelChange = async (newModel: string) => {
     try {
