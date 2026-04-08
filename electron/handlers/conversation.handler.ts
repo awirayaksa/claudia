@@ -12,6 +12,7 @@ interface Conversation {
   model: string;
   messages: any[];
   messageCount: number;
+  starred?: boolean;
 }
 
 interface ConversationMetadata {
@@ -22,6 +23,7 @@ interface ConversationMetadata {
   updatedAt: string;
   model: string;
   messageCount: number;
+  starred?: boolean;
 }
 
 // Get the conversations directory path
@@ -108,6 +110,7 @@ async function listConversations(projectId?: string | null): Promise<Conversatio
             updatedAt: conversation.updatedAt,
             model: conversation.model,
             messageCount: conversation.messageCount || conversation.messages?.length || 0,
+            starred: conversation.starred || false,
           });
         } catch (error) {
           console.error(`Failed to read conversation file: ${filePath}`, error);
@@ -131,8 +134,12 @@ async function listConversations(projectId?: string | null): Promise<Conversatio
     scanDirectory(conversationsDir, null);
   }
 
-  // Sort by updatedAt descending
-  conversations.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  // Sort starred first, then by updatedAt descending
+  conversations.sort((a, b) => {
+    if (a.starred && !b.starred) return -1;
+    if (!a.starred && b.starred) return 1;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
 
   return conversations;
 }

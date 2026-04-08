@@ -11,6 +11,7 @@ export interface Conversation {
   model: string;
   messages: Message[];
   messageCount: number;
+  starred?: boolean;
 }
 
 export interface ConversationMetadata {
@@ -21,6 +22,7 @@ export interface ConversationMetadata {
   updatedAt: string;
   model: string;
   messageCount: number;
+  starred?: boolean;
 }
 
 export interface ConversationState {
@@ -41,4 +43,5 @@ export interface UpdateConversationParams {
   id: string;
   title?: string;
   model?: string;
+  starred?: boolean;
 }

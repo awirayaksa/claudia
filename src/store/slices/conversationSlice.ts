@@ -140,6 +140,9 @@ export const updateConversation = createAsyncThunk(
       if (params.model !== undefined) {
         fullConversation.model = params.model;
       }
+      if (params.starred !== undefined) {
+        fullConversation.starred = params.starred;
+      }
 
       fullConversation.updatedAt = new Date().toISOString();
 
@@ -158,6 +161,7 @@ export const updateConversation = createAsyncThunk(
         updatedAt: fullConversation.updatedAt,
         model: fullConversation.model,
         messageCount: fullConversation.messageCount,
+        starred: fullConversation.starred,
       } as ConversationMetadata;
     } catch (error) {
       return rejectWithValue(
@@ -258,6 +262,7 @@ const conversationSlice = createSlice({
           updatedAt: action.payload.updatedAt,
           model: action.payload.model,
           messageCount: action.payload.messageCount,
+          starred: action.payload.starred,
         });
         state.currentConversationId = action.payload.id;
       })
@@ -311,6 +316,7 @@ const conversationSlice = createSlice({
             updatedAt: action.payload.updatedAt,
             model: action.payload.model,
             messageCount: action.payload.messageCount,
+            starred: action.payload.starred,
           };
         }
       })

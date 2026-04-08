@@ -218,6 +218,7 @@ export function ChatWindow() {
         model: currentConversation.model,
         messages: messages,
         messageCount: messages.length,
+        starred: currentConversation.starred,
       };
 
       // Auto-generate title from first exchange if still "New Conversation"

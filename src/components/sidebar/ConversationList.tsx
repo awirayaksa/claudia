@@ -80,6 +80,13 @@ export function ConversationList() {
     }
   };
 
+  const handleStar = async (id: string) => {
+    const conversation = conversations.find((c) => c.id === id);
+    if (conversation) {
+      await dispatch(updateConversation({ id, starred: !conversation.starred }));
+    }
+  };
+
   const handleToggleSelectionMode = () => {
     setIsSelectionMode(!isSelectionMode);
     setSelectedIds(new Set());
@@ -221,19 +228,54 @@ export function ConversationList() {
           </div>
         ) : (
           <div className="space-y-1">
-            {conversations.map((conversation) => (
-              <ConversationItem
-                key={conversation.id}
-                conversation={conversation}
-                isActive={conversation.id === currentConversationId}
-                isSelectionMode={isSelectionMode}
-                isSelected={selectedIds.has(conversation.id)}
-                onClick={() => handleSelectConversation(conversation.id)}
-                onToggleSelect={handleToggleSelect}
-                onRename={handleRename}
-                onDelete={handleDelete}
-              />
-            ))}
+            {(() => {
+              const starred = conversations.filter((c) => c.starred);
+              const recent = conversations.filter((c) => !c.starred);
+              return (
+                <>
+                  {starred.length > 0 && (
+                    <>
+                      <p className="px-3 py-1 text-xs font-semibold text-text-secondary uppercase tracking-wide">
+                        Starred
+                      </p>
+                      {starred.map((conversation) => (
+                        <ConversationItem
+                          key={conversation.id}
+                          conversation={conversation}
+                          isActive={conversation.id === currentConversationId}
+                          isSelectionMode={isSelectionMode}
+                          isSelected={selectedIds.has(conversation.id)}
+                          onClick={() => handleSelectConversation(conversation.id)}
+                          onToggleSelect={handleToggleSelect}
+                          onRename={handleRename}
+                          onDelete={handleDelete}
+                          onStar={handleStar}
+                        />
+                      ))}
+                      {recent.length > 0 && (
+                        <p className="px-3 pt-3 pb-1 text-xs font-semibold text-text-secondary uppercase tracking-wide">
+                          Recent
+                        </p>
+                      )}
+                    </>
+                  )}
+                  {recent.map((conversation) => (
+                    <ConversationItem
+                      key={conversation.id}
+                      conversation={conversation}
+                      isActive={conversation.id === currentConversationId}
+                      isSelectionMode={isSelectionMode}
+                      isSelected={selectedIds.has(conversation.id)}
+                      onClick={() => handleSelectConversation(conversation.id)}
+                      onToggleSelect={handleToggleSelect}
+                      onRename={handleRename}
+                      onDelete={handleDelete}
+                      onStar={handleStar}
+                    />
+                  ))}
+                </>
+              );
+            })()}
           </div>
         )}
       </div>

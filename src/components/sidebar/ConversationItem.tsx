@@ -11,6 +11,7 @@ interface ConversationItemProps {
   onToggleSelect?: (id: string) => void;
   onRename: (id: string, newTitle: string) => void;
   onDelete: (id: string) => void;
+  onStar: (id: string) => void;
 }
 
 export const ConversationItem = React.memo(function ConversationItem({
@@ -22,6 +23,7 @@ export const ConversationItem = React.memo(function ConversationItem({
   onToggleSelect,
   onRename,
   onDelete,
+  onStar,
 }: ConversationItemProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(conversation.title);
@@ -83,22 +85,32 @@ export const ConversationItem = React.memo(function ConversationItem({
         />
       )}
 
-      {/* Chat icon */}
-      <svg
-        className={`h-4 w-4 flex-shrink-0 ${
-          isActive ? 'text-white' : 'text-text-secondary'
-        }`}
-        fill="none"
-        stroke="currentColor"
-        viewBox="0 0 24 24"
-      >
-        <path
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2}
-          d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-        />
-      </svg>
+      {/* Chat icon or star icon */}
+      {conversation.starred ? (
+        <svg
+          className="h-4 w-4 flex-shrink-0 text-yellow-400"
+          fill="currentColor"
+          viewBox="0 0 20 20"
+        >
+          <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+        </svg>
+      ) : (
+        <svg
+          className={`h-4 w-4 flex-shrink-0 ${
+            isActive ? 'text-white' : 'text-text-secondary'
+          }`}
+          fill="none"
+          stroke="currentColor"
+          viewBox="0 0 24 24"
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+            d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
+          />
+        </svg>
+      )}
 
       <div className="flex-1 min-w-0">
         {isEditing ? (
@@ -171,7 +183,7 @@ export const ConversationItem = React.memo(function ConversationItem({
               />
 
               {/* Menu */}
-              <div className="absolute right-0 top-full mt-1 w-32 bg-surface border border-border rounded-lg shadow-lg z-20">
+              <div className="absolute right-0 top-full mt-1 w-36 bg-surface border border-border rounded-lg shadow-lg z-20">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
@@ -181,6 +193,16 @@ export const ConversationItem = React.memo(function ConversationItem({
                   className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background transition-colors rounded-t-lg"
                 >
                   Rename
+                </button>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onStar(conversation.id);
+                    setShowMenu(false);
+                  }}
+                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background transition-colors"
+                >
+                  {conversation.starred ? 'Unstar' : 'Star'}
                 </button>
                 <button
                   onClick={(e) => {
