@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useAppSelector } from '../../store';
-import { selectEnabledMCPServers } from '../../store/slices/mcpSlice';
+import { selectStartedMCPServers } from '../../store/slices/mcpSlice';
 import MCPServerBadge from './MCPServerBadge';
 
 interface MCPServerBadgesProps {
@@ -15,7 +15,7 @@ const TWO_ROW_HEIGHT = 81;
  * Auto-collapses to 2 rows when there are many servers, with an expand/collapse toggle.
  */
 const MCPServerBadges: React.FC<MCPServerBadgesProps> = ({ disabled = false }) => {
-  const enabledServers = useAppSelector(selectEnabledMCPServers);
+  const enabledServers = useAppSelector(selectStartedMCPServers);
   const containerRef = useRef<HTMLDivElement>(null);
   const [isOverflowing, setIsOverflowing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);

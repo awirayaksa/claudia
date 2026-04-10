@@ -734,6 +734,23 @@ export const selectEnabledMCPServers = (state: { mcp: MCPState }) => {
 };
 
 /**
+ * Selects enabled MCP servers that are started (not stopped)
+ * Used by chat input to display only running server badges
+ */
+export const selectStartedMCPServers = (state: { mcp: MCPState }) => {
+  const { servers, serverStates } = state.mcp;
+  return Object.values(servers)
+    .filter(server => server.enabled)
+    .map(server => ({
+      config: server,
+      state: serverStates[server.id],
+      status: (serverStates[server.id]?.status || 'stopped') as MCPServerStatus,
+      toolCount: serverStates[server.id]?.tools?.length || 0,
+    }))
+    .filter(server => server.status !== 'stopped');
+};
+
+/**
  * Selects built-in MCP servers
  */
 export const selectBuiltinServers = (state: { mcp: MCPState }) => {
