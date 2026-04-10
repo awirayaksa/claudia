@@ -219,6 +219,11 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
     streamResponse(`Explain the following text concisely and clearly:\n\n"${selectedText}"`);
   }, [menu, hideMenu, streamResponse]);
 
+  const handleCopy = useCallback(() => {
+    navigator.clipboard.writeText(menu.selectedText);
+    hideMenu();
+  }, [menu, hideMenu]);
+
   const handleAsk = useCallback(() => {
     const { selectedText } = menu;
     const { anchorX, anchorY } = getAnchorFromSavedRange();
@@ -281,6 +286,18 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
               <circle cx="12" cy="17" r="0.5" fill="currentColor" />
             </svg>
             Ask
+          </button>
+          <div className="h-3 w-px bg-border" />
+          <button
+            onClick={handleCopy}
+            className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs text-text-secondary hover:bg-background hover:text-text-primary transition-colors"
+            title="Copy selected text to clipboard"
+          >
+            <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth={2} />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+            </svg>
+            Copy
           </button>
           <div className="h-3 w-px bg-border" />
           <button
