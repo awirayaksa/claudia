@@ -17,8 +17,8 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
   model,
 }) => {
   const [suggestions, setSuggestions] = useState<PromptSuggestion[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [failed, setFailed] = useState(false);
+  const [, setLoading] = useState(false);
+  const [, setFailed] = useState(false);
 
   const fetchSuggestions = useCallback(async () => {
     if (!model) return;

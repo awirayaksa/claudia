@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createFilesystemServer } from './filesystem.server';
 import { createOfficeServer } from './office.server';
+import { createDiagramServer } from './diagram.server';
 
 // ============================================================================
 // Built-in Server Definitions
@@ -25,6 +26,12 @@ const BUILTIN_SERVERS: BuiltinServerDefinition[] = [
     name: 'Office Automation',
     description: 'Control Microsoft Office apps (Word, Excel, PowerPoint) via PowerShell COM automation (Windows only)',
     createServer: (config) => createOfficeServer(config),
+  },
+  {
+    id: 'builtin-diagram-001',
+    name: 'Diagram Generator',
+    description: 'Generate diagram images (ER, network, architecture, flowchart, etc.) from DOT/Graphviz syntax to SVG or PNG',
+    createServer: (config) => createDiagramServer(config),
   },
 ];
 
