@@ -5,6 +5,8 @@ import { z } from 'zod';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require('pdf-parse');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const mammoth = require('mammoth');
 
 // Maximum text content size (in bytes) to return in a single tool response.
 // Stays well below the ~8 MB API input limit to leave room for conversation context.
@@ -168,7 +170,7 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
       const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
 
-      // Suggest read_pdf for PDF files
+      // Suggest dedicated tools for binary document formats
       const ext = path.extname(resolvedPath).toLowerCase();
       if (ext === '.pdf') {
         return {
@@ -176,6 +178,14 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
             type: 'text' as const,
             text: `This is a PDF file. Please use the "read_pdf" tool instead of "read_file" to extract text from PDF files. ` +
               `The read_pdf tool supports page ranges for large PDFs.`,
+          }],
+        };
+      }
+      if (ext === '.docx' || ext === '.doc') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This is a Word document. Please use the "read_docx" tool instead of "read_file" to extract text from Word files.`,
           }],
         };
       }
@@ -333,6 +343,73 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
       const header = `PDF: ${path.basename(resolvedPath)} | ${sizeMB} MB | ` +
         `Pages: ${firstPage}-${lastPage} of ${totalPages}\n` +
         `${'='.repeat(60)}\n\n`;
+
+      return { content: [{ type: 'text' as const, text: header + text }] };
+    }
+  );
+
+  // ---- read_docx ----
+  server.tool(
+    'read_docx',
+    'Extract text content from a Microsoft Word document (.docx). ' +
+    'Note: legacy .doc format is not supported — only .docx files can be read. ' +
+    'Paths are resolved relative to the configured working directory.',
+    {
+      path: z.string().describe('Path to the .docx file.'),
+    },
+    async ({ path: filePath }) => {
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
+      assertPathAllowed(resolvedPath, allowedDirs);
+
+      const ext = path.extname(resolvedPath).toLowerCase();
+      if (ext === '.doc') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Legacy .doc format is not supported. Only .docx files can be read. ` +
+              `If possible, convert the file to .docx first.`,
+          }],
+        };
+      }
+      if (ext !== '.docx') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This file is not a Word document (extension: ${ext}). Use "read_file" for text files or "read_pdf" for PDFs.`,
+          }],
+        };
+      }
+
+      const stat = await fs.promises.stat(resolvedPath);
+      const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+
+      const result = await mammoth.extractRawText({ path: resolvedPath });
+      const text = result.value;
+
+      // Check if extracted text exceeds the limit
+      const textBytes = Buffer.byteLength(text, 'utf-8');
+      if (textBytes > MAX_READ_SIZE) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ Extracted text is too large (${(textBytes / (1024 * 1024)).toFixed(1)} MB). ` +
+              `The API has an ~8 MB total input limit.\n\n` +
+              `File: ${resolvedPath}\n` +
+              `File size: ${sizeMB} MB`,
+          }],
+        };
+      }
+
+      const warnings = result.messages
+        .filter((m: any) => m.type === 'warning')
+        .map((m: any) => m.message);
+
+      let header = `Word Document: ${path.basename(resolvedPath)} | ${sizeMB} MB\n` +
+        `${'='.repeat(60)}\n`;
+      if (warnings.length > 0) {
+        header += `Warnings: ${warnings.join('; ')}\n`;
+      }
+      header += '\n';
 
       return { content: [{ type: 'text' as const, text: header + text }] };
     }
