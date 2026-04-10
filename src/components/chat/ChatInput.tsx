@@ -27,6 +27,7 @@ interface ChatInputProps {
 export interface ChatInputRef {
   focus: () => void;
   addFiles: (files: File[]) => void;
+  setMessage: (text: string) => void;
 }
 
 function expandFileMentions(message: string, baseDir: string): string {
@@ -82,6 +83,17 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     },
     addFiles: (files: File[]) => {
       handleFilesSelected(files);
+    },
+    setMessage: (text: string) => {
+      setMessage(text);
+      // Auto-resize textarea after React state update
+      requestAnimationFrame(() => {
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+          textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
+        }
+        textareaRef.current?.focus();
+      });
     },
   }));
 

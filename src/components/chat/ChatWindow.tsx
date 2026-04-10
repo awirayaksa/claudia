@@ -4,6 +4,7 @@ import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
 import { FilesystemDirectoryBar } from './FilesystemDirectoryBar';
 import { TextSelectionMenu } from './TextSelectionMenu';
+import { SuggestedPrompts } from './SuggestedPrompts';
 import { useChat } from '../../hooks/useChat';
 import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
@@ -481,6 +482,14 @@ export function ChatWindow() {
                 onCancelEdit={handleCancelEdit}
               />
             </div>
+
+            {/* Suggested prompts */}
+            <SuggestedPrompts
+              model={currentConversation?.model || pendingModel || selectedModel}
+              onSelect={(prompt) => {
+                handleSend(prompt);
+              }}
+            />
           </div>
         </div>
       ) : (
