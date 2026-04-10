@@ -7,6 +7,8 @@ import { z } from 'zod';
 const pdfParse = require('pdf-parse');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const mammoth = require('mammoth');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const XLSX = require('xlsx');
 
 // Maximum text content size (in bytes) to return in a single tool response.
 // Stays well below the ~8 MB API input limit to leave room for conversation context.
@@ -186,6 +188,14 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
           content: [{
             type: 'text' as const,
             text: `This is a Word document. Please use the "read_docx" tool instead of "read_file" to extract text from Word files.`,
+          }],
+        };
+      }
+      if (ext === '.xlsx' || ext === '.xls') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This is an Excel spreadsheet. Please use the "read_xlsx" tool instead of "read_file" to extract data from Excel files.`,
           }],
         };
       }
@@ -410,6 +420,105 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
         header += `Warnings: ${warnings.join('; ')}\n`;
       }
       header += '\n';
+
+      return { content: [{ type: 'text' as const, text: header + text }] };
+    }
+  );
+
+  // ---- read_xlsx ----
+  server.tool(
+    'read_xlsx',
+    'Extract data from a Microsoft Excel spreadsheet (.xlsx or .xls). ' +
+    'Returns cell data as tab-separated text. ' +
+    'You can read a specific sheet by name or index. ' +
+    'Paths are resolved relative to the configured working directory.',
+    {
+      path: z.string().describe('Path to the Excel file (.xlsx or .xls).'),
+      sheet: z.string().optional().describe('Sheet name to read. If omitted, reads the first sheet.'),
+      sheet_index: z.number().optional().describe('Sheet index to read (0-based). Ignored if sheet name is provided.'),
+      list_sheets: z.boolean().optional().describe('If true, only list the sheet names without reading data.'),
+    },
+    async ({ path: filePath, sheet, sheet_index, list_sheets }) => {
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
+      assertPathAllowed(resolvedPath, allowedDirs);
+
+      const ext = path.extname(resolvedPath).toLowerCase();
+      if (ext !== '.xlsx' && ext !== '.xls') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This file is not an Excel spreadsheet (extension: ${ext}). Use "read_file" for text files.`,
+          }],
+        };
+      }
+
+      const stat = await fs.promises.stat(resolvedPath);
+      const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+
+      const workbook = XLSX.readFile(resolvedPath);
+      const sheetNames: string[] = workbook.SheetNames;
+
+      // List sheets mode
+      if (list_sheets) {
+        const listing = sheetNames
+          .map((name: string, i: number) => `  ${i}: ${name}`)
+          .join('\n');
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Excel: ${path.basename(resolvedPath)} | ${sizeMB} MB\n` +
+              `Sheets (${sheetNames.length}):\n${listing}`,
+          }],
+        };
+      }
+
+      // Determine which sheet to read
+      let targetSheet: string;
+      if (sheet) {
+        if (!sheetNames.includes(sheet)) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Sheet "${sheet}" not found. Available sheets: ${sheetNames.join(', ')}`,
+            }],
+          };
+        }
+        targetSheet = sheet;
+      } else if (sheet_index !== undefined) {
+        if (sheet_index < 0 || sheet_index >= sheetNames.length) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Sheet index ${sheet_index} is out of range. This workbook has ${sheetNames.length} sheet(s) (0-${sheetNames.length - 1}).`,
+            }],
+          };
+        }
+        targetSheet = sheetNames[sheet_index];
+      } else {
+        targetSheet = sheetNames[0];
+      }
+
+      const worksheet = workbook.Sheets[targetSheet];
+      const text: string = XLSX.utils.sheet_to_csv(worksheet, { FS: '\t' });
+
+      // Check if extracted text exceeds the limit
+      const textBytes = Buffer.byteLength(text, 'utf-8');
+      if (textBytes > MAX_READ_SIZE) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ Extracted data is too large (${(textBytes / (1024 * 1024)).toFixed(1)} MB). ` +
+              `The API has an ~8 MB total input limit.\n\n` +
+              `File: ${resolvedPath}\n` +
+              `File size: ${sizeMB} MB\n` +
+              `Sheet: ${targetSheet}`,
+          }],
+        };
+      }
+
+      const header = `Excel: ${path.basename(resolvedPath)} | ${sizeMB} MB | ` +
+        `Sheet: "${targetSheet}" (${sheetNames.length} sheet(s) total)\n` +
+        `${'='.repeat(60)}\n\n`;
 
       return { content: [{ type: 'text' as const, text: header + text }] };
     }
