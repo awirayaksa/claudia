@@ -192,7 +192,7 @@ export function useFileMention(
         return { consumed: true };
       }
 
-      if (e.key === 'Enter') {
+      if (e.key === 'Enter' || e.key === 'Tab') {
         const entry = filteredEntries[activeIndex];
         if (!entry) return { consumed: true };
         const textarea = e.currentTarget;

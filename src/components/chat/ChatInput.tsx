@@ -531,7 +531,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       )}
 
       <p className="mt-2 text-xs text-text-secondary">
-        Press Enter to send, Shift+Enter for new line • Drag & drop, paste, or click 📎 to attach files
+        Press Enter to send, Shift+Enter for new line • Use @file to mention files (Tab/Enter to select) • Drag & drop, paste, or click 📎 to attach files
       </p>
     </div>
   );

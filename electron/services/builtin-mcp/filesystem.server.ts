@@ -3,6 +3,13 @@ import * as path from 'path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfParse = require('pdf-parse');
+
+// Maximum text content size (in bytes) to return in a single tool response.
+// Stays well below the ~8 MB API input limit to leave room for conversation context.
+const MAX_READ_SIZE = 5 * 1024 * 1024; // 5 MB
+
 // ============================================================================
 // Security: Path Validation
 // ============================================================================
@@ -102,6 +109,33 @@ async function searchFilesRecursive(
 }
 
 // ============================================================================
+// Helper: Line-based file reading for large files
+// ============================================================================
+
+async function countFileLines(filePath: string): Promise<number> {
+  const content = await fs.promises.readFile(filePath, 'utf-8');
+  const lines = content.split('\n');
+  return lines.length;
+}
+
+async function readFileLines(
+  filePath: string,
+  startLine: number,
+  maxLines: number,
+  encoding: BufferEncoding = 'utf-8'
+): Promise<string> {
+  const content = await fs.promises.readFile(filePath, { encoding });
+  const lines = content.split('\n');
+  const totalLines = lines.length;
+  const endLine = Math.min(startLine + maxLines - 1, totalLines);
+  const selected = lines.slice(startLine - 1, endLine);
+
+  const header = `Lines ${startLine}-${endLine} of ${totalLines} total\n` +
+    `${'='.repeat(40)}\n`;
+  return header + selected.join('\n');
+}
+
+// ============================================================================
 // Server Factory
 // ============================================================================
 
@@ -121,20 +155,186 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
   // ---- read_file ----
   server.tool(
     'read_file',
-    'Read the contents of a file. Returns the file text with UTF-8 encoding by default. Paths are resolved relative to the configured working directory, so you can pass just a filename like "hello.txt".',
+    'Read the contents of a text file. For PDF files, use the dedicated read_pdf tool instead. ' +
+    'If the file is larger than 5 MB, you must provide start_line and max_lines to read a portion. ' +
+    'Paths are resolved relative to the configured working directory.',
     {
       path: z.string().describe('Path to the file. Can be an absolute path or a filename/relative path resolved against the working directory.'),
       encoding: z.string().optional().describe('File encoding (default: utf-8)'),
+      start_line: z.number().optional().describe('Line number to start reading from (1-based). Use this for large files.'),
+      max_lines: z.number().optional().describe('Maximum number of lines to read. Use this for large files.'),
     },
-    async ({ path: filePath, encoding }) => {
+    async ({ path: filePath, encoding, start_line, max_lines }) => {
       const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
       assertPathAllowed(resolvedPath, allowedDirs);
+
+      // Suggest read_pdf for PDF files
+      const ext = path.extname(resolvedPath).toLowerCase();
+      if (ext === '.pdf') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This is a PDF file. Please use the "read_pdf" tool instead of "read_file" to extract text from PDF files. ` +
+              `The read_pdf tool supports page ranges for large PDFs.`,
+          }],
+        };
+      }
+
+      const stat = await fs.promises.stat(resolvedPath);
+      const hasRange = start_line !== undefined || max_lines !== undefined;
+
+      // If file is too large and no range was provided, return a warning
+      if (stat.size > MAX_READ_SIZE && !hasRange) {
+        const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+        const lineCount = await countFileLines(resolvedPath);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ File is too large to read at once (${sizeMB} MB, ~${lineCount} lines). ` +
+              `The API has an ~8 MB total input limit.\n\n` +
+              `To read this file, use the start_line and max_lines parameters to read it in chunks. ` +
+              `For example:\n` +
+              `  - start_line: 1, max_lines: 500  (read first 500 lines)\n` +
+              `  - start_line: 501, max_lines: 500 (read next 500 lines)\n\n` +
+              `File: ${resolvedPath}\nSize: ${sizeMB} MB\nEstimated lines: ${lineCount}`,
+          }],
+        };
+      }
+
+      // Read with optional line range
+      if (hasRange) {
+        const startLine = Math.max(1, start_line || 1);
+        const maxLines = max_lines || 500;
+        const text = await readFileLines(resolvedPath, startLine, maxLines, (encoding as BufferEncoding) || 'utf-8');
+        return { content: [{ type: 'text' as const, text }] };
+      }
 
       const content = await fs.promises.readFile(
         resolvedPath,
         { encoding: (encoding as BufferEncoding) || 'utf-8' }
       );
       return { content: [{ type: 'text' as const, text: content }] };
+    }
+  );
+
+  // ---- read_pdf ----
+  server.tool(
+    'read_pdf',
+    'Extract text content from a PDF file. Supports page ranges for large PDFs. ' +
+    'If the PDF has many pages or is large, specify start_page and end_page to read a portion at a time. ' +
+    'Paths are resolved relative to the configured working directory.',
+    {
+      path: z.string().describe('Path to the PDF file.'),
+      start_page: z.number().optional().describe('First page to extract (1-based). Defaults to 1.'),
+      end_page: z.number().optional().describe('Last page to extract (inclusive). Defaults to the last page.'),
+    },
+    async ({ path: filePath, start_page, end_page }) => {
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
+      assertPathAllowed(resolvedPath, allowedDirs);
+
+      const ext = path.extname(resolvedPath).toLowerCase();
+      if (ext !== '.pdf') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This file is not a PDF (extension: ${ext}). Use "read_file" for text files.`,
+          }],
+        };
+      }
+
+      const stat = await fs.promises.stat(resolvedPath);
+      const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+      const hasRange = start_page !== undefined || end_page !== undefined;
+
+      // For large PDFs without a page range, do a metadata-only parse first to warn
+      if (stat.size > MAX_READ_SIZE && !hasRange) {
+        const buffer = await fs.promises.readFile(resolvedPath);
+        const metaResult = await pdfParse(buffer, { max: 0 });
+        const totalPages = metaResult.numpages;
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ This PDF is large (${sizeMB} MB, ${totalPages} pages). ` +
+              `Reading all pages at once may exceed the API's ~8 MB input limit.\n\n` +
+              `Use start_page and end_page to read in chunks. For example:\n` +
+              `  - start_page: 1, end_page: 20\n` +
+              `  - start_page: 21, end_page: 40\n\n` +
+              `PDF info:\n` +
+              `  File: ${resolvedPath}\n` +
+              `  File size: ${sizeMB} MB\n` +
+              `  Total pages: ${totalPages}`,
+          }],
+        };
+      }
+
+      const buffer = await fs.promises.readFile(resolvedPath);
+
+      // Parse PDF, collecting text per page so we can support page ranges
+      const pages: string[] = [];
+      let currentPage = 0;
+
+      const pageRender = (pageData: any) => {
+        currentPage++;
+        return pageData.getTextContent().then((textContent: any) => {
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join('');
+          pages.push(pageText);
+          return pageText;
+        });
+      };
+
+      const result = await pdfParse(buffer, { pagerender: pageRender });
+      const totalPages = result.numpages;
+
+      // Determine page range
+      const firstPage = Math.max(1, start_page || 1);
+      const lastPage = Math.min(totalPages, end_page || totalPages);
+
+      if (firstPage > totalPages) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `PDF has ${totalPages} page(s). Requested start_page ${firstPage} is out of range.`,
+          }],
+        };
+      }
+
+      let text: string;
+      if (!hasRange) {
+        // Full document — use the combined text from pdf-parse
+        text = result.text;
+      } else {
+        // Extract only the requested page range
+        const selectedPages = pages
+          .slice(firstPage - 1, lastPage)
+          .map((pageText, i) => `--- Page ${firstPage + i} ---\n${pageText}`);
+        text = selectedPages.join('\n\n');
+      }
+
+      // Check if extracted text exceeds the limit
+      const textBytes = Buffer.byteLength(text, 'utf-8');
+      if (textBytes > MAX_READ_SIZE) {
+        const suggestedChunkSize = Math.max(1, Math.floor((lastPage - firstPage + 1) * MAX_READ_SIZE / textBytes));
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ Extracted text from pages ${firstPage}-${lastPage} is too large (${(textBytes / (1024 * 1024)).toFixed(1)} MB). ` +
+              `The API has an ~8 MB total input limit.\n\n` +
+              `Try reading fewer pages at a time (suggest ~${suggestedChunkSize} pages per request).\n\n` +
+              `PDF info:\n` +
+              `  File: ${resolvedPath}\n` +
+              `  File size: ${sizeMB} MB\n` +
+              `  Total pages: ${totalPages}`,
+          }],
+        };
+      }
+
+      const header = `PDF: ${path.basename(resolvedPath)} | ${sizeMB} MB | ` +
+        `Pages: ${firstPage}-${lastPage} of ${totalPages}\n` +
+        `${'='.repeat(60)}\n\n`;
+
+      return { content: [{ type: 'text' as const, text: header + text }] };
     }
   );
 
