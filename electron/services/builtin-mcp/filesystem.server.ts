@@ -9,6 +9,8 @@ const pdfParse = require('pdf-parse');
 const mammoth = require('mammoth');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const XLSX = require('xlsx');
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const JSZip = require('jszip');
 
 // Maximum text content size (in bytes) to return in a single tool response.
 // Stays well below the ~8 MB API input limit to leave room for conversation context.
@@ -196,6 +198,14 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
           content: [{
             type: 'text' as const,
             text: `This is an Excel spreadsheet. Please use the "read_xlsx" tool instead of "read_file" to extract data from Excel files.`,
+          }],
+        };
+      }
+      if (ext === '.pptx' || ext === '.ppt') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This is a PowerPoint presentation. Please use the "read_pptx" tool instead of "read_file" to extract text from PowerPoint files.`,
           }],
         };
       }
@@ -518,6 +528,129 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
 
       const header = `Excel: ${path.basename(resolvedPath)} | ${sizeMB} MB | ` +
         `Sheet: "${targetSheet}" (${sheetNames.length} sheet(s) total)\n` +
+        `${'='.repeat(60)}\n\n`;
+
+      return { content: [{ type: 'text' as const, text: header + text }] };
+    }
+  );
+
+  // ---- read_pptx ----
+  server.tool(
+    'read_pptx',
+    'Extract text content from a Microsoft PowerPoint presentation (.pptx). ' +
+    'Returns the text from each slide. ' +
+    'Note: legacy .ppt format is not supported — only .pptx files can be read. ' +
+    'Paths are resolved relative to the configured working directory.',
+    {
+      path: z.string().describe('Path to the .pptx file.'),
+      slide_number: z.number().optional().describe('Read only a specific slide (1-based). If omitted, reads all slides.'),
+    },
+    async ({ path: filePath, slide_number }) => {
+      const resolvedPath = resolveRequestedPath(filePath, allowedDirs);
+      assertPathAllowed(resolvedPath, allowedDirs);
+
+      const ext = path.extname(resolvedPath).toLowerCase();
+      if (ext === '.ppt') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Legacy .ppt format is not supported. Only .pptx files can be read. ` +
+              `If possible, convert the file to .pptx first.`,
+          }],
+        };
+      }
+      if (ext !== '.pptx') {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `This file is not a PowerPoint presentation (extension: ${ext}). Use "read_file" for text files.`,
+          }],
+        };
+      }
+
+      const stat = await fs.promises.stat(resolvedPath);
+      const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
+
+      const buffer = await fs.promises.readFile(resolvedPath);
+      const zip = await JSZip.loadAsync(buffer);
+
+      // Find all slide XML files and sort them by slide number
+      const slideFiles: { num: number; name: string }[] = [];
+      zip.forEach((relativePath: string) => {
+        const match = relativePath.match(/^ppt\/slides\/slide(\d+)\.xml$/);
+        if (match) {
+          slideFiles.push({ num: parseInt(match[1], 10), name: relativePath });
+        }
+      });
+      slideFiles.sort((a: { num: number }, b: { num: number }) => a.num - b.num);
+
+      if (slideFiles.length === 0) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `No slides found in this .pptx file.`,
+          }],
+        };
+      }
+
+      // Filter to a specific slide if requested
+      if (slide_number !== undefined) {
+        if (slide_number < 1 || slide_number > slideFiles.length) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Slide ${slide_number} is out of range. This presentation has ${slideFiles.length} slide(s).`,
+            }],
+          };
+        }
+      }
+
+      const slidesToRead = slide_number !== undefined
+        ? [slideFiles[slide_number - 1]]
+        : slideFiles;
+
+      // Extract text from each slide's XML
+      // Text content lives in <a:t> elements
+      const slideTexts: string[] = [];
+      for (const slide of slidesToRead) {
+        const xmlContent: string = await zip.file(slide.name)!.async('string');
+        const texts: string[] = [];
+        const regex = /<a:t>([\s\S]*?)<\/a:t>/g;
+        let match;
+        while ((match = regex.exec(xmlContent)) !== null) {
+          const decoded = match[1]
+            .replace(/&amp;/g, '&')
+            .replace(/&lt;/g, '<')
+            .replace(/&gt;/g, '>')
+            .replace(/&quot;/g, '"')
+            .replace(/&apos;/g, "'");
+          texts.push(decoded);
+        }
+        slideTexts.push(`--- Slide ${slide.num} ---\n${texts.join(' ')}`);
+      }
+
+      const text = slideTexts.join('\n\n');
+
+      // Check if extracted text exceeds the limit
+      const textBytes = Buffer.byteLength(text, 'utf-8');
+      if (textBytes > MAX_READ_SIZE) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `⚠ Extracted text is too large (${(textBytes / (1024 * 1024)).toFixed(1)} MB). ` +
+              `The API has an ~8 MB total input limit.\n\n` +
+              `Try reading individual slides with the slide_number parameter.\n\n` +
+              `File: ${resolvedPath}\n` +
+              `File size: ${sizeMB} MB\n` +
+              `Total slides: ${slideFiles.length}`,
+          }],
+        };
+      }
+
+      const slideRange = slide_number !== undefined
+        ? `Slide ${slide_number}`
+        : `${slideFiles.length} slide(s)`;
+      const header = `PowerPoint: ${path.basename(resolvedPath)} | ${sizeMB} MB | ${slideRange}\n` +
         `${'='.repeat(60)}\n\n`;
 
       return { content: [{ type: 'text' as const, text: header + text }] };
