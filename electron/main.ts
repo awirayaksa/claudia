@@ -16,6 +16,12 @@ import { registerIconHandlers, setTrayGetter } from './handlers/icon.handler';
 import { registerSystemPromptHandlers } from './handlers/system-prompt.handler';
 import { AutoUpdaterService } from './services/auto-updater.service';
 import { registerUpdaterHandlers } from './handlers/updater.handler';
+import {
+  registerSkillHandlers,
+  setSkillMainWindow,
+  initSkillWatcher,
+  cleanupSkillWatcher,
+} from './handlers/skill.handler';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
@@ -243,6 +249,10 @@ function createWindow() {
   // Set main window reference for Plugin handlers
   setPluginMainWindow(mainWindow);
 
+  // Set main window reference for Skill handlers and start file watcher
+  setSkillMainWindow(mainWindow);
+  initSkillWatcher();
+
   // Load the app
   if (app.isPackaged) {
     // Production: load from packaged files
@@ -310,6 +320,7 @@ app.whenReady().then(async () => {
   registerIconHandlers(() => mainWindow);
   registerSystemPromptHandlers();
   registerUpdaterHandlers(() => mainWindow, updaterService);
+  registerSkillHandlers();
 
   // Window title handler
   ipcMain.handle('window:setTitle', (_, title: string) => {
@@ -402,6 +413,7 @@ app.on('before-quit', async (event) => {
   }
   await cleanupMCPServers();
   await cleanupPluginManager();
+  cleanupSkillWatcher();
   app.exit();
 });
 

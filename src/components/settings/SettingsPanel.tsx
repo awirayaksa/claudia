@@ -6,13 +6,14 @@ import { MCPSettings } from './MCPSettings';
 import { ThemeSettings } from './ThemeSettings';
 import { PluginSettings } from './PluginSettings';
 import { PreferencesSettings } from './PreferencesSettings';
+import { SkillSettings } from './SkillSettings';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setSettingsOpen } from '../../store/slices/uiSlice';
 
 export function SettingsPanel() {
   const dispatch = useAppDispatch();
   const { settingsOpen } = useAppSelector((state) => state.ui);
-  const [activeTab, setActiveTab] = useState<'api' | 'mcp' | 'plugins' | 'appearance' | 'preferences'>('api');
+  const [activeTab, setActiveTab] = useState<'api' | 'mcp' | 'plugins' | 'appearance' | 'preferences' | 'skills'>('api');
 
   const handleClose = () => {
     dispatch(setSettingsOpen(false));
@@ -24,6 +25,7 @@ export function SettingsPanel() {
     { id: 'plugins' as const, label: 'Plugins' },
     { id: 'appearance' as const, label: 'Appearance' },
     { id: 'preferences' as const, label: 'Preferences' },
+    { id: 'skills' as const, label: 'Skills' },
   ];
 
   return (
@@ -67,6 +69,7 @@ export function SettingsPanel() {
           {activeTab === 'plugins' && <PluginSettings />}
           {activeTab === 'appearance' && <ThemeSettings />}
           {activeTab === 'preferences' && <PreferencesSettings />}
+          {activeTab === 'skills' && <SkillSettings />}
         </div>
       </div>
     </Modal>

@@ -9,12 +9,23 @@ import { useAppDispatch, useAppSelector } from './store';
 import { setApiConfig, setAppearance, setPreferences } from './store/slices/settingsSlice';
 import { setSettingsOpen, toggleSidebar } from './store/slices/uiSlice';
 import { discoverPlugins, loadPluginConfigs, refreshActivePlugins } from './store/slices/pluginSlice';
+import { loadSkills, setSkills } from './store/slices/skillSlice';
 import packageJson from '../package.json';
 
 function App() {
   const dispatch = useAppDispatch();
   const appearance = useAppSelector((state) => state.settings.appearance);
   const { create: createConversation } = useConversations();
+
+  // Initialize skills on app start and listen for file-watcher push events
+  useEffect(() => {
+    dispatch(loadSkills());
+    const cleanup = window.electron.skills.onChanged((skills) => {
+      dispatch(setSkills(skills));
+    });
+    return cleanup;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Initialize plugins on app start (runs once on mount)
   useEffect(() => {

@@ -119,6 +119,16 @@ export interface ElectronAPI {
     onStatusChanged: (callback: (status: any) => void) => () => void;
     onDownloadProgress: (callback: (percent: number) => void) => () => void;
   };
+  skills: {
+    list: () => Promise<any>;
+    get: (id: string) => Promise<any>;
+    create: (payload: any) => Promise<any>;
+    update: (payload: any) => Promise<any>;
+    delete: (id: string) => Promise<any>;
+    getDir: () => Promise<any>;
+    openDir: () => Promise<any>;
+    onChanged: (callback: (skills: any[]) => void) => () => void;
+  };
 }
 
 declare global {

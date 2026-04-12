@@ -17,7 +17,7 @@ export function useChat() {
   const { streamingEnabled } = useAppSelector((state) => state.settings.preferences);
 
   const handleSendMessage = useCallback(
-    async (content: string, attachments?: Attachment[]) => {
+    async (content: string, attachments?: Attachment[], skillPrompt?: string) => {
       if (!selectedModel) {
         throw new Error('Please select a model in settings');
       }
@@ -26,7 +26,7 @@ export function useChat() {
 
       // Use streaming with tool calling if enabled, otherwise use regular message
       if (streamingEnabled) {
-        await dispatch(sendStreamingMessageWithTools({ content, model: selectedModel, attachments }));
+        await dispatch(sendStreamingMessageWithTools({ content, model: selectedModel, attachments, skillPrompt }));
       } else {
         await dispatch(sendMessage({ content, model: selectedModel, attachments }));
       }

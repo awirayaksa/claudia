@@ -6,7 +6,9 @@ import { useFileUpload } from '../../hooks/useFileUpload';
 import { CompactModelSelector } from './CompactModelSelector';
 import MCPServerBadges from './MCPServerBadges';
 import { FileMentionDropdown } from './FileMentionDropdown';
+import { SkillMentionDropdown } from './SkillMentionDropdown';
 import { useFileMention } from '../../hooks/useFileMention';
+import { useSkillMention } from '../../hooks/useSkillMention';
 import { useAppSelector } from '../../store';
 
 interface ChatInputProps {
@@ -76,6 +78,10 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
   const fileMention = useFileMention(filesystemDirectory, isFilesystemReady);
 
+  // Skills mention feature
+  const skills = useAppSelector((state) => state.skills.skills);
+  const skillMention = useSkillMention(skills);
+
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
     focus: () => {
@@ -115,6 +121,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const handleSend = async () => {
     if ((message.trim() || attachments.length > 0) && !disabled && !uploading) {
       fileMention.close();
+      skillMention.close();
       const expandedMessage = filesystemDirectory
         ? expandFileMentions(message, filesystemDirectory)
         : message;
@@ -131,7 +138,22 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   };
 
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    // Intercept keyboard events for the mention dropdown first
+    // Intercept keyboard events for the skill mention dropdown first
+    if (skillMention.isOpen) {
+      const result = skillMention.handleKeyDown(e);
+      if (result.consumed) {
+        e.preventDefault();
+        if (result.newValue !== undefined) {
+          setMessage(result.newValue);
+          requestAnimationFrame(() => {
+            textareaRef.current?.setSelectionRange(result.newCursorPos!, result.newCursorPos!);
+          });
+        }
+        return;
+      }
+    }
+
+    // Intercept keyboard events for the file mention dropdown
     if (fileMention.isOpen) {
       const result = fileMention.handleKeyDown(e);
       if (result.consumed) {
@@ -263,7 +285,21 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
     // Trigger mention detection
     fileMention.handleChange(value, e.target.selectionStart ?? value.length);
+    skillMention.handleChange(value, e.target.selectionStart ?? value.length);
   };
+
+  const handleSkillSelect = useCallback(
+    (skill: import('../../types/skill.types').Skill) => {
+      const cursorPos = textareaRef.current?.selectionStart ?? message.length;
+      const { newValue, newCursorPos } = skillMention.selectSkill(skill, message, cursorPos);
+      setMessage(newValue);
+      requestAnimationFrame(() => {
+        textareaRef.current?.focus();
+        textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+      });
+    },
+    [message, skillMention]
+  );
 
   const handleMentionSelect = useCallback(
     (entry: { name: string; isDirectory: boolean }) => {
@@ -464,7 +500,10 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           onKeyDown={handleKeyDown}
           onPaste={handlePaste}
           onContextMenu={handleContextMenu}
-          onBlur={() => setTimeout(() => fileMention.close(), 150)}
+          onBlur={() => {
+            setTimeout(() => fileMention.close(), 150);
+            setTimeout(() => skillMention.close(), 150);
+          }}
           placeholder={placeholder}
           disabled={disabled || uploading}
           rows={1}
@@ -502,6 +541,16 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           )}
         </Button>
       </div>
+
+      {/* Skill mention dropdown */}
+      <SkillMentionDropdown
+        isOpen={skillMention.isOpen}
+        skills={skillMention.filteredSkills}
+        activeIndex={skillMention.activeIndex}
+        anchorRef={textareaRef}
+        onSelect={handleSkillSelect}
+        onClose={skillMention.close}
+      />
 
       {/* File mention dropdown */}
       <FileMentionDropdown
@@ -543,7 +592,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       )}
 
       <p className="mt-2 text-xs text-text-secondary">
-        Press Enter to send, Shift+Enter for new line • Use @file to mention files (Tab/Enter to select) • Drag & drop, paste, or click 📎 to attach files
+        Press Enter to send, Shift+Enter for new line • Use /skill to invoke a skill • Use @file to mention files • Drag & drop or click 📎 to attach
       </p>
     </div>
   );

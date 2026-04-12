@@ -7,6 +7,7 @@ import conversationReducer from './slices/conversationSlice';
 import projectReducer from './slices/projectSlice';
 import mcpReducer from './slices/mcpSlice';
 import pluginReducer from './slices/pluginSlice';
+import skillReducer from './slices/skillSlice';
 
 export const store = configureStore({
   reducer: {
@@ -17,6 +18,7 @@ export const store = configureStore({
     project: projectReducer,
     mcp: mcpReducer,
     plugins: pluginReducer,
+    skills: skillReducer,
   },
   middleware: (getDefaultMiddleware) =>
     getDefaultMiddleware({

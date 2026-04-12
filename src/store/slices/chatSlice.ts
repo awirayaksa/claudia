@@ -451,7 +451,7 @@ export const sendStreamingMessage = createAsyncThunk(
 export const sendStreamingMessageWithTools = createAsyncThunk(
   'chat/sendStreamingMessageWithTools',
   async (
-    { content, model, attachments }: { content: string; model: string; attachments?: Attachment[] },
+    { content, model, attachments, skillPrompt }: { content: string; model: string; attachments?: Attachment[]; skillPrompt?: string },
     { getState, dispatch }
   ) => {
     const MAX_TOOL_ITERATIONS = 5;
@@ -499,6 +499,18 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
       messages.unshift({
         role: 'system' as const,
         content: systemPromptText,
+        tool_calls: undefined,
+        tool_call_id: undefined,
+        name: undefined,
+      });
+    }
+
+    // Inject skill prompt if a skill was invoked (inserted after global system prompt)
+    if (skillPrompt) {
+      const insertIdx = systemPromptText ? 1 : 0;
+      messages.splice(insertIdx, 0, {
+        role: 'system' as const,
+        content: skillPrompt,
         tool_calls: undefined,
         tool_call_id: undefined,
         name: undefined,

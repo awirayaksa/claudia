@@ -11,6 +11,7 @@ import { useProjects } from '../../hooks/useProjects';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { Attachment } from '../../types/message.types';
 import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage, setFilesystemDirectory } from '../../store/slices/chatSlice';
+import { resolveSkillCommand } from '../../utils/skill-utils';
 import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
 import { getAPIProvider } from '../../services/api/provider.service';
@@ -50,6 +51,7 @@ export function ChatWindow() {
 
   const { currentProjectId: _currentProjectId } = useProjects();
 
+  const skills = useAppSelector((state) => state.skills.skills);
   const apiConfig = useAppSelector((state) => state.settings.api);
   const [pendingModel, setPendingModel] = useState<string | null>(null);
 
@@ -300,7 +302,13 @@ export function ChatWindow() {
         setPendingModel(null);
       }
 
-      await sendMessage(content, attachments);
+      // Check if content is a skill invocation (e.g. "/summarize some text")
+      const skillResult = resolveSkillCommand(content, skills);
+      if (skillResult) {
+        await sendMessage(skillResult.userContent, attachments, skillResult.skillPrompt);
+      } else {
+        await sendMessage(content, attachments);
+      }
     } catch (error) {
       console.error('Failed to send message:', error);
     }

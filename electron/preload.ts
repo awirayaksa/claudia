@@ -210,6 +210,22 @@ contextBridge.exposeInMainWorld('electron', {
     },
   },
 
+  // Skills
+  skills: {
+    list: () => ipcRenderer.invoke('skill:list'),
+    get: (id: string) => ipcRenderer.invoke('skill:get', id),
+    create: (payload: any) => ipcRenderer.invoke('skill:create', payload),
+    update: (payload: any) => ipcRenderer.invoke('skill:update', payload),
+    delete: (id: string) => ipcRenderer.invoke('skill:delete', id),
+    getDir: () => ipcRenderer.invoke('skill:getDir'),
+    openDir: () => ipcRenderer.invoke('skill:openDir'),
+    onChanged: (callback: (skills: any[]) => void) => {
+      const handler = (_event: any, data: any[]) => callback(data);
+      ipcRenderer.on('skill:changed', handler);
+      return () => ipcRenderer.removeListener('skill:changed', handler);
+    },
+  },
+
   // Auto-updater (portable builds)
   updater: {
     check: () => ipcRenderer.invoke('updater:check'),
@@ -342,6 +358,16 @@ export interface ElectronAPI {
     openLogsFolder: () => Promise<void>;
     getLogDirectory: () => Promise<string | null>;
     onLogEntry: (callback: (entry: any) => void) => () => void;
+  };
+  skills: {
+    list: () => Promise<any>;
+    get: (id: string) => Promise<any>;
+    create: (payload: any) => Promise<any>;
+    update: (payload: any) => Promise<any>;
+    delete: (id: string) => Promise<any>;
+    getDir: () => Promise<any>;
+    openDir: () => Promise<any>;
+    onChanged: (callback: (skills: any[]) => void) => () => void;
   };
   updater: {
     check: () => Promise<any>;
