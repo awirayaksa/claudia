@@ -305,7 +305,13 @@ export function ChatWindow() {
       // Check if content is a skill invocation (e.g. "/summarize some text")
       const skillResult = resolveSkillCommand(content, skills);
       if (skillResult) {
-        await sendMessage(skillResult.userContent, attachments, skillResult.skillPrompt);
+        // If the filesystem MCP tool has an active working directory, prepend it to
+        // the skill prompt so the skill operates in the right folder automatically.
+        let skillPrompt = skillResult.skillPrompt;
+        if (filesystemDirectory) {
+          skillPrompt = `Working directory: ${filesystemDirectory}\n\n${skillPrompt}`;
+        }
+        await sendMessage(skillResult.userContent, attachments, skillPrompt);
       } else {
         await sendMessage(content, attachments);
       }
