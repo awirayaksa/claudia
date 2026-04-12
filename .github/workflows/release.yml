@@ -50,9 +50,28 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Send Telegram Notification
+- name: Send Telegram Notification
         if: success()
         run: |
           $version = "${{ steps.version.outputs.VERSION }}"
-          $message = "🚀 New release published!%0A%0AVersion: v$version%0ARepository: ${{ github.repository }}%0A%0ADownload: https://github.com/${{ github.repository }}/releases/tag/v$version"
-          Invoke-RestMethod -Uri "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage?chat_id=${{ secrets.TELEGRAM_CHAT_ID }}&text=$message&parse_mode=HTML"
+          $repo = "${{ github.repository }}"
+          $actor = "${{ github.actor }}"
+          $releaseUrl = "https://github.com/$repo/releases/tag/v$version"
+          $imageUrl = "https://opengraph.githubassets.com/1/$repo/releases/tag/v$version"
+
+          $caption = "🚀 <b>New Release Published!</b>`n`n📦 <b>Repository:</b> $repo`n🏷️ <b>Version:</b> <code>v$version</code>`n👤 <b>Released by:</b> $actor`n`n🔗 <a href='$releaseUrl'>View Release on GitHub</a>"
+
+          $buttons = '{"inline_keyboard":[[{"text":"📦 View Release","url":"' + $releaseUrl + '"},{"text":"📥 Download","url":"' + $releaseUrl + '"}]]}'
+
+          $body = @{
+            chat_id = "${{ secrets.TELEGRAM_CHAT_ID }}"
+            photo = $imageUrl
+            caption = $caption
+            parse_mode = "HTML"
+            reply_markup = $buttons
+          }
+
+          Invoke-RestMethod -Uri "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendPhoto" `
+            -Method POST `
+            -ContentType "application/json" `
+            -Body ($body | ConvertTo-Json)
