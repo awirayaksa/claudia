@@ -79,10 +79,7 @@ export function ChatWindow() {
     return false;
   })();
 
-  // Auto-scroll to bottom when new messages arrive or streaming content changes
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, streamingContent]);
+  // No auto-scroll during streaming — user stays at their current position
 
   // Auto-focus input after response completes
   useEffect(() => {
@@ -301,6 +298,9 @@ export function ChatWindow() {
         await createConversation('New Conversation', modelToUse);
         setPendingModel(null);
       }
+
+      // Scroll to bottom when user sends a message so they see the response start
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
 
       // Check if content is a skill invocation (e.g. "/summarize some text")
       const skillResult = resolveSkillCommand(content, skills);
