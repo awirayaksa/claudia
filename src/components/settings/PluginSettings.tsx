@@ -61,7 +61,7 @@ export function PluginSettings() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ padding: '22px 28px' }}>
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>

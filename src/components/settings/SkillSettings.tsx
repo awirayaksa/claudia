@@ -198,7 +198,7 @@ export function SkillSettings() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ padding: '22px 28px' }}>
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">Skills</h3>

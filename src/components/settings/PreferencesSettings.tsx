@@ -47,7 +47,7 @@ export function PreferencesSettings() {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" style={{ padding: '22px 28px' }}>
       <div>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">
           Model Preferences

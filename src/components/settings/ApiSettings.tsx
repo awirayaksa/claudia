@@ -159,56 +159,125 @@ export function ApiSettings() {
     }
   };
 
+  const connectionStatus = testResult?.success === true
+    ? { dot: '#2f8f4a', text: 'Connected', sub: '· tested just now' }
+    : testResult?.success === false
+      ? { dot: '#b14a3b', text: 'Error', sub: `· ${testResult.message}` }
+      : null;
+
   return (
-    <div className="space-y-6">
-      {/* Provider Selection */}
-      <div>
-        <label className="block text-sm font-medium text-text-primary mb-2">
-          API Provider
-        </label>
-        <select
-          value={provider}
-          onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
-          className="w-full rounded border border-border bg-bg-secondary px-3 py-2 text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2"
-        >
-          <option value="openwebui">Open WebUI</option>
-          <option value="openrouter">OpenRouter</option>
-        </select>
-        <p className="mt-1 text-xs text-text-secondary">
-          Select your preferred API provider
-        </p>
+    <div>
+      {/* Section header */}
+      <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid #ebe7e1' }}>
+        <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.2, marginBottom: 4, color: '#1a1a19' }}>
+          API Configuration
+        </div>
+        <div style={{ fontSize: 13, color: '#6f6b66', lineHeight: 1.55 }}>
+          Connect to your preferred provider to start chatting.
+        </div>
       </div>
 
-      {/* Conditional Form Rendering */}
-      {provider === 'openwebui' && (
-        <OpenWebUIConfigForm
-          config={openwebuiConfig as OpenWebUIConfig}
-          availableModels={api.availableModels}
-          streamingEnabled={streamingEnabled}
-          onConfigChange={(updates) => setOpenwebuiConfig({ ...openwebuiConfig, ...updates })}
-          onStreamingChange={setStreamingEnabled}
-          onTestConnection={handleTestConnection}
-          onSave={handleSave}
-          testResult={testResult}
-          testing={testing}
-          saving={saving}
-        />
-      )}
+      <div style={{ padding: '22px 28px' }}>
+        {/* Provider + connection status card */}
+        <div style={{ border: '1px solid #ebe7e1', borderRadius: 10, padding: 18, background: '#fff', marginBottom: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27' }}>Provider</div>
+            {connectionStatus && (
+              <div style={{ fontSize: 11.5, display: 'flex', alignItems: 'center', gap: 5, color: connectionStatus.dot }}>
+                <span>●</span>
+                <span>{connectionStatus.text}</span>
+                <span style={{ color: '#6f6b66' }}>{connectionStatus.sub}</span>
+              </div>
+            )}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div>
+              <select
+                value={provider}
+                onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
+                style={{
+                  width: '100%',
+                  border: '1px solid #ebe7e1',
+                  borderRadius: 7,
+                  padding: '7px 10px',
+                  fontSize: 13,
+                  background: '#fff',
+                  color: '#2e2b27',
+                  outline: 'none',
+                }}
+              >
+                <option value="openwebui">Open WebUI</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+            <div>
+              <select
+                value={
+                  provider === 'openwebui'
+                    ? openwebuiConfig.selectedModel || ''
+                    : openrouterConfig.selectedModel || ''
+                }
+                onChange={(e) => {
+                  if (provider === 'openwebui') {
+                    setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: e.target.value });
+                  } else {
+                    setOpenrouterConfig({ ...openrouterConfig, selectedModel: e.target.value });
+                  }
+                }}
+                style={{
+                  width: '100%',
+                  border: '1px solid #ebe7e1',
+                  borderRadius: 7,
+                  padding: '7px 10px',
+                  fontSize: 13,
+                  background: '#fff',
+                  color: '#2e2b27',
+                  outline: 'none',
+                }}
+              >
+                {api.availableModels.length === 0 ? (
+                  <option value="">No models — test connection</option>
+                ) : (
+                  api.availableModels.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))
+                )}
+              </select>
+            </div>
+          </div>
+        </div>
 
-      {provider === 'openrouter' && (
-        <OpenRouterConfigForm
-          config={openrouterConfig as OpenRouterConfig}
-          availableModels={api.availableModels}
-          streamingEnabled={streamingEnabled}
-          onConfigChange={(updates) => setOpenrouterConfig({ ...openrouterConfig, ...updates })}
-          onStreamingChange={setStreamingEnabled}
-          onTestConnection={handleTestConnection}
-          onSave={handleSave}
-          testResult={testResult}
-          testing={testing}
-          saving={saving}
-        />
-      )}
+        {/* Credentials form */}
+        {provider === 'openwebui' && (
+          <OpenWebUIConfigForm
+            config={openwebuiConfig as OpenWebUIConfig}
+            availableModels={api.availableModels}
+            streamingEnabled={streamingEnabled}
+            onConfigChange={(updates) => setOpenwebuiConfig({ ...openwebuiConfig, ...updates })}
+            onStreamingChange={setStreamingEnabled}
+            onTestConnection={handleTestConnection}
+            onSave={handleSave}
+            testResult={testResult}
+            testing={testing}
+            saving={saving}
+          />
+        )}
+
+        {provider === 'openrouter' && (
+          <OpenRouterConfigForm
+            config={openrouterConfig as OpenRouterConfig}
+            availableModels={api.availableModels}
+            streamingEnabled={streamingEnabled}
+            onConfigChange={(updates) => setOpenrouterConfig({ ...openrouterConfig, ...updates })}
+            onStreamingChange={setStreamingEnabled}
+            onTestConnection={handleTestConnection}
+            onSave={handleSave}
+            testResult={testResult}
+            testing={testing}
+            saving={saving}
+          />
+        )}
+      </div>
     </div>
   );
 }

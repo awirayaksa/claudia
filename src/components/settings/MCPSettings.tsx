@@ -214,16 +214,21 @@ export function MCPSettings() {
   const serverList = customServers;
 
   return (
-    <div className="space-y-6">
+    <div>
       {/* Header */}
-      <div>
-        <h3 className="mb-2 text-lg font-semibold text-text-primary">
-          MCP Server Configuration
-        </h3>
-        <p className="text-sm text-text-secondary">
-          Manage Model Context Protocol servers to extend Claude's capabilities with custom
+      <div
+        style={{
+          padding: '22px 28px 18px',
+          borderBottom: '1px solid #ebe7e1',
+        }}
+      >
+        <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.2, marginBottom: 4, color: '#1a1a19' }}>
+          MCP Servers
+        </div>
+        <div style={{ fontSize: 13, color: '#6f6b66', lineHeight: 1.55 }}>
+          Manage Model Context Protocol servers to extend Claudia's capabilities with custom
           tools, resources, and prompts.
-        </p>
+        </div>
       </div>
 
       {/* Error Display */}
@@ -233,190 +238,307 @@ export function MCPSettings() {
         </div>
       )}
 
-      {/* Built-in Servers */}
-      <BuiltinMCPSection onViewLogs={handleViewLogs} />
-
-      {/* Custom Server List */}
-      <div className="space-y-2">
-        {isLoadingServers ? (
-          <div className="flex items-center justify-center p-8 text-text-secondary">
-            <div className="text-center">
-              <div className="mb-2 text-sm">Loading servers...</div>
-            </div>
+      {/* Built-in + Custom Server sections */}
+      <div style={{ padding: '18px 28px' }}>
+        {/* Section header row */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+          <div style={{ fontSize: 11, letterSpacing: 0.8, color: '#6f6b66', fontWeight: 600, textTransform: 'uppercase' }}>
+            Installed · {Object.values(servers).length + (isLoadingServers ? 0 : 0)}
           </div>
-        ) : serverList.length === 0 ? (
-          <div className="rounded border border-border bg-surface p-8 text-center">
-            <div className="mb-2 text-sm font-medium text-text-primary">
-              No MCP Servers Configured
-            </div>
-            <p className="mb-4 text-xs text-text-secondary">
-              Add a server manually or import from Claude Desktop to get started.
-            </p>
-            <div className="flex justify-center gap-2">
-              <Button onClick={() => setShowAddModal(true)} size="sm">
-                + Add Server
-              </Button>
-              <Button
-                onClick={handleImportClaudeDesktop}
-                variant="secondary"
-                size="sm"
-                disabled={importing}
-              >
-                {importing ? 'Importing...' : 'Import from Claude Desktop'}
-              </Button>
-            </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button
+              onClick={handleImportClaudeDesktop}
+              disabled={importing}
+              style={{
+                border: '1px solid #ebe7e1',
+                background: '#fff',
+                borderRadius: 7,
+                padding: '5px 12px',
+                fontSize: 12,
+                cursor: importing ? 'not-allowed' : 'pointer',
+                color: '#2e2b27',
+                opacity: importing ? 0.6 : 1,
+              }}
+            >
+              {importing ? 'Importing...' : 'Import from Claude Desktop'}
+            </button>
+            <button
+              onClick={() => setShowAddModal(true)}
+              style={{
+                background: '#1a1a19',
+                color: '#fff',
+                border: 'none',
+                borderRadius: 7,
+                padding: '5px 12px',
+                fontSize: 12,
+                fontWeight: 500,
+                cursor: 'pointer',
+              }}
+            >
+              + Add server
+            </button>
           </div>
-        ) : (
-          serverList.map((server) => {
-            const state = serverStates[server.id];
-            const status = state?.status || 'stopped';
-            const tools = state?.tools || [];
-            const resources = state?.resources || [];
-            const prompts = state?.prompts || [];
-            const serverError = state?.error;
-
-            // Status configuration
-            const statusConfig = {
-              stopped: { color: 'text-gray-500', icon: '○', label: 'Stopped' },
-              starting: { color: 'text-blue-500', icon: '◐', label: 'Starting...' },
-              initializing: {
-                color: 'text-blue-500',
-                icon: '◑',
-                label: 'Initializing...',
-              },
-              ready: { color: 'text-green-500', icon: '●', label: 'Ready' },
-              error: { color: 'text-error', icon: '⚠', label: 'Error' },
-              stopping: { color: 'text-gray-500', icon: '○', label: 'Stopping...' },
-            }[status];
-
-            return (
-              <div
-                key={server.id}
-                className="flex flex-col rounded border border-border bg-surface p-4 hover:bg-surface-hover transition-colors"
-              >
-                {/* Server Info */}
-                <div>
-                  <div className="flex items-center gap-3 flex-wrap">
-                    <span className="text-base font-medium text-text-primary">
-                      {server.name}
-                    </span>
-                    <span className={`flex items-center gap-1 text-sm ${statusConfig.color}`}>
-                      <span>{statusConfig.icon}</span>
-                      <span>{statusConfig.label}</span>
-                    </span>
-                    <span className="rounded bg-gray-600 px-1.5 py-0.5 text-xs text-gray-200">
-                      {getTransportLabel(server.transport)}
-                    </span>
-                    {tools.length > 0 && (
-                      <span className="rounded-full bg-accent px-2 py-0.5 text-xs text-white">
-                        {tools.length} {tools.length === 1 ? 'tool' : 'tools'}
-                      </span>
-                    )}
-                    {resources.length > 0 && (
-                      <span className="rounded-full bg-blue-600 px-2 py-0.5 text-xs text-white">
-                        {resources.length} {resources.length === 1 ? 'resource' : 'resources'}
-                      </span>
-                    )}
-                    {prompts.length > 0 && (
-                      <span className="rounded-full bg-purple-600 px-2 py-0.5 text-xs text-white">
-                        {prompts.length} {prompts.length === 1 ? 'prompt' : 'prompts'}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Server info preview */}
-                  <div className="mt-1 text-xs text-text-secondary font-mono truncate max-w-lg">
-                    {getServerInfo(server)}
-                  </div>
-
-                  {/* Error message - only show when status is error */}
-                  {serverError && status === 'error' && (
-                    <div className="mt-2 text-sm text-error">{serverError}</div>
-                  )}
-
-                  {/* Description */}
-                  {server.metadata?.description && (
-                    <div className="mt-1 text-xs text-text-secondary">
-                      {server.metadata.description}
-                    </div>
-                  )}
-                </div>
-
-                {/* Actions - New Row */}
-                <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border">
-                  {status === 'ready' && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleStopServer(server.id)}
-                    >
-                      Stop
-                    </Button>
-                  )}
-                  {(status === 'stopped' || status === 'error') && (
-                    <Button size="sm" onClick={() => handleStartServer(server.id)}>
-                      Start
-                    </Button>
-                  )}
-                  {(status === 'starting' ||
-                    status === 'initializing' ||
-                    status === 'stopping') && (
-                    <Button size="sm" variant="secondary" disabled>
-                      {statusConfig.label}
-                    </Button>
-                  )}
-
-                  {/* View Logs button - always show */}
-                  <Button
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => handleViewLogs(server.id, server.name)}
-                  >
-                    View Logs
-                  </Button>
-
-                  {/* Edit button - show when stopped or error */}
-                  {(status === 'stopped' || status === 'error') && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => setEditingServer(server)}
-                    >
-                      Edit
-                    </Button>
-                  )}
-
-                  {/* Delete button - show when stopped or error */}
-                  {(status === 'stopped' || status === 'error') && (
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      onClick={() => handleDeleteServer(server.id)}
-                      className="text-error hover:bg-error hover:bg-opacity-10"
-                    >
-                      Delete
-                    </Button>
-                  )}
-                </div>
-              </div>
-            );
-          })
-        )}
-      </div>
-
-      {/* Action Buttons */}
-      {serverList.length > 0 && (
-        <div className="flex gap-2">
-          <Button onClick={() => setShowAddModal(true)}>+ Add Server</Button>
-          <Button
-            onClick={handleImportClaudeDesktop}
-            variant="secondary"
-            disabled={importing}
-          >
-            {importing ? 'Importing...' : 'Import from Claude Desktop'}
-          </Button>
         </div>
-      )}
+
+        {/* Error Display */}
+        {error && (
+          <div className="rounded border border-error bg-error bg-opacity-10 p-3 text-sm text-error mb-3">
+            {error}
+          </div>
+        )}
+
+        {/* Built-in Servers */}
+        <BuiltinMCPSection onViewLogs={handleViewLogs} />
+
+        {/* Custom Server List */}
+        <div className="space-y-2 mt-2">
+          {isLoadingServers ? (
+            <div style={{ padding: '24px 0', textAlign: 'center', fontSize: 13, color: '#6f6b66' }}>
+              Loading servers...
+            </div>
+          ) : serverList.length === 0 ? (
+            <div
+              style={{
+                border: '1px solid #ebe7e1',
+                borderRadius: 10,
+                padding: '28px 20px',
+                textAlign: 'center',
+                background: '#faf8f5',
+              }}
+            >
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#1a1a19', marginBottom: 6 }}>
+                No custom MCP servers yet
+              </div>
+              <div style={{ fontSize: 12, color: '#6f6b66' }}>
+                Add a server manually or import from Claude Desktop to get started.
+              </div>
+            </div>
+          ) : (
+            serverList.map((server) => {
+              const state = serverStates[server.id];
+              const status = state?.status || 'stopped';
+              const serverError = state?.error;
+
+              type StatusKey = 'stopped' | 'starting' | 'initializing' | 'ready' | 'error' | 'stopping';
+              const statusChipMap: Record<StatusKey, { dot: string; bg: string; fg: string; label: string }> = {
+                stopped:      { dot: '#9a958e', bg: '#faf8f5', fg: '#6f6b66', label: 'Stopped' },
+                starting:     { dot: '#3d7bc9', bg: '#eaf0fb', fg: '#1e3a6e', label: 'Starting…' },
+                initializing: { dot: '#3d7bc9', bg: '#eaf0fb', fg: '#1e3a6e', label: 'Initializing…' },
+                ready:        { dot: '#2f8f4a', bg: '#eaf6ee', fg: '#1e5a2e', label: 'Running' },
+                error:        { dot: '#b14a3b', bg: '#fbeceb', fg: '#8a2f24', label: serverError || 'Error' },
+                stopping:     { dot: '#9a958e', bg: '#faf8f5', fg: '#6f6b66', label: 'Stopping…' },
+              };
+              const chip = statusChipMap[status as StatusKey] || statusChipMap.stopped;
+              const isRunning = status === 'ready';
+              const isTransient = status === 'starting' || status === 'initializing' || status === 'stopping';
+
+              return (
+                <div
+                  key={server.id}
+                  style={{
+                    border: '1px solid #ebe7e1',
+                    borderRadius: 10,
+                    padding: '14px 16px',
+                    background: '#fff',
+                    marginBottom: 8,
+                  }}
+                >
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12 }}>
+                    {/* Icon */}
+                    <div
+                      style={{
+                        width: 32,
+                        height: 32,
+                        borderRadius: 7,
+                        background: '#faf8f5',
+                        border: '1px solid #ebe7e1',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        fontSize: 14,
+                        flexShrink: 0,
+                        fontWeight: 600,
+                        color: '#2e2b27',
+                      }}
+                    >
+                      {server.name[0]}
+                    </div>
+
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      {/* Name + status chip + transport */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 13.5, fontWeight: 600, color: '#1a1a19' }}>
+                          {server.name}
+                        </span>
+                        <span
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 5,
+                            background: chip.bg,
+                            color: chip.fg,
+                            fontSize: 11,
+                            fontWeight: 500,
+                            padding: '2px 8px',
+                            borderRadius: 10,
+                          }}
+                        >
+                          <span style={{ color: chip.dot, fontSize: 9 }}>●</span>
+                          {chip.label}
+                        </span>
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: '#6f6b66',
+                            border: '1px solid #ebe7e1',
+                            borderRadius: 4,
+                            padding: '1px 6px',
+                          }}
+                        >
+                          {getTransportLabel(server.transport)}
+                        </span>
+                      </div>
+
+                      {/* Description / server info */}
+                      {server.metadata?.description ? (
+                        <div style={{ fontSize: 12, color: '#6f6b66', lineHeight: 1.5, marginBottom: 10 }}>
+                          {server.metadata.description}
+                        </div>
+                      ) : (
+                        <div
+                          style={{
+                            fontSize: 11.5,
+                            color: '#6f6b66',
+                            fontFamily: 'ui-monospace, Menlo, monospace',
+                            marginBottom: 10,
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                          }}
+                        >
+                          {getServerInfo(server)}
+                        </div>
+                      )}
+
+                      {/* Action row */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {/* Start / Stop */}
+                        {isTransient ? (
+                          <button
+                            disabled
+                            style={{
+                              border: '1px solid #ebe7e1',
+                              background: '#fff',
+                              borderRadius: 6,
+                              padding: '4px 10px',
+                              fontSize: 12,
+                              color: '#6f6b66',
+                              cursor: 'not-allowed',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                            }}
+                          >
+                            {chip.label}
+                          </button>
+                        ) : isRunning ? (
+                          <button
+                            onClick={() => handleStopServer(server.id)}
+                            style={{
+                              border: '1px solid #ebe7e1',
+                              background: '#fff',
+                              borderRadius: 6,
+                              padding: '4px 10px',
+                              fontSize: 12,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              color: '#2e2b27',
+                            }}
+                          >
+                            <span>■</span> Stop
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleStartServer(server.id)}
+                            style={{
+                              border: '1px solid #ebe7e1',
+                              background: '#fff',
+                              borderRadius: 6,
+                              padding: '4px 10px',
+                              fontSize: 12,
+                              cursor: 'pointer',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: 5,
+                              color: '#2e2b27',
+                            }}
+                          >
+                            <span>▶</span> Start
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => handleViewLogs(server.id, server.name)}
+                          style={{
+                            border: '1px solid #ebe7e1',
+                            background: '#fff',
+                            borderRadius: 6,
+                            padding: '4px 10px',
+                            fontSize: 12,
+                            cursor: 'pointer',
+                            color: '#2e2b27',
+                          }}
+                        >
+                          Logs
+                        </button>
+
+                        {!isRunning && !isTransient && (
+                          <button
+                            onClick={() => setEditingServer(server)}
+                            style={{
+                              border: '1px solid #ebe7e1',
+                              background: '#fff',
+                              borderRadius: 6,
+                              padding: '4px 10px',
+                              fontSize: 12,
+                              cursor: 'pointer',
+                              color: '#2e2b27',
+                            }}
+                          >
+                            Configure
+                          </button>
+                        )}
+
+                        <div style={{ flex: 1 }} />
+
+                        {!isRunning && !isTransient && (
+                          <button
+                            onClick={() => handleDeleteServer(server.id)}
+                            style={{
+                              border: '1px solid #ebe7e1',
+                              background: '#fff',
+                              borderRadius: 6,
+                              padding: '4px 8px',
+                              fontSize: 13,
+                              cursor: 'pointer',
+                              color: '#6f6b66',
+                            }}
+                            title="Delete server"
+                          >
+                            ⋯
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
 
       {/* Add/Edit Modal */}
       <MCPServerModal

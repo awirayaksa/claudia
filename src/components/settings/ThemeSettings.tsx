@@ -136,152 +136,366 @@ export function ThemeSettings() {
     }
   };
 
+  const accentSwatches = [
+    { hex: '#c96a3d', label: 'Terracotta' },
+    { hex: '#3d7bc9', label: 'Blue' },
+    { hex: '#3d9966', label: 'Forest' },
+    { hex: '#7d5dc9', label: 'Violet' },
+    { hex: '#525252', label: 'Slate' },
+    { hex: '#b1843a', label: 'Ochre' },
+  ];
+
+  const currentAccent = customization?.accentColor || defaultAccentColor;
+  const isSwatchSelected = (hex: string) =>
+    currentAccent.toLowerCase() === hex.toLowerCase();
+
+  const themeIcons: Record<string, string> = { light: '☀', dark: '☾', system: '◨' };
+
+  const [density, setDensity] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
+
   return (
-    <div className="space-y-4">
-      <div>
-        <h3 className="text-sm font-semibold text-text-primary mb-3">Theme</h3>
-        <div className="grid grid-cols-3 gap-3">
-          {themeOptions.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setTheme(option.value)}
-              className={`flex flex-col items-center gap-2 rounded-lg border-2 p-4 transition-all ${
-                theme === option.value
-                  ? 'border-accent bg-accent bg-opacity-10'
-                  : 'border-border bg-surface hover:bg-surface-hover'
-              }`}
-            >
-              <span className="text-2xl">{option.icon}</span>
-              <div className="text-center">
-                <p className={`text-sm font-medium ${
-                  theme === option.value ? 'text-accent' : 'text-text-primary'
-                }`}>
-                  {option.label}
-                </p>
-                <p className="text-xs text-text-secondary mt-1">
-                  {option.description}
-                </p>
-              </div>
-            </button>
-          ))}
+    <div>
+      {/* Section header */}
+      <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid #ebe7e1' }}>
+        <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.2, marginBottom: 4, color: '#1a1a19' }}>
+          Appearance
+        </div>
+        <div style={{ fontSize: 13, color: '#6f6b66', lineHeight: 1.55 }}>
+          Tune how Claudia looks on your system.
         </div>
       </div>
 
-      {/* Preview section */}
-      <div className="rounded-lg border border-border bg-surface p-4">
-        <h4 className="text-sm font-medium text-text-primary mb-3">Preview</h4>
-        <div className="space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded bg-background border border-border" />
-            <span className="text-xs text-text-secondary">Background</span>
+      <div style={{ padding: '22px 28px' }}>
+        {/* Theme */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Theme</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+            {themeOptions.map((option) => {
+              const selected = theme === option.value;
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => setTheme(option.value)}
+                  style={{
+                    border: selected ? '2px solid #c96a3d' : '1px solid #ebe7e1',
+                    background: selected ? '#faf2ec' : '#fff',
+                    borderRadius: 8,
+                    padding: '10px 12px',
+                    fontSize: 13,
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                    textAlign: 'left',
+                  }}
+                >
+                  <span style={{ fontSize: 16, color: selected ? '#c96a3d' : '#2e2b27' }}>
+                    {themeIcons[option.value]}
+                  </span>
+                  <span style={{ fontWeight: selected ? 600 : 450, color: '#2e2b27' }}>
+                    {option.label}
+                  </span>
+                  {selected && (
+                    <span style={{ marginLeft: 'auto', color: '#c96a3d', fontSize: 12 }}>✓</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded bg-surface border border-border" />
-            <span className="text-xs text-text-secondary">Surface</span>
+          <div style={{ fontSize: 11.5, color: '#6f6b66', marginTop: 6 }}>
+            System matches your OS appearance and auto-switches.
           </div>
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded bg-accent" />
-            <span className="text-xs text-text-secondary">Accent</span>
+        </div>
+
+        {/* Accent color */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>
+            Accent color
           </div>
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded flex items-center justify-center border border-border">
-              <span className="text-xs text-text-primary">Aa</span>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            {accentSwatches.map((swatch) => {
+              const selected = isSwatchSelected(swatch.hex);
+              return (
+                <button
+                  key={swatch.hex}
+                  title={swatch.label}
+                  onClick={() => handleColorChange(swatch.hex)}
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    background: swatch.hex,
+                    border: selected ? '2px solid #1a1a19' : '2px solid transparent',
+                    boxShadow: selected ? '0 0 0 2px #fff inset' : 'none',
+                    cursor: 'pointer',
+                    padding: 0,
+                    flexShrink: 0,
+                  }}
+                />
+              );
+            })}
+            {/* Custom color picker */}
+            <label
+              title="Custom color"
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: '50%',
+                border: '1px dashed #6f6b66',
+                background: '#fff',
+                color: '#6f6b66',
+                fontSize: 14,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                position: 'relative',
+                flexShrink: 0,
+              }}
+            >
+              +
+              <input
+                type="color"
+                value={currentAccent}
+                onChange={(e) => handleColorChange(e.target.value)}
+                style={{ position: 'absolute', opacity: 0, width: 0, height: 0 }}
+              />
+            </label>
+            <span style={{ fontSize: 12, color: '#6f6b66', marginLeft: 4 }}>
+              {accentSwatches.find((s) => isSwatchSelected(s.hex))?.label || 'Custom'}
+              {!customization?.accentColor && ' (default)'}
+            </span>
+            {customization?.accentColor && (
+              <button
+                onClick={handleResetColor}
+                style={{
+                  fontSize: 11.5,
+                  color: '#c96a3d',
+                  background: 'none',
+                  border: 'none',
+                  cursor: 'pointer',
+                  padding: 0,
+                }}
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Preview */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Preview</div>
+          <div
+            style={{
+              border: '1px solid #ebe7e1',
+              borderRadius: 10,
+              padding: 14,
+              background: '#faf8f5',
+            }}
+          >
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12, marginBottom: 14 }}>
+              {[
+                ['Background', '#fdfcfa'],
+                ['Surface', '#ffffff'],
+                ['Accent', currentAccent],
+                ['Text', '#1a1a19'],
+              ].map(([label, color]) => (
+                <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div
+                    style={{
+                      width: 22,
+                      height: 22,
+                      borderRadius: 5,
+                      background: color,
+                      border: '1px solid #ebe7e1',
+                      flexShrink: 0,
+                    }}
+                  />
+                  <span style={{ color: '#2e2b27' }}>{label}</span>
+                  <span
+                    style={{
+                      color: '#6f6b66',
+                      fontFamily: 'ui-monospace, Menlo, monospace',
+                      fontSize: 11,
+                    }}
+                  >
+                    {color}
+                  </span>
+                </div>
+              ))}
             </div>
-            <span className="text-xs text-text-secondary">Text</span>
+            <div
+              style={{
+                padding: '10px 12px',
+                background: '#fff',
+                borderRadius: 8,
+                border: '1px solid #ebe7e1',
+                fontSize: 12.5,
+              }}
+            >
+              <b>Claudia</b> — Here's a sample message to preview your theme.
+              <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
+                <button
+                  style={{
+                    background: currentAccent,
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: 6,
+                    padding: '4px 10px',
+                    fontSize: 11.5,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Primary
+                </button>
+                <button
+                  style={{
+                    background: '#fff',
+                    color: '#2e2b27',
+                    border: '1px solid #ebe7e1',
+                    borderRadius: 6,
+                    padding: '4px 10px',
+                    fontSize: 11.5,
+                    cursor: 'pointer',
+                  }}
+                >
+                  Secondary
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Accent Color Customization */}
-      <div className="mt-6">
-        <h3 className="text-sm font-semibold text-text-primary mb-3">Accent Color</h3>
-        <div className="flex items-center gap-3">
+        {/* Density */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Density</div>
+          <div
+            style={{
+              display: 'inline-flex',
+              border: '1px solid #ebe7e1',
+              borderRadius: 7,
+              overflow: 'hidden',
+            }}
+          >
+            {(['compact', 'comfortable', 'spacious'] as const).map((d, i) => (
+              <button
+                key={d}
+                onClick={() => setDensity(d)}
+                style={{
+                  border: 'none',
+                  padding: '6px 14px',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  background: density === d ? '#faf8f5' : '#fff',
+                  color: density === d ? '#1a1a19' : '#6f6b66',
+                  fontWeight: density === d ? 600 : 450,
+                  borderLeft: i > 0 ? '1px solid #ebe7e1' : 'none',
+                  textTransform: 'capitalize',
+                }}
+              >
+                {d.charAt(0).toUpperCase() + d.slice(1)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Application Title */}
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Application Title</div>
           <input
-            type="color"
-            value={customization?.accentColor || defaultAccentColor}
-            onChange={(e) => handleColorChange(e.target.value)}
-            className="w-16 h-16 rounded border-2 border-border cursor-pointer"
+            type="text"
+            value={customization?.appTitle || ''}
+            placeholder="Claudia"
+            onChange={(e) => handleTitleChange(e.target.value)}
+            maxLength={50}
+            style={{
+              width: '100%',
+              boxSizing: 'border-box',
+              border: '1px solid #ebe7e1',
+              borderRadius: 7,
+              padding: '7px 10px',
+              fontSize: 13,
+              background: '#fff',
+              color: '#2e2b27',
+              outline: 'none',
+            }}
           />
-          <div className="flex-1">
-            <p className="text-sm font-medium text-text-primary">
-              {customization?.accentColor || 'Default'}
-            </p>
-            <p className="text-xs text-text-secondary">
-              Click to customize accent color
-            </p>
+          <div style={{ fontSize: 11.5, color: '#6f6b66', marginTop: 5 }}>
+            Updates window title, menu items, and about dialog
           </div>
-          {customization?.accentColor && (
-            <button
-              onClick={handleResetColor}
-              className="text-sm text-accent hover:text-accent-hover"
-            >
-              Reset
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Application Title */}
-      <div className="mt-6">
-        <h3 className="text-sm font-semibold text-text-primary mb-3">Application Title</h3>
-        <input
-          type="text"
-          value={customization?.appTitle || ''}
-          placeholder="Claudia"
-          onChange={(e) => handleTitleChange(e.target.value)}
-          maxLength={50}
-          className="w-full px-3 py-2 rounded border border-border bg-surface text-text-primary focus:outline-none focus:border-accent"
-        />
-        <p className="text-xs text-text-secondary mt-2">
-          Updates window title, menu items, and about dialog
-        </p>
-      </div>
-
-      {/* Application Icon */}
-      <div className="mt-6">
-        <h3 className="text-sm font-semibold text-text-primary mb-3">Application Icon</h3>
-        <div className="flex items-center gap-3">
-          {iconPreview && (
-            <img
-              src={iconPreview}
-              alt="Icon preview"
-              className="w-16 h-16 rounded border-2 border-border object-contain"
-            />
-          )}
-          <div className="flex-1">
-            <button
-              onClick={handleIconUpload}
-              className="px-4 py-2 bg-accent text-white rounded hover:bg-accent-hover"
-            >
-              Choose Icon
-            </button>
-            <p className="text-xs text-text-secondary mt-1">
-              PNG or ICO format, max 1MB
-            </p>
-          </div>
-          {customization?.iconPath && (
-            <button
-              onClick={handleResetIcon}
-              className="text-sm text-accent hover:text-accent-hover"
-            >
-              Reset
-            </button>
-          )}
         </div>
 
-        {restartRequired && (
-          <div className="mt-3 p-3 bg-surface-hover rounded border border-border">
-            <p className="text-sm text-text-primary mb-2">
-              Restart required to apply icon changes
-            </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="px-3 py-1 bg-accent text-white rounded text-xs hover:bg-accent-hover"
-            >
-              Restart Now
-            </button>
+        {/* Application Icon */}
+        <div style={{ marginBottom: 8 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Application Icon</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {iconPreview && (
+              <img
+                src={iconPreview}
+                alt="Icon preview"
+                style={{ width: 48, height: 48, borderRadius: 8, border: '1px solid #ebe7e1', objectFit: 'contain' }}
+              />
+            )}
+            <div style={{ flex: 1 }}>
+              <button
+                onClick={handleIconUpload}
+                style={{
+                  border: '1px solid #ebe7e1',
+                  background: '#fff',
+                  borderRadius: 7,
+                  padding: '6px 14px',
+                  fontSize: 12.5,
+                  cursor: 'pointer',
+                  color: '#2e2b27',
+                }}
+              >
+                Choose Icon
+              </button>
+              <div style={{ fontSize: 11.5, color: '#6f6b66', marginTop: 4 }}>
+                PNG or ICO format, max 1MB
+              </div>
+            </div>
+            {customization?.iconPath && (
+              <button
+                onClick={handleResetIcon}
+                style={{ fontSize: 12, color: '#c96a3d', background: 'none', border: 'none', cursor: 'pointer' }}
+              >
+                Reset
+              </button>
+            )}
           </div>
-        )}
+
+          {restartRequired && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: '10px 14px',
+                background: '#faf8f5',
+                borderRadius: 8,
+                border: '1px solid #ebe7e1',
+              }}
+            >
+              <div style={{ fontSize: 12.5, color: '#1a1a19', marginBottom: 6 }}>
+                Restart required to apply icon changes
+              </div>
+              <button
+                onClick={() => window.location.reload()}
+                style={{
+                  background: '#1a1a19',
+                  color: '#fff',
+                  border: 'none',
+                  borderRadius: 6,
+                  padding: '4px 12px',
+                  fontSize: 12,
+                  cursor: 'pointer',
+                }}
+              >
+                Restart Now
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
