@@ -1,6 +1,13 @@
 import React, { useState } from 'react';
 import { ConversationMetadata } from '../../types/conversation.types';
-import { format } from 'date-fns';
+import { format, isToday, isYesterday, parseISO } from 'date-fns';
+
+function relativeTime(iso: string): string {
+  const date = parseISO(iso);
+  if (isToday(date)) return format(date, 'h:mm a');
+  if (isYesterday(date)) return 'Yesterday';
+  return format(date, 'MMM d');
+}
 
 interface ConversationItemProps {
   conversation: ConversationMetadata;
@@ -61,11 +68,11 @@ export const ConversationItem = React.memo(function ConversationItem({
     }
   };
 
-  const formattedDate = format(new Date(conversation.updatedAt), 'MMM d, h:mm a');
+  const timeLabel = relativeTime(conversation.updatedAt);
 
   return (
     <div
-      className={`group relative flex items-center gap-2 rounded-lg px-3 py-2 cursor-pointer transition-colors ${
+      className={`group relative flex items-center gap-2 rounded-lg mx-1 px-2 py-2 cursor-pointer transition-colors ${
         isActive
           ? 'bg-accent text-white'
           : 'hover:bg-surface-hover text-text-primary'
@@ -112,7 +119,7 @@ export const ConversationItem = React.memo(function ConversationItem({
         </svg>
       )}
 
-      <div className="flex-1 min-w-0">
+      <div className="flex-1 min-w-0 overflow-hidden">
         {isEditing ? (
           <input
             type="text"
@@ -125,22 +132,22 @@ export const ConversationItem = React.memo(function ConversationItem({
             autoFocus
           />
         ) : (
-          <>
+          <div className="flex items-center gap-1 min-w-0">
             <p
-              className={`text-sm font-medium truncate ${
-                isActive ? 'text-white' : 'text-text-primary'
+              className={`flex-1 text-sm truncate ${
+                isActive ? 'text-white font-medium' : 'text-text-primary'
               }`}
             >
               {conversation.title}
             </p>
-            <p
-              className={`text-xs truncate ${
-                isActive ? 'text-white text-opacity-80' : 'text-text-secondary'
+            <span
+              className={`flex-shrink-0 text-xs tabular-nums ${
+                isActive ? 'text-white text-opacity-70' : 'text-text-secondary'
               }`}
             >
-              {formattedDate} • {conversation.messageCount} messages
-            </p>
-          </>
+              {timeLabel}
+            </span>
+          </div>
         )}
       </div>
 

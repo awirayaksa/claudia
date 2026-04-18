@@ -45,7 +45,7 @@ export function TitleBar() {
 
   return (
     <div
-      className="flex items-center justify-between h-8 bg-accent text-white select-none"
+      className="flex items-center justify-between h-8 bg-surface border-b border-border text-text-primary select-none"
       style={{ WebkitAppRegion: 'drag' } as any}
     >
       {/* App title and icon */}
@@ -53,7 +53,7 @@ export function TitleBar() {
         {/* Menu button */}
         <button
           onClick={handleShowMenu}
-          className="h-8 px-3 hover:bg-black hover:bg-opacity-20 transition-colors flex items-center"
+          className="h-8 px-3 hover:bg-surface-hover transition-colors flex items-center"
           style={{ WebkitAppRegion: 'no-drag' } as any}
           title="Menu"
         >
@@ -62,20 +62,18 @@ export function TitleBar() {
           </svg>
         </button>
         {iconPreview ? (
-          <img src={iconPreview} alt="App icon" className="w-4 h-4" />
+          <img src={iconPreview} alt="App icon" className="w-3.5 h-3.5 rounded-sm" />
         ) : (
-          <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M12 2L2 7v10c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V7l-10-5z" />
-          </svg>
+          <div className="w-3.5 h-3.5 rounded-sm bg-accent flex-shrink-0" />
         )}
-        <span className="text-sm font-medium">{appTitle}</span>
+        <span className="text-sm font-medium text-text-primary">{appTitle}</span>
       </div>
 
       {/* Window controls */}
       <div className="flex h-full" style={{ WebkitAppRegion: 'no-drag' } as any}>
         <button
           onClick={handleMinimize}
-          className="h-full px-4 hover:bg-black hover:bg-opacity-20 transition-colors"
+          className="h-full px-4 hover:bg-surface-hover transition-colors"
           title="Minimize"
         >
           <svg width="10" height="1" viewBox="0 0 10 1" fill="currentColor">
@@ -84,7 +82,7 @@ export function TitleBar() {
         </button>
         <button
           onClick={handleMaximize}
-          className="h-full px-4 hover:bg-black hover:bg-opacity-20 transition-colors"
+          className="h-full px-4 hover:bg-surface-hover transition-colors"
           title={isMaximized ? 'Restore' : 'Maximize'}
         >
           {isMaximized ? (

@@ -450,28 +450,20 @@ export function ChatWindow() {
       )}
       {messages.length === 0 ? (
         /* Empty state - centered input */
-        <div className="flex flex-1 flex-col items-center bg-background pt-52 px-8">
-          <div className="w-full max-w-3xl">
-            {/* Welcome message */}
-            <div className="mb-8 flex flex-col items-center text-center">
-              <svg
-                className="mb-4 h-12 w-12 text-text-secondary opacity-50"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={1.5}
-                  d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
-                />
-              </svg>
-              <h3 className="mb-2 text-lg font-medium text-text-primary">
-                Start a conversation
+        <div className="flex flex-1 flex-col items-center bg-background overflow-y-auto px-8 pt-16">
+          <div className="w-full max-w-2xl">
+            {/* Warm greeting */}
+            <div className="mb-8">
+              <h3 className="text-3xl font-medium tracking-tight text-text-primary mb-1.5">
+                {(() => {
+                  const h = new Date().getHours();
+                  if (h < 12) return 'Good morning.';
+                  if (h < 18) return 'Good afternoon.';
+                  return 'Good evening.';
+                })()}
               </h3>
               <p className="text-sm text-text-secondary">
-                Type a message below to begin chatting with {selectedModel}
+                What would you like to work on today?
               </p>
             </div>
 

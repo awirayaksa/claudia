@@ -5,12 +5,15 @@ export interface PromptSuggestion {
   title: string;
   subtitle: string;
   prompt: string;
+  emoji?: string;
 }
 
 interface SuggestedPromptsProps {
   onSelect: (prompt: string) => void;
   model: string;
 }
+
+const FALLBACK_EMOJIS = ['💡', '✍️', '🔍'];
 
 export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
   onSelect,
@@ -34,6 +37,7 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
           {
             role: 'user',
             content: `Generate 3 diverse conversation starter suggestions. Each suggestion should have:
+- "emoji": A single relevant emoji
 - "title": A short catchy title (2-4 words)
 - "subtitle": A brief description of the topic (5-10 words)
 - "prompt": A detailed, well-crafted prompt that the user would actually send (1-3 sentences, specific and actionable)
@@ -41,17 +45,16 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
 The prompt should be significantly more detailed than the title+subtitle summary. Cover different categories like learning, creativity, problem-solving, writing, etc.
 
 Respond ONLY with a valid JSON array, no markdown, no code fences, no explanation. Example format:
-[{"title":"Help me study","subtitle":"vocabulary for a college entrance exam","prompt":"Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option."}]`,
+[{"emoji":"📚","title":"Help me study","subtitle":"vocabulary for a college entrance exam","prompt":"Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option."}]`,
           },
         ],
         stream: false,
-        max_tokens: 500,
+        max_tokens: 600,
         temperature: 1.0,
       });
 
       const content = response.choices[0]?.message?.content;
       if (content && typeof content === 'string') {
-        // Extract JSON array from the response (handle possible markdown fences)
         const jsonMatch = content.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]) as PromptSuggestion[];
@@ -79,26 +82,28 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
   }
 
   return (
-    <div className="mt-4 w-full pl-4">
-      <div className="mb-2 flex items-center gap-1.5 text-xs text-text-secondary">
-        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-        </svg>
-        <span>Suggested</span>
-      </div>
-      <div className="flex flex-col gap-1">
+    <div className="mt-8">
+      <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+        Suggested
+      </p>
+      <div className="grid grid-cols-3 gap-2.5">
         {suggestions.map((suggestion, index) => (
           <button
             key={index}
             onClick={() => onSelect(suggestion.prompt)}
-            className="group flex flex-col items-start rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-surface-hover"
+            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40"
           >
-            <span className="text-sm font-medium text-text-primary">
-              {suggestion.title}
+            <span className="text-xl leading-none">
+              {suggestion.emoji || FALLBACK_EMOJIS[index]}
             </span>
-            <span className="text-xs text-text-secondary">
-              {suggestion.subtitle}
-            </span>
+            <div>
+              <p className="text-sm font-semibold text-text-primary leading-snug">
+                {suggestion.title}
+              </p>
+              <p className="mt-0.5 text-xs text-text-secondary leading-snug">
+                {suggestion.subtitle}
+              </p>
+            </div>
           </button>
         ))}
       </div>
