@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback, DragEvent } from 'react';
+import { format, isToday, isYesterday, parseISO } from 'date-fns';
 import { ChatMessage } from './ChatMessage';
 import { StreamingMessage } from './StreamingMessage';
 import { ChatInput, ChatInputRef } from './ChatInput';
@@ -504,19 +505,49 @@ export function ChatWindow() {
           {/* Text selection context menu (portal-rendered, fixed positioning) */}
           <TextSelectionMenu containerRef={messagesContainerRef} />
 
+          {/* Conversation header */}
+          <div className="flex items-center justify-between border-b border-border bg-background px-5 py-2.5">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="truncate text-sm font-semibold text-text-primary">
+                {currentConversation?.title || 'New Conversation'}
+              </span>
+              <span className="flex-shrink-0 text-xs text-text-secondary">
+                {messages.length} {messages.length === 1 ? 'message' : 'messages'}
+                {currentConversation?.createdAt ? ` · ${format(parseISO(currentConversation.createdAt), 'h:mm a')}` : ''}
+              </span>
+            </div>
+          </div>
+
           {/* Messages area */}
           <div
             ref={messagesContainerRef}
-            className="flex-1 overflow-y-auto bg-background p-4"
+            className="flex-1 overflow-y-auto bg-background py-6"
           >
-            {messages.map((message) => (
-              <ChatMessage
-                key={message.id}
-                message={message}
-                onEdit={handleEditMessage}
-                disabled={isLoading || isStreaming || isExecutingTools}
-              />
-            ))}
+            <div className="mx-auto max-w-[720px] px-4">
+            {messages.map((message, index) => {
+              const prevMessage = index > 0 ? messages[index - 1] : null;
+              const curDate = parseISO(message.timestamp);
+              const showDateDivider = !prevMessage || (
+                format(parseISO(prevMessage.timestamp), 'yyyy-MM-dd') !== format(curDate, 'yyyy-MM-dd')
+              );
+              const dateLabel = isToday(curDate) ? 'Today' : isYesterday(curDate) ? 'Yesterday' : format(curDate, 'MMM d');
+              return (
+                <div key={message.id}>
+                  {showDateDivider && (
+                    <div className="my-6 flex items-center gap-3 text-xs text-text-secondary">
+                      <div className="h-px flex-1 bg-border" />
+                      <span>{dateLabel} · {format(curDate, 'h:mm a')}</span>
+                      <div className="h-px flex-1 bg-border" />
+                    </div>
+                  )}
+                  <ChatMessage
+                    message={message}
+                    onEdit={handleEditMessage}
+                    disabled={isLoading || isStreaming || isExecutingTools}
+                  />
+                </div>
+              );
+            })}
             {/* Streaming message */}
             {isStreaming && (
               <StreamingMessage
@@ -526,49 +557,43 @@ export function ChatWindow() {
             )}
             {/* Show stop button during tool execution without streaming */}
             {!isStreaming && isExecutingTools && (
-              <div className="flex justify-start py-2">
-                <div className="max-w-[70%] rounded-lg border border-border bg-surface px-4 py-3">
-                  <div className="mb-1 flex items-center justify-between gap-4">
-                    <button
-                      onClick={handleAbortStreaming}
-                      className="rounded p-1 text-xs text-text-secondary hover:bg-background hover:text-error"
-                      title="Stop generating"
-                    >
-                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                    <span className="text-xs text-text-secondary">Executing tools...</span>
+              <div className="py-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">C</div>
+                  <span className="text-sm font-semibold text-text-primary">Claudia</span>
+                  <button
+                    onClick={handleAbortStreaming}
+                    className="ml-2 rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface hover:text-error transition-colors"
+                  >
+                    ✕ Stop
+                  </button>
+                </div>
+                <div className="pl-[30px] flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]"></div>
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]"></div>
+                    <div className="h-2 w-2 animate-bounce rounded-full bg-accent"></div>
                   </div>
-                  <div className="flex items-center gap-2 mt-2">
-                    <div className="flex gap-1">
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]"></div>
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]"></div>
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent"></div>
-                    </div>
-                    <span className="text-sm text-text-secondary">Processing...</span>
-                  </div>
+                  <span className="text-sm text-text-secondary">Executing tools…</span>
                 </div>
               </div>
             )}
             {/* Loading indicator for non-streaming */}
             {isLoading && !isStreaming && (
-              <div className="flex justify-start py-2">
-                <div className="max-w-[70%] rounded-lg border border-border bg-surface px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <div className="flex gap-1">
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]"></div>
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]"></div>
-                      <div className="h-2 w-2 animate-bounce rounded-full bg-accent"></div>
-                    </div>
-                    <span className="text-sm text-text-secondary">
-                      Thinking...
-                    </span>
-                  </div>
+              <div className="py-4">
+                <div className="mb-2 flex items-center gap-2">
+                  <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">C</div>
+                  <span className="text-sm font-semibold text-text-primary">Claudia</span>
+                </div>
+                <div className="pl-[30px] flex gap-1">
+                  <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]"></div>
+                  <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]"></div>
+                  <div className="h-2 w-2 animate-bounce rounded-full bg-accent"></div>
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
+            </div>
           </div>
 
           {/* Error display */}

@@ -74,8 +74,8 @@ export const ConversationItem = React.memo(function ConversationItem({
     <div
       className={`group relative flex items-center gap-2 rounded-lg mx-1 px-2 py-2 cursor-pointer transition-colors ${
         isActive
-          ? 'bg-accent text-white'
-          : 'hover:bg-surface-hover text-text-primary'
+          ? 'border-l-2 border-l-accent bg-[#f3ece4] text-text-primary'
+          : 'border-l-2 border-l-transparent hover:bg-surface-hover text-text-primary'
       }`}
       onClick={handleClick}
     >
@@ -104,7 +104,7 @@ export const ConversationItem = React.memo(function ConversationItem({
       ) : (
         <svg
           className={`h-4 w-4 flex-shrink-0 ${
-            isActive ? 'text-white' : 'text-text-secondary'
+            isActive ? 'text-accent' : 'text-text-secondary'
           }`}
           fill="none"
           stroke="currentColor"
@@ -135,15 +135,13 @@ export const ConversationItem = React.memo(function ConversationItem({
           <div className="flex items-center gap-1 min-w-0">
             <p
               className={`flex-1 text-sm truncate ${
-                isActive ? 'text-white font-medium' : 'text-text-primary'
+                isActive ? 'font-medium text-text-primary' : 'text-text-primary'
               }`}
             >
               {conversation.title}
             </p>
             <span
-              className={`flex-shrink-0 text-xs tabular-nums ${
-                isActive ? 'text-white text-opacity-70' : 'text-text-secondary'
-              }`}
+              className="flex-shrink-0 text-xs tabular-nums text-text-secondary"
             >
               {timeLabel}
             </span>
@@ -159,14 +157,10 @@ export const ConversationItem = React.memo(function ConversationItem({
               e.stopPropagation();
               setShowMenu(!showMenu);
             }}
-            className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
-              isActive
-                ? 'hover:bg-white hover:bg-opacity-20'
-                : 'hover:bg-surface'
-            }`}
+            className="p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity hover:bg-surface"
           >
             <svg
-              className={`h-4 w-4 ${isActive ? 'text-white' : 'text-text-secondary'}`}
+              className="h-4 w-4 text-text-secondary"
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"

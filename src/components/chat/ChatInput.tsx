@@ -399,9 +399,10 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   return (
     <div
       {...getRootProps()}
-      className={`p-4 ${variant === 'default' ? 'border-t border-border bg-surface' : ''} ${isDragActive ? 'bg-accent bg-opacity-10' : ''
+      className={`${variant === 'default' ? 'border-t border-border bg-surface' : ''} ${isDragActive ? 'bg-accent bg-opacity-10' : ''
         }`}
     >
+      <div className={variant === 'default' ? 'mx-auto max-w-[720px] px-4 py-3' : 'p-4'}>
       <input {...getInputProps()} />
 
       {/* File attachments preview */}
@@ -592,8 +593,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       )}
 
       <p className="mt-2 text-xs text-text-secondary">
-        Press Enter to send, Shift+Enter for new line • Use /skill to invoke a skill • Use @file to mention files • Drag & drop or click 📎 to attach
+        Enter to send · Shift+Enter for new line
       </p>
+    </div>
     </div>
   );
 });

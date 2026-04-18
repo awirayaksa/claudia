@@ -50,110 +50,72 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
     return null;
   }
 
+  if (isUser) {
+    return (
+      <div className="group flex justify-end py-2">
+        <div className="max-w-[65%]">
+          {/* Muted beige bubble — already-sent context, not primary focus */}
+          <div className="rounded-[14px] bg-[#f1ede6] px-[14px] py-[10px] text-sm leading-relaxed text-[#2e2b27]">
+            <div className="whitespace-pre-wrap">{message.content}</div>
+            {/* Attachments */}
+            {message.attachments && message.attachments.length > 0 && (
+              <div className="mt-2 space-y-2">
+                {message.attachments.map((attachment) => (
+                  <MessageAttachment key={attachment.id} attachment={attachment} />
+                ))}
+              </div>
+            )}
+          </div>
+          {/* Hover actions */}
+          <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              onClick={handleCopy}
+              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+              title={copied ? 'Copied!' : 'Copy'}
+            >
+              {copied ? '✓' : 'Copy'}
+            </button>
+            <button
+              onClick={() => onEdit?.(message.id, message.content, message.attachments)}
+              disabled={disabled}
+              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+              title="Edit message"
+            >
+              Edit
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
-      {/* Message Row */}
-      <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} py-2`}>
-        <div
-          className={`max-w-[70%] rounded-lg px-4 py-3 ${
-            isUser
-              ? 'bg-accent text-white'
-              : 'bg-surface text-text-primary border border-border'
-          }`}
-        >
-          {/* Message header */}
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-semibold ${isUser ? 'text-white' : 'text-text-primary'}`}>
-                {isUser ? 'You' : 'Claudia'}
-              </span>
-              <span className={`text-xs ${isUser ? 'text-white text-opacity-80' : 'text-text-secondary'}`}>
-                {formattedTime}
-              </span>
-            </div>
-            <div className="flex gap-1">
-              {/* Copy button - available for both user and assistant */}
-              <button
-                onClick={handleCopy}
-                className={`group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity ${
-                  isUser ? 'text-white' : 'text-text-secondary hover:text-text-primary'
-                }`}
-                title={copied ? 'Copied!' : 'Copy message'}
-              >
-                {copied ? (
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M5 13l4 4L19 7"
-                    />
-                  </svg>
-                ) : (
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                    />
-                  </svg>
-                )}
-              </button>
-
-              {/* Edit button - only for user messages */}
-              {isUser && (
-                <button
-                  onClick={() => onEdit?.(message.id, message.content, message.attachments)}
-                  disabled={disabled}
-                  className="group relative flex items-center justify-center opacity-70 hover:opacity-100 transition-opacity disabled:opacity-30 disabled:cursor-not-allowed text-white"
-                  title="Edit message"
-                >
-                  <svg
-                    className="h-4 w-4"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"
-                    />
-                  </svg>
-                </button>
-              )}
-            </div>
+      {/* Assistant message — bubble-less transcript */}
+      <div className="group py-4">
+        {/* Avatar chip + name */}
+        <div className="mb-2 flex items-center gap-2">
+          <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">
+            C
           </div>
+          <span className="text-sm font-semibold text-text-primary">Claudia</span>
+          <span className="text-xs text-text-secondary">{formattedTime}</span>
+        </div>
 
-          {/* Reasoning Block - BEFORE statistics */}
-          {!isUser && showReasoning && message.reasoning && (
+        <div className="pl-[30px]">
+          {/* Reasoning Block */}
+          {showReasoning && message.reasoning && (
             <ReasoningMessage reasoning={message.reasoning} />
           )}
 
-          {/* Statistics Block - AFTER reasoning, BEFORE content */}
-          {!isUser && showStatistics && message.usage && (
+          {/* Statistics Block */}
+          {showStatistics && message.usage && (
             <MessageStatistics usage={message.usage} />
           )}
 
           {/* Message content */}
-          <div className={`text-sm ${isUser ? 'text-white' : 'text-text-primary'}`}>
-            {isUser ? (
-              <div className="whitespace-pre-wrap selection:bg-white selection:text-accent">{message.content}</div>
-            ) : (
-              <MarkdownRenderer content={message.content} isUser={isUser} />
-            )}
+          <div className="text-sm text-text-primary">
+            <MarkdownRenderer content={message.content} isUser={false} />
           </div>
 
           {/* Error display */}
@@ -176,7 +138,6 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
           {message.toolCalls && message.toolCalls.length > 0 && (
             <div className="mt-2 space-y-2">
               {message.toolCalls.map((toolCall) => {
-                // Find the corresponding tool result
                 const result = message.toolResults?.find(
                   (r) => r.tool_call_id === toolCall.id
                 );
@@ -191,6 +152,25 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
               })}
             </div>
           )}
+
+          {/* Action row — visible on hover */}
+          <div className="mt-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+              title={copied ? 'Copied!' : 'Copy'}
+            >
+              {copied ? '✓ Copied' : '⎘ Copy'}
+            </button>
+            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">
+              ↻ Retry
+            </button>
+            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">
+              ↗ Branch
+            </button>
+            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👍</button>
+            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👎</button>
+          </div>
         </div>
       </div>
 
