@@ -20,7 +20,7 @@ export function ReasoningMessage({ reasoning, isStreaming = false }: ReasoningMe
   const label = isStreaming ? 'Thinking…' : `Thought for ${estimateDuration(reasoning)}`;
 
   return (
-    <div className="my-2 overflow-hidden rounded-lg border border-border bg-background">
+    <div className="my-2 overflow-hidden rounded-lg border border-border bg-background max-w-[360px]">
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}

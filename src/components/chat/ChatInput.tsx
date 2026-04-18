@@ -3,7 +3,6 @@ import { useDropzone } from 'react-dropzone';
 import { Button } from '../common/Button';
 import { Attachment } from '../../types/message.types';
 import { useFileUpload } from '../../hooks/useFileUpload';
-import { CompactModelSelector } from './CompactModelSelector';
 import MCPServerBadges from './MCPServerBadges';
 import { FileMentionDropdown } from './FileMentionDropdown';
 import { SkillMentionDropdown } from './SkillMentionDropdown';
@@ -17,9 +16,9 @@ interface ChatInputProps {
   disabled?: boolean;
   isGenerating?: boolean;
   placeholder?: string;
-  selectedModel?: string;
-  availableModels?: string[];
-  onModelChange?: (model: string) => void;
+  selectedModel?: string; // kept for API compatibility
+  availableModels?: string[]; // kept for API compatibility
+  onModelChange?: (model: string) => void; // kept for API compatibility
   initialMessage?: string;
   initialAttachments?: Attachment[];
   onCancelEdit?: () => void;
@@ -47,9 +46,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   isGenerating = false,
   placeholder = 'Type your message...',
   variant = 'default',
-  selectedModel,
-  availableModels,
-  onModelChange,
+  selectedModel: _selectedModel,
+  availableModels: _availableModels,
+  onModelChange: _onModelChange,
   initialMessage,
   initialAttachments,
   onCancelEdit,
@@ -402,7 +401,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       className={`${variant === 'default' ? 'border-t border-border bg-surface' : ''} ${isDragActive ? 'bg-accent bg-opacity-10' : ''
         }`}
     >
-      <div className={variant === 'default' ? 'mx-auto max-w-[720px] px-4 py-3' : 'p-4'}>
+      <div className={variant === 'default' ? 'px-4 py-3' : 'p-4'}>
       <input {...getInputProps()} />
 
       {/* File attachments preview */}
@@ -511,16 +510,6 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           className="flex-1 resize-none rounded border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
           style={{ maxHeight: '200px' }}
         />
-
-        {/* Model selector */}
-        {selectedModel && availableModels && onModelChange && (
-          <CompactModelSelector
-            value={selectedModel}
-            models={availableModels}
-            onChange={onModelChange}
-            disabled={disabled || uploading}
-          />
-        )}
 
         {/* Send/Stop button */}
         <Button

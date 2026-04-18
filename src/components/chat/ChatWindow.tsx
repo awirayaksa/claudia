@@ -12,6 +12,7 @@ import { useProjects } from '../../hooks/useProjects';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { Attachment } from '../../types/message.types';
 import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage, setFilesystemDirectory } from '../../store/slices/chatSlice';
+import { setCurrentConversation } from '../../store/slices/conversationSlice';
 import { resolveSkillCommand } from '../../utils/skill-utils';
 import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
@@ -42,6 +43,7 @@ export function ChatWindow() {
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
 
   const {
+    conversations,
     currentConversationId,
     currentConversation,
     create: createConversation,
@@ -352,6 +354,27 @@ export function ChatWindow() {
     dispatch(setEditingMessage(null));
   }, [dispatch]);
 
+  const [showHeaderMenu, setShowHeaderMenu] = useState(false);
+  const headerMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close header menu on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (headerMenuRef.current && !headerMenuRef.current.contains(e.target as Node)) {
+        setShowHeaderMenu(false);
+      }
+    };
+    if (showHeaderMenu) document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showHeaderMenu]);
+
+  const handleClearChat = useCallback(() => {
+    setShowHeaderMenu(false);
+    if (window.confirm('Clear this conversation? This cannot be undone.')) {
+      dispatch(clearMessages());
+    }
+  }, [dispatch]);
+
   // Window-level drag-and-drop for file attachments
   const [isDraggingOver, setIsDraggingOver] = useState(false);
   const dragCounterRef = useRef(0);
@@ -490,6 +513,33 @@ export function ChatWindow() {
               />
             </div>
 
+            {/* Jump back in — recent conversations */}
+            {conversations.length > 0 && (
+              <div className="mt-8">
+                <div className="mb-3 flex items-baseline justify-between">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                    Jump back in
+                  </p>
+                </div>
+                <div className="grid grid-cols-3 gap-2.5">
+                  {conversations.slice(0, 3).map((conv) => (
+                    <button
+                      key={conv.id}
+                      onClick={() => dispatch(setCurrentConversation(conv.id))}
+                      className="flex flex-col items-start gap-1 rounded-xl border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40"
+                    >
+                      <p className="w-full truncate text-sm font-semibold text-text-primary leading-snug">
+                        {conv.title}
+                      </p>
+                      <p className="text-xs text-text-secondary">
+                        {format(parseISO(conv.updatedAt), 'h:mm a')}
+                      </p>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
             {/* Suggested prompts */}
             <SuggestedPrompts
               model={currentConversation?.model || pendingModel || selectedModel}
@@ -516,6 +566,28 @@ export function ChatWindow() {
                 {currentConversation?.createdAt ? ` · ${format(parseISO(currentConversation.createdAt), 'h:mm a')}` : ''}
               </span>
             </div>
+            {/* ⋯ menu */}
+            <div className="relative" ref={headerMenuRef}>
+              <button
+                className="rounded p-1.5 text-text-secondary hover:bg-surface-hover transition-colors"
+                onClick={() => setShowHeaderMenu((v) => !v)}
+                title="More options"
+              >
+                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
+                  <circle cx="12" cy="5" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="12" cy="19" r="1.5" />
+                </svg>
+              </button>
+              {showHeaderMenu && (
+                <div className="absolute right-0 top-8 z-50 min-w-[160px] rounded-lg border border-border bg-surface shadow-lg py-1">
+                  <button
+                    className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-error hover:bg-surface-hover transition-colors"
+                    onClick={handleClearChat}
+                  >
+                    Clear Chat
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Messages area */}
@@ -523,7 +595,7 @@ export function ChatWindow() {
             ref={messagesContainerRef}
             className="flex-1 overflow-y-auto bg-background py-6"
           >
-            <div className="mx-auto max-w-[720px] px-4">
+            <div className="px-4">
             {messages.map((message, index) => {
               const prevMessage = index > 0 ? messages[index - 1] : null;
               const curDate = parseISO(message.timestamp);

@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
 import { ConversationItem } from './ConversationItem';
-import { ProjectSelector } from './ProjectSelector';
 import { UpdateNotification } from './UpdateNotification';
 import { Button } from '../common/Button';
 import { ConfirmDialog } from '../common/ConfirmDialog';
@@ -199,9 +198,9 @@ export function ConversationList() {
 
   return (
     <div className="flex h-full flex-col bg-surface border-r border-border w-60">
-      {/* New Chat — primary CTA */}
+      {/* New Chat — ghost button, orange is reserved for Send */}
       <div className="p-3 pb-2">
-        <Button onClick={handleNewConversation} className="w-full" size="sm">
+        <Button onClick={handleNewConversation} variant="secondary" className="w-full" size="sm">
           <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
@@ -225,11 +224,6 @@ export function ConversationList() {
           />
           <kbd className="rounded border border-border bg-surface px-1 py-0.5 text-xs text-text-secondary">⌘K</kbd>
         </div>
-      </div>
-
-      {/* Project Selector */}
-      <div className="px-3 pb-2">
-        <ProjectSelector onManageProjects={() => setIsProjectManagerOpen(true)} />
       </div>
 
       {/* Selection Mode Toolbar */}
@@ -335,6 +329,12 @@ export function ConversationList() {
                       onClick={handleToggleSelectionMode}
                     >
                       Select conversations
+                    </button>
+                    <button
+                      className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover transition-colors"
+                      onClick={() => { setIsProjectManagerOpen(true); setShowFooterMenu(false); }}
+                    >
+                      Manage projects
                     </button>
                     <div className="my-1 border-t border-border" />
                     <button

@@ -54,6 +54,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
   // Merge remark plugins
   const remarkPlugins = [remarkGfm, ...pluginConfig.remarkPlugins];
 
+  // Auto-incrementing counter for h2 headings (accent numeral prefix)
+  let h2Counter = 0;
+
   // Default components
   const defaultComponents = {
         // Code blocks
@@ -125,9 +128,19 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
           );
         },
         h2({ children }: { children?: ReactNode }) {
+          if (isUser) {
+            return (
+              <h2 className="mb-2 mt-3 text-lg font-bold first:mt-0 text-white">
+                {children}
+              </h2>
+            );
+          }
+          h2Counter += 1;
+          const num = String(h2Counter).padStart(2, '0');
           return (
-            <h2 className={`mb-2 mt-3 text-lg font-bold first:mt-0 ${isUser ? 'text-white' : 'text-text-primary'}`}>
-              {children}
+            <h2 className="mb-2 mt-8 text-base font-semibold first:mt-0 text-text-primary flex items-baseline gap-2.5">
+              <span className="text-xs font-bold text-accent flex-shrink-0">{num}</span>
+              <span>{children}</span>
             </h2>
           );
         },

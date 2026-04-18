@@ -1,16 +1,13 @@
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setSettingsOpen, toggleSidebar } from '../../store/slices/uiSlice';
-import { clearMessages } from '../../store/slices/chatSlice';
 import { SettingsPanel } from '../settings/SettingsPanel';
 import { ChatWindow } from '../chat/ChatWindow';
 import { ConversationList } from '../sidebar/ConversationList';
-import { Button } from '../common/Button';
 import { TitleBar } from './TitleBar';
 
 export function MainLayout() {
   const dispatch = useAppDispatch();
   const { sidebarOpen } = useAppSelector((state) => state.ui);
-  const { messages } = useAppSelector((state) => state.chat);
   const { api } = useAppSelector((state) => state.settings);
 
   // Determine selected model based on provider
@@ -18,13 +15,15 @@ export function MainLayout() {
     ? api.openrouter?.selectedModel
     : api.openwebui?.selectedModel;
 
-  const hasMessages = messages.length > 0;
-
-  const handleClearChat = () => {
-    if (window.confirm('Are you sure you want to clear this chat? This action cannot be undone.')) {
-      dispatch(clearMessages());
-    }
-  };
+  function humanizeModel(model: string): string {
+    const part = model.split('/').pop() || model;
+    const cleaned = part.replace(/-\d{2,4}(?:-\d{2}(?:-\d{2})?)?$/, '');
+    return cleaned
+      .replace(/-/g, ' ')
+      .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+      .replace(/(\d)([a-zA-Z])/g, '$1 $2')
+      .replace(/\b\w/g, (c) => c.toUpperCase());
+  }
 
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
@@ -53,11 +52,8 @@ export function MainLayout() {
             </button>
 
             <div className="flex items-center gap-2 text-sm">
-              <span className="text-text-secondary">Model</span>
               <div className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 font-medium text-text-primary">
-                {selectedModel
-                  ? (selectedModel.split('/').pop() || selectedModel).replace(/-/g, ' ')
-                  : 'Not selected'}
+                {selectedModel ? humanizeModel(selectedModel) : 'Not selected'}
               </div>
               <span className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-text-secondary">
                 Alpha
@@ -66,11 +62,6 @@ export function MainLayout() {
           </div>
 
           <div className="flex items-center gap-1">
-            {hasMessages && (
-              <Button variant="ghost" size="sm" onClick={handleClearChat}>
-                Clear Chat
-              </Button>
-            )}
             <button
               className="rounded p-1.5 text-text-secondary hover:bg-surface-hover transition-colors"
               onClick={() => dispatch(setSettingsOpen(true))}

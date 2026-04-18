@@ -47,7 +47,7 @@ export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessa
         )}
 
         {/* Streaming content */}
-        <div className="text-sm text-text-primary">
+        <div className="text-[14px] leading-[1.7] text-text-primary">
           <MarkdownRenderer content={throttledContent} isUser={false} />
           <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-accent align-middle"></span>
         </div>

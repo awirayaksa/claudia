@@ -4,7 +4,6 @@ import { MessageAttachment } from './MessageAttachment';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { ToolCallMessage } from './ToolCallMessage';
 import { ReasoningMessage } from './ReasoningMessage';
-import { MessageStatistics } from './MessageStatistics';
 import { UIResourceDisplay } from './UIResourceDisplay';
 import { format } from 'date-fns';
 import { useAppSelector } from '../../store';
@@ -93,13 +92,25 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
     <>
       {/* Assistant message — bubble-less transcript */}
       <div className="group py-4">
-        {/* Avatar chip + name */}
-        <div className="mb-2 flex items-center gap-2">
+        {/* Avatar chip + name + inline stats */}
+        <div className="mb-2 flex items-center gap-2 flex-wrap">
           <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">
             C
           </div>
           <span className="text-sm font-semibold text-text-primary">Claudia</span>
           <span className="text-xs text-text-secondary">{formattedTime}</span>
+          {showStatistics && message.usage?.total_tokens != null && (
+            <>
+              <span className="text-xs text-text-secondary">·</span>
+              <span className="text-xs text-text-secondary">{message.usage.total_tokens.toLocaleString()} tokens</span>
+            </>
+          )}
+          {showStatistics && message.usage?.cost != null && (
+            <>
+              <span className="text-xs text-text-secondary">·</span>
+              <span className="text-xs text-text-secondary">${message.usage.cost.toFixed(6)}</span>
+            </>
+          )}
         </div>
 
         <div className="pl-[30px]">
@@ -108,13 +119,8 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
             <ReasoningMessage reasoning={message.reasoning} />
           )}
 
-          {/* Statistics Block */}
-          {showStatistics && message.usage && (
-            <MessageStatistics usage={message.usage} />
-          )}
-
           {/* Message content */}
-          <div className="text-sm text-text-primary">
+          <div className="text-[14px] leading-[1.7] text-text-primary">
             <MarkdownRenderer content={message.content} isUser={false} />
           </div>
 
@@ -153,8 +159,8 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
             </div>
           )}
 
-          {/* Action row — visible on hover */}
-          <div className="mt-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {/* Action row — persistent */}
+          <div className="mt-3 flex gap-1 border-t border-border pt-2">
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
