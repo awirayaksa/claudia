@@ -15,13 +15,81 @@ interface SuggestedPromptsProps {
 
 const FALLBACK_EMOJIS = ['💡', '✍️', '🔍'];
 
+const DEFAULT_SUGGESTIONS: PromptSuggestion[] = [
+  {
+    emoji: '📝',
+    title: 'Draft an email',
+    subtitle: 'Write a clear, professional message',
+    prompt: 'Help me write a professional email to my team announcing a project update. The tone should be clear, concise, and encouraging.',
+  },
+  {
+    emoji: '🐛',
+    title: 'Debug my code',
+    subtitle: 'Find and fix an issue in my code',
+    prompt: 'I have a bug in my code and I\'m not sure what\'s causing it. Can you help me walk through the problem step by step and suggest a fix?',
+  },
+  {
+    emoji: '🧠',
+    title: 'Explain a concept',
+    subtitle: 'Break down something complex simply',
+    prompt: 'Explain a complex technical concept to me as if I were new to the field. Use analogies and simple language to make it easy to understand.',
+  },
+  {
+    emoji: '🎨',
+    title: 'Brainstorm ideas',
+    subtitle: 'Generate creative suggestions',
+    prompt: 'Help me brainstorm creative ideas for a new project. I want diverse, innovative suggestions across different categories.',
+  },
+  {
+    emoji: '📊',
+    title: 'Analyze data',
+    subtitle: 'Interpret patterns and insights',
+    prompt: 'I have some data I need help analyzing. Can you help me identify patterns, trends, and key insights from it?',
+  },
+  {
+    emoji: '✅',
+    title: 'Plan my day',
+    subtitle: 'Organize tasks and priorities',
+    prompt: 'Help me create a structured daily plan. I\'ll share my tasks and you can help me prioritize them and schedule them efficiently.',
+  },
+  {
+    emoji: '🔍',
+    title: 'Research a topic',
+    subtitle: 'Summarize key facts and context',
+    prompt: 'I want to learn about a specific topic quickly. Give me a concise overview with the most important facts, context, and key points to know.',
+  },
+  {
+    emoji: '💬',
+    title: 'Improve my writing',
+    subtitle: 'Polish prose for clarity and style',
+    prompt: 'I have a piece of writing I\'d like to improve. Can you review it for clarity, flow, and style, then suggest specific edits?',
+  },
+  {
+    emoji: '🚀',
+    title: 'Plan a project',
+    subtitle: 'Break goals into actionable steps',
+    prompt: 'Help me plan a new project from scratch. I\'ll describe my goal and constraints, and you can help me create a realistic roadmap with milestones.',
+  },
+  {
+    emoji: '🤔',
+    title: 'Think through a decision',
+    subtitle: 'Weigh pros, cons, and trade-offs',
+    prompt: 'I\'m facing a difficult decision and need help thinking it through. Can you help me map out the pros, cons, and potential outcomes for each option?',
+  },
+];
+
+function getRandomDefaultSuggestions(count: number): PromptSuggestion[] {
+  const shuffled = [...DEFAULT_SUGGESTIONS].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
 export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
   onSelect,
   model,
 }) => {
   const [suggestions, setSuggestions] = useState<PromptSuggestion[]>([]);
   const [, setLoading] = useState(false);
-  const [, setFailed] = useState(false);
+  const [failed, setFailed] = useState(false);
 
   const fetchSuggestions = useCallback(async () => {
     if (!model) return;
@@ -77,7 +145,11 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
     fetchSuggestions();
   }, [fetchSuggestions]);
 
-  if (suggestions.length === 0) {
+  const displayed = failed && suggestions.length === 0
+    ? getRandomDefaultSuggestions(3)
+    : suggestions;
+
+  if (displayed.length === 0) {
     return null;
   }
 
@@ -87,7 +159,7 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
         Suggested
       </p>
       <div className="grid grid-cols-3 gap-2.5">
-        {suggestions.map((suggestion, index) => (
+        {displayed.map((suggestion, index) => (
           <button
             key={index}
             onClick={() => onSelect(suggestion.prompt)}

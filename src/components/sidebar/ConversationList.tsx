@@ -197,7 +197,7 @@ export function ConversationList() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-surface border-r border-border w-60">
+    <div className="flex h-full flex-col bg-surface border-r border-border w-72">
       {/* New Chat — ghost button, orange is reserved for Send */}
       <div className="p-3 pb-2">
         <Button onClick={handleNewConversation} variant="secondary" className="w-full" size="sm">

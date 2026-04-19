@@ -72,7 +72,7 @@ export const ConversationItem = React.memo(function ConversationItem({
 
   return (
     <div
-      className={`group relative flex items-center gap-2 rounded-lg mx-1 px-2 py-2 cursor-pointer transition-colors ${
+      className={`group relative flex items-center gap-2 rounded-lg mx-1 px-2 py-1 cursor-pointer transition-colors ${
         isActive
           ? 'border-l-2 border-l-accent bg-[#f3ece4] text-text-primary'
           : 'border-l-2 border-l-transparent hover:bg-surface-hover text-text-primary'
@@ -134,7 +134,7 @@ export const ConversationItem = React.memo(function ConversationItem({
         ) : (
           <div className="flex items-center gap-1 min-w-0">
             <p
-              className={`flex-1 text-sm truncate ${
+              className={`flex-1 text-xs truncate ${
                 isActive ? 'font-medium text-text-primary' : 'text-text-primary'
               }`}
             >
