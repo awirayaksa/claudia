@@ -75,10 +75,14 @@ export const ConversationItem = React.memo(function ConversationItem({
       className={`group relative flex items-center gap-2 rounded-lg mx-1 px-2 py-1 cursor-pointer transition-colors ${
         isActive
           ? 'border-l-2 border-l-accent bg-[#f3ece4] text-text-primary'
-          : 'border-l-2 border-l-transparent hover:bg-surface-hover text-text-primary'
+          : 'border-l-2 border-l-transparent hover:border-l-accent text-text-primary'
       }`}
       onClick={handleClick}
     >
+      {/* Hover gradient overlay */}
+      {!isActive && (
+        <div className="sidebar-hover-gradient absolute inset-0 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+      )}
       {/* Checkbox for selection mode */}
       {isSelectionMode && (
         <input

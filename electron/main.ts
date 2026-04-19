@@ -238,8 +238,9 @@ function createWindow() {
   mainWindow.on('resize', () => saveWindowState());
   mainWindow.on('move', () => saveWindowState());
 
-  // Show window when ready
+  // Show window maximized when ready
   mainWindow.once('ready-to-show', () => {
+    mainWindow?.maximize();
     mainWindow?.show();
   });
 
