@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createFilesystemServer } from './filesystem.server';
-import { createOfficeServer } from './office.server';
+import { createMsOfficeServer } from './msoffice.server';
 import { createDiagramServer } from './diagram.server';
 
 // ============================================================================
@@ -22,10 +22,10 @@ const BUILTIN_SERVERS: BuiltinServerDefinition[] = [
     createServer: (config) => createFilesystemServer(config),
   },
   {
-    id: 'builtin-office-001',
-    name: 'Office Automation',
-    description: 'Control Microsoft Office apps (Word, Excel, PowerPoint) via PowerShell COM automation (Windows only)',
-    createServer: (config) => createOfficeServer(config),
+    id: 'builtin-msoffice-001',
+    name: 'Ms Office Files',
+    description: 'Comprehensive Word document creation, formatting, and manipulation (54 tools). No Microsoft Office required for most operations.',
+    createServer: (config) => createMsOfficeServer(config),
   },
   {
     id: 'builtin-diagram-001',

@@ -319,6 +319,12 @@ export function seedBuiltinServers(): void {
   const definitions = getAllBuiltinServerDefinitions();
   let needsSave = false;
 
+  // Migrate: remove legacy office server
+  if (servers['builtin-office-001']) {
+    delete servers['builtin-office-001'];
+    needsSave = true;
+  }
+
   for (const def of definitions) {
     if (!servers[def.id]) {
       console.log(`[Store] Seeding built-in MCP server: ${def.name} (${def.id})`);
