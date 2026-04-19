@@ -160,7 +160,7 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
           )}
 
           {/* Action row — persistent */}
-          <div className="mt-3 flex gap-1 border-t border-border pt-2">
+          <div className="mt-2 flex gap-1">
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
