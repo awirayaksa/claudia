@@ -36,7 +36,7 @@ function groupConversations(conversations: ConversationMetadata[]) {
   return { today, yesterday, week, earlier };
 }
 
-export function ConversationList() {
+export function ConversationList({ width }: { width?: number }) {
   const dispatch = useAppDispatch();
   const {
     conversations,
@@ -197,7 +197,7 @@ export function ConversationList() {
   };
 
   return (
-    <div className="flex h-full flex-col bg-surface border-r border-border w-72">
+    <div className="flex h-full flex-col bg-surface border-r border-border flex-shrink-0" style={{ width: width ?? 288 }}>
       {/* New Chat — ghost button, orange is reserved for Send */}
       <div className="p-3 pb-2">
         <Button onClick={handleNewConversation} variant="secondary" className="w-full" size="sm">

@@ -1,3 +1,4 @@
+import { useRef, useState, useCallback, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setSettingsOpen, toggleSidebar } from '../../store/slices/uiSlice';
 import { SettingsPanel } from '../settings/SettingsPanel';
@@ -5,9 +6,59 @@ import { ChatWindow } from '../chat/ChatWindow';
 import { ConversationList } from '../sidebar/ConversationList';
 import { TitleBar } from './TitleBar';
 
+const SIDEBAR_WIDTH_KEY = 'claudia_sidebar_width';
+const SIDEBAR_DEFAULT_WIDTH = 288;
+const SIDEBAR_MIN_WIDTH = 180;
+const SIDEBAR_MAX_WIDTH = 520;
+
+function getSavedSidebarWidth(): number {
+  const saved = localStorage.getItem(SIDEBAR_WIDTH_KEY);
+  if (saved) {
+    const parsed = parseInt(saved, 10);
+    if (!isNaN(parsed) && parsed >= SIDEBAR_MIN_WIDTH && parsed <= SIDEBAR_MAX_WIDTH) {
+      return parsed;
+    }
+  }
+  return SIDEBAR_DEFAULT_WIDTH;
+}
+
 export function MainLayout() {
   const dispatch = useAppDispatch();
   const { sidebarOpen } = useAppSelector((state) => state.ui);
+  const [sidebarWidth, setSidebarWidth] = useState(getSavedSidebarWidth);
+  const isDragging = useRef(false);
+  const dragStartX = useRef(0);
+  const dragStartWidth = useRef(0);
+
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    isDragging.current = true;
+    dragStartX.current = e.clientX;
+    dragStartWidth.current = sidebarWidth;
+    e.preventDefault();
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!isDragging.current) return;
+      const delta = e.clientX - dragStartX.current;
+      const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, dragStartWidth.current + delta));
+      setSidebarWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      if (!isDragging.current) return;
+      isDragging.current = false;
+      setSidebarWidth((w) => {
+        localStorage.setItem(SIDEBAR_WIDTH_KEY, String(w));
+        return w;
+      });
+    };
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
   const { api } = useAppSelector((state) => state.settings);
 
   // Determine selected model based on provider
@@ -32,7 +83,17 @@ export function MainLayout() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar with conversation list */}
-        {sidebarOpen && <ConversationList />}
+        {sidebarOpen && (
+          <>
+            <ConversationList width={sidebarWidth} />
+            {/* Resize handle */}
+            <div
+              onMouseDown={onMouseDown}
+              className="w-1 flex-shrink-0 cursor-col-resize hover:bg-accent/30 active:bg-accent/50 transition-colors"
+              title="Drag to resize sidebar"
+            />
+          </>
+        )}
 
         {/* Main content area */}
         <main className="flex flex-1 flex-col overflow-hidden">
