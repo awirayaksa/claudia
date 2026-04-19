@@ -5,25 +5,9 @@ export function TitleBar() {
   const appearance = useAppSelector((state) => state.settings.appearance);
   const appTitle = appearance.customization?.appTitle || 'Claudia';
   const [isMaximized, setIsMaximized] = useState(false);
-  const [iconPreview, setIconPreview] = useState<string | null>(null);
-
   useEffect(() => {
-    // Check initial maximized state
     window.electron.window.isMaximized().then(setIsMaximized);
   }, []);
-
-  // Load icon preview
-  useEffect(() => {
-    if (appearance.customization?.iconPath) {
-      window.electron.icon.getPreview(appearance.customization.iconPath).then((preview) => {
-        if (preview) {
-          setIconPreview(preview);
-        }
-      });
-    } else {
-      setIconPreview(null);
-    }
-  }, [appearance.customization?.iconPath]);
 
   const handleMinimize = () => {
     window.electron.window.minimize();
@@ -61,11 +45,6 @@ export function TitleBar() {
             <path d="M3 12h18M3 6h18M3 18h18" />
           </svg>
         </button>
-        {iconPreview ? (
-          <img src={iconPreview} alt="App icon" className="w-3.5 h-3.5 rounded-sm" />
-        ) : (
-          <div className="w-3.5 h-3.5 rounded-sm bg-accent flex-shrink-0" />
-        )}
         <span className="text-sm font-medium text-text-primary">{appTitle}</span>
       </div>
 

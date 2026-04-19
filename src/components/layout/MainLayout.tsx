@@ -66,6 +66,9 @@ export function MainLayout() {
     ? api.openrouter?.selectedModel
     : api.openwebui?.selectedModel;
 
+  const availableModels = api.availableModels || [];
+  const isModelAvailable = selectedModel ? availableModels.includes(selectedModel) : false;
+
   function humanizeModel(model: string): string {
     const part = model.split('/').pop() || model;
     const cleaned = part.replace(/-\d{2,4}(?:-\d{2}(?:-\d{2})?)?$/, '');
@@ -113,8 +116,15 @@ export function MainLayout() {
             </button>
 
             <div className="flex items-center gap-2 text-sm">
-              <div className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 font-medium text-text-primary">
-                {selectedModel ? humanizeModel(selectedModel) : 'Not selected'}
+              <div
+                className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 font-medium text-text-primary"
+                title={selectedModel ? (isModelAvailable ? 'Model available' : 'Model unavailable or offline') : 'No model selected'}
+              >
+                {selectedModel ? (
+                  <span>{humanizeModel(selectedModel)}</span>
+                ) : (
+                  <span className="text-text-secondary">Not selected</span>
+                )}
               </div>
               <span className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-text-secondary">
                 Alpha

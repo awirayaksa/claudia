@@ -9,6 +9,7 @@ import { SkillMentionDropdown } from './SkillMentionDropdown';
 import { useFileMention } from '../../hooks/useFileMention';
 import { useSkillMention } from '../../hooks/useSkillMention';
 import { useAppSelector } from '../../store';
+import { CompactModelSelector } from './CompactModelSelector';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -16,9 +17,9 @@ interface ChatInputProps {
   disabled?: boolean;
   isGenerating?: boolean;
   placeholder?: string;
-  selectedModel?: string; // kept for API compatibility
-  availableModels?: string[]; // kept for API compatibility
-  onModelChange?: (model: string) => void; // kept for API compatibility
+  selectedModel?: string;
+  availableModels?: string[];
+  onModelChange?: (model: string) => void;
   initialMessage?: string;
   initialAttachments?: Attachment[];
   onCancelEdit?: () => void;
@@ -46,9 +47,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   isGenerating = false,
   placeholder = 'Type your message...',
   variant = 'default',
-  selectedModel: _selectedModel,
-  availableModels: _availableModels,
-  onModelChange: _onModelChange,
+  selectedModel,
+  availableModels,
+  onModelChange,
   initialMessage,
   initialAttachments,
   onCancelEdit,
@@ -401,7 +402,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       className={`${variant === 'default' ? 'border-t border-border bg-surface' : ''} ${isDragActive ? 'bg-accent bg-opacity-10' : ''
         }`}
     >
-      <div className={variant === 'default' ? 'px-4 py-3' : 'p-4'}>
+      <div className={variant === 'default' ? 'px-4 pt-3 pb-2' : 'px-4 pt-3 pb-2'}>
       <input {...getInputProps()} />
 
       {/* File attachments preview */}
@@ -466,25 +467,46 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         </div>
       )}
 
-      <div className="flex gap-2">
-        {/* File upload button */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          multiple
-          accept="image/*,.pdf,.docx,.txt,.csv"
-          onChange={(e) => {
-            if (e.target.files) {
-              handleFilesSelected(Array.from(e.target.files));
-              e.target.value = '';
-            }
-          }}
-          className="hidden"
-        />
+      {/* File upload input (hidden) */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        accept="image/*,.pdf,.docx,.txt,.csv"
+        onChange={(e) => {
+          if (e.target.files) {
+            handleFilesSelected(Array.from(e.target.files));
+            e.target.value = '';
+          }
+        }}
+        className="hidden"
+      />
+
+      {/* Text input — full width, 2-row minimum */}
+      <textarea
+        ref={textareaRef}
+        value={message}
+        onChange={handleInput}
+        onKeyDown={handleKeyDown}
+        onPaste={handlePaste}
+        onContextMenu={handleContextMenu}
+        onBlur={() => {
+          setTimeout(() => fileMention.close(), 150);
+          setTimeout(() => skillMention.close(), 150);
+        }}
+        placeholder={placeholder}
+        disabled={disabled || uploading}
+        rows={2}
+        className="w-full resize-none bg-transparent px-0 py-0 text-sm text-text-primary placeholder-text-secondary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+        style={{ maxHeight: '200px' }}
+      />
+
+      {/* Bottom toolbar: attach left · model selector + send right */}
+      <div className="flex items-center justify-between pt-2">
         <button
           onClick={() => fileInputRef.current?.click()}
           disabled={disabled || uploading}
-          className="rounded p-2 text-text-secondary hover:bg-background hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded p-1.5 text-text-secondary hover:bg-background hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
           title="Attach file"
         >
           <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -492,44 +514,35 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           </svg>
         </button>
 
-        {/* Text input */}
-        <textarea
-          ref={textareaRef}
-          value={message}
-          onChange={handleInput}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          onContextMenu={handleContextMenu}
-          onBlur={() => {
-            setTimeout(() => fileMention.close(), 150);
-            setTimeout(() => skillMention.close(), 150);
-          }}
-          placeholder={placeholder}
-          disabled={disabled || uploading}
-          rows={1}
-          className="flex-1 resize-none rounded border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:border-accent focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-          style={{ maxHeight: '200px' }}
-        />
-
-        {/* Send/Stop button */}
-        <Button
-          onClick={isGenerating ? onAbort : handleSend}
-          disabled={!isGenerating && (disabled || uploading || (!message.trim() && attachments.length === 0))}
-          className={isGenerating ? 'bg-error hover:bg-error-dark' : ''}
-          title={isGenerating ? 'Stop generating' : 'Send message'}
-        >
-          {isGenerating ? (
-            // Stop icon
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          ) : (
-            // Up-arrow send icon
-            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-            </svg>
+        <div className="flex items-center gap-2">
+          {/* Model selector */}
+          {selectedModel !== undefined && availableModels && availableModels.length > 0 && onModelChange && (
+            <CompactModelSelector
+              value={selectedModel}
+              models={availableModels}
+              onChange={onModelChange}
+              disabled={disabled || isGenerating}
+            />
           )}
-        </Button>
+
+          {/* Send/Stop button */}
+          <Button
+            onClick={isGenerating ? onAbort : handleSend}
+            disabled={!isGenerating && (disabled || uploading || (!message.trim() && attachments.length === 0))}
+            className={isGenerating ? 'bg-error hover:bg-error-dark' : ''}
+            title={isGenerating ? 'Stop generating' : 'Send message'}
+          >
+            {isGenerating ? (
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+              </svg>
+            )}
+          </Button>
+        </div>
       </div>
 
       {/* Skill mention dropdown */}
