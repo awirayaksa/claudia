@@ -494,9 +494,8 @@ export function ChatWindow() {
             {/* Filesystem directory bar */}
             <FilesystemDirectoryBar disabled={isLoading || isStreaming || isExecutingTools} />
 
-            {/* Centered input with rounded style */}
-            <div className="rounded-3xl border border-border bg-surface shadow-sm overflow-hidden">
-              <ChatInput
+            {/* Centered input */}
+            <ChatInput
                 ref={chatInputRef}
                 variant="centered"
                 onSend={handleSend}
@@ -510,8 +509,7 @@ export function ChatWindow() {
                 initialMessage={editingMessage?.content}
                 initialAttachments={editingMessage?.attachments}
                 onCancelEdit={handleCancelEdit}
-              />
-            </div>
+            />
 
             {/* Jump back in — recent conversations */}
             {conversations.length > 0 && (

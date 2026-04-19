@@ -482,66 +482,69 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         className="hidden"
       />
 
-      {/* Text input — full width, 2-row minimum */}
-      <textarea
-        ref={textareaRef}
-        value={message}
-        onChange={handleInput}
-        onKeyDown={handleKeyDown}
-        onPaste={handlePaste}
-        onContextMenu={handleContextMenu}
-        onBlur={() => {
-          setTimeout(() => fileMention.close(), 150);
-          setTimeout(() => skillMention.close(), 150);
-        }}
-        placeholder={placeholder}
-        disabled={disabled || uploading}
-        rows={2}
-        className="w-full resize-none bg-transparent px-0 py-0 text-sm text-text-primary placeholder-text-secondary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
-        style={{ maxHeight: '200px' }}
-      />
-
-      {/* Bottom toolbar: attach left · model selector + send right */}
-      <div className="flex items-center justify-between pt-2">
-        <button
-          onClick={() => fileInputRef.current?.click()}
+      {/* Input card — visually distinct from surrounding surface */}
+      <div className="rounded-xl border border-border bg-background px-3 py-2.5 transition-colors focus-within:border-accent/60 focus-within:shadow-sm">
+        {/* Text input — full width, 2-row minimum */}
+        <textarea
+          ref={textareaRef}
+          value={message}
+          onChange={handleInput}
+          onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
+          onContextMenu={handleContextMenu}
+          onBlur={() => {
+            setTimeout(() => fileMention.close(), 150);
+            setTimeout(() => skillMention.close(), 150);
+          }}
+          placeholder={placeholder}
           disabled={disabled || uploading}
-          className="rounded p-1.5 text-text-secondary hover:bg-background hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
-          title="Attach file"
-        >
-          <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-          </svg>
-        </button>
+          rows={2}
+          className="w-full resize-none bg-transparent px-0 py-0 text-sm text-text-primary placeholder-text-secondary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+          style={{ maxHeight: '200px' }}
+        />
 
-        <div className="flex items-center gap-2">
-          {/* Model selector */}
-          {selectedModel !== undefined && availableModels && availableModels.length > 0 && onModelChange && (
-            <CompactModelSelector
-              value={selectedModel}
-              models={availableModels}
-              onChange={onModelChange}
-              disabled={disabled || isGenerating}
-            />
-          )}
-
-          {/* Send/Stop button */}
-          <Button
-            onClick={isGenerating ? onAbort : handleSend}
-            disabled={!isGenerating && (disabled || uploading || (!message.trim() && attachments.length === 0))}
-            className={isGenerating ? 'bg-error hover:bg-error-dark' : ''}
-            title={isGenerating ? 'Stop generating' : 'Send message'}
+        {/* Bottom toolbar: attach left · model selector + send right */}
+        <div className="flex items-center justify-between pt-2">
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || uploading}
+            className="rounded p-1.5 text-text-secondary hover:bg-surface hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
+            title="Attach file"
           >
-            {isGenerating ? (
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-              </svg>
+            <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+            </svg>
+          </button>
+
+          <div className="flex items-center gap-2">
+            {/* Model selector */}
+            {selectedModel !== undefined && availableModels && availableModels.length > 0 && onModelChange && (
+              <CompactModelSelector
+                value={selectedModel}
+                models={availableModels}
+                onChange={onModelChange}
+                disabled={disabled || isGenerating}
+              />
             )}
-          </Button>
+
+            {/* Send/Stop button */}
+            <Button
+              onClick={isGenerating ? onAbort : handleSend}
+              disabled={!isGenerating && (disabled || uploading || (!message.trim() && attachments.length === 0))}
+              className={isGenerating ? 'bg-error hover:bg-error-dark' : ''}
+              title={isGenerating ? 'Stop generating' : 'Send message'}
+            >
+              {isGenerating ? (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+              )}
+            </Button>
+          </div>
         </div>
       </div>
 
