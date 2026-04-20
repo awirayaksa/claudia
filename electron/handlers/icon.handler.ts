@@ -84,7 +84,9 @@ export function registerIconHandlers(getMainWindow: () => BrowserWindow | null) 
   // Reset to default icon
   ipcMain.handle('icon:reset', async () => {
     const mainWindow = getMainWindow();
-    const defaultIconPath = path.join(__dirname, '..', 'build', 'icon.ico');
+    const defaultIconPath = app.isPackaged
+      ? path.join(process.resourcesPath, 'icon.ico')
+      : path.join(__dirname, '..', 'build', 'icon.ico');
 
     if (mainWindow && fs.existsSync(defaultIconPath)) {
       try {

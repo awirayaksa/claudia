@@ -39,11 +39,20 @@ function getAppTitle(): string {
 /**
  * Resolve the current icon path: custom if set and exists, otherwise default
  */
+function getDefaultIconPath(): string {
+  // In packaged apps, nativeImage can't read from inside ASAR archives.
+  // extraResources copies icon.ico to process.resourcesPath outside the ASAR.
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'icon.ico');
+  }
+  return path.join(__dirname, '..', 'build', 'icon.ico');
+}
+
 function getIconPath(): string {
   const config = store.get('config');
   const customIconPath = config?.appearance?.customization?.iconPath;
   if (customIconPath && fs.existsSync(customIconPath)) return customIconPath;
-  return path.join(__dirname, '..', 'build', 'icon.ico');
+  return getDefaultIconPath();
 }
 
 function showWindow() {
