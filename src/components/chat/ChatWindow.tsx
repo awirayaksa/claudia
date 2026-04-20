@@ -25,6 +25,9 @@ export function ChatWindow() {
   const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const chatInputRef = useRef<ChatInputRef>(null);
   const titleGeneratedRef = useRef<Set<string>>(new Set());
+  const pendingSendRef = useRef(false);
+  const lastScrolledUserIdRef = useRef<string | null>(null);
+  const [scrollSpacerHeight, setScrollSpacerHeight] = useState(0);
 
   const {
     messages,
@@ -84,6 +87,33 @@ export function ChatWindow() {
 
   // No auto-scroll during streaming — user stays at their current position
 
+  // When a user sends a new message, scroll it to the top of the viewport and
+  // pad the bottom with a full-viewport spacer so there's always room for the
+  // incoming assistant response to stream into empty space below.
+  useEffect(() => {
+    if (!pendingSendRef.current) return;
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage || lastMessage.role !== 'user') return;
+    if (lastScrolledUserIdRef.current === lastMessage.id) return;
+
+    pendingSendRef.current = false;
+    lastScrolledUserIdRef.current = lastMessage.id;
+
+    const container = messagesContainerRef.current;
+    if (!container) return;
+
+    setScrollSpacerHeight(container.clientHeight);
+
+    requestAnimationFrame(() => {
+      const el = container.querySelector(
+        `[data-message-id="${lastMessage.id}"]`
+      ) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: 'auto', block: 'start' });
+      }
+    });
+  }, [messages]);
+
   // Auto-focus input after response completes
   useEffect(() => {
     if (!isLoading && !isStreaming && !isExecutingTools && messages.length > 0) {
@@ -132,6 +162,13 @@ export function ChatWindow() {
           console.error('Failed to load conversation:', error);
         });
     }
+  }, [currentConversationId]);
+
+  // Reset scroll spacer + pending-send tracking when switching conversations
+  useEffect(() => {
+    setScrollSpacerHeight(0);
+    pendingSendRef.current = false;
+    lastScrolledUserIdRef.current = null;
   }, [currentConversationId]);
 
   // Clear per-session filesystem directory when switching conversations
@@ -302,8 +339,9 @@ export function ChatWindow() {
         setPendingModel(null);
       }
 
-      // Scroll to bottom when user sends a message so they see the response start
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      // Signal that the next user message added to the store should be scrolled
+      // to the top of the viewport (handled in the messages-watching effect).
+      pendingSendRef.current = true;
 
       // Check if content is a skill invocation (e.g. "/summarize some text")
       const skillResult = resolveSkillCommand(content, skills);
@@ -604,7 +642,7 @@ export function ChatWindow() {
               );
               const dateLabel = isToday(curDate) ? 'Today' : isYesterday(curDate) ? 'Yesterday' : format(curDate, 'MMM d');
               return (
-                <div key={message.id}>
+                <div key={message.id} data-message-id={message.id}>
                   {showDateDivider && (
                     <div className="my-6 flex items-center gap-3 text-xs text-text-secondary">
                       <div className="h-px flex-1 bg-border" />
@@ -663,6 +701,14 @@ export function ChatWindow() {
                   <div className="h-2 w-2 animate-bounce rounded-full bg-accent"></div>
                 </div>
               </div>
+            )}
+            {/* Bottom spacer so the latest user message can scroll to the top of the
+                viewport, leaving a full screen of empty space for the streaming response. */}
+            {scrollSpacerHeight > 0 && (
+              <div
+                aria-hidden="true"
+                style={{ height: scrollSpacerHeight }}
+              />
             )}
             <div ref={messagesEndRef} />
             </div>
