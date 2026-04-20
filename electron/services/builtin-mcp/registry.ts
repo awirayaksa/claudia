@@ -24,7 +24,7 @@ const BUILTIN_SERVERS: BuiltinServerDefinition[] = [
   {
     id: 'builtin-msoffice-001',
     name: 'Ms Office Files',
-    description: 'Comprehensive Word document creation, formatting, and manipulation (54 tools). No Microsoft Office required for most operations.',
+    description: 'Comprehensive Word document creation, formatting, and manipulation, including .dotx/.dotm template support (60 tools). No Microsoft Office required for most operations.',
     createServer: (config) => createMsOfficeServer(config),
   },
   {

@@ -2169,5 +2169,185 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     }
   );
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // GROUP 10 – Template (.dotx / .dotm) Management
+  // ══════════════════════════════════════════════════════════════════════════
+
+  const CT_DOC_MAIN = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml';
+  const CT_TPL_MAIN = 'application/vnd.openxmlformats-officedocument.wordprocessingml.template.main+xml';
+  const CT_DOCM_MAIN = 'application/vnd.ms-word.document.macroEnabled.main+xml';
+  const CT_DOTM_MAIN = 'application/vnd.ms-word.template.macroEnabledTemplate.main+xml';
+
+  const swapDocumentContentType = (zip: AdmZip, toType: string): void => {
+    let ctXml = getZipEntry(zip, '[Content_Types].xml') || '';
+    const re = /(<Override\s+PartName="\/word\/document\.xml"\s+ContentType=")[^"]+(")/;
+    if (re.test(ctXml)) ctXml = ctXml.replace(re, `$1${toType}$2`);
+    else ctXml = ctXml.replace('</Types>', `<Override PartName="/word/document.xml" ContentType="${toType}"/></Types>`);
+    setZipEntry(zip, '[Content_Types].xml', ctXml);
+  };
+
+  server.tool(
+    'create_document_from_template',
+    'Create a new .docx document from an existing Word template (.dotx or .dotm). Copies the template content, converts the OOXML content type to a regular document, and optionally updates title/author metadata. Returns the new file path.',
+    {
+      template_filename: z.string().describe('Path to the source .dotx or .dotm template'),
+      output_filename: z.string().describe('Destination file name, e.g. "test.docx". .docx is added if missing.'),
+      title: z.string().optional().describe('Optional document title to write into core.xml'),
+      author: z.string().optional().describe('Optional author to write into core.xml'),
+    },
+    async ({ template_filename, output_filename, title, author }) => {
+      const srcPath = resolvePath(template_filename, workingDir);
+      const srcExt = path.extname(srcPath).toLowerCase();
+      if (srcExt !== '.dotx' && srcExt !== '.dotm') {
+        throw new Error(`Source must be a .dotx or .dotm template, got "${srcExt}"`);
+      }
+      const outName = /\.docx?$|\.docm$/i.test(output_filename) ? output_filename : `${output_filename}.docx`;
+      const outPath = resolvePath(outName, workingDir);
+      const outExt = path.extname(outPath).toLowerCase();
+
+      await fs.copyFile(srcPath, outPath);
+      const zip = new AdmZip(outPath);
+
+      const targetCt = outExt === '.docm' ? CT_DOCM_MAIN : CT_DOC_MAIN;
+      swapDocumentContentType(zip, targetCt);
+
+      if (title !== undefined || author !== undefined) {
+        let coreXml = getZipEntry(zip, 'docProps/core.xml');
+        if (!coreXml) {
+          coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"></cp:coreProperties>`;
+          addContentType(zip, '/docProps/core.xml', 'application/vnd.openxmlformats-package.core-properties+xml');
+        }
+        const upsert = (xml: string, tag: string, value: string): string => {
+          const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\/${tag}>`);
+          const node = `<${tag}>${escapeXml(value)}</${tag}>`;
+          if (re.test(xml)) return xml.replace(re, node);
+          return xml.replace(/<\/cp:coreProperties>/, `${node}</cp:coreProperties>`);
+        };
+        if (title !== undefined) coreXml = upsert(coreXml, 'dc:title', title);
+        if (author !== undefined) coreXml = upsert(coreXml, 'dc:creator', author);
+        setZipEntry(zip, 'docProps/core.xml', coreXml);
+      }
+
+      await saveZip(zip, outPath);
+      return { content: [{ type: 'text' as const, text: `Created "${outPath}" from template "${srcPath}"` }] };
+    }
+  );
+
+  server.tool(
+    'get_template_text',
+    'Extract all text content from a Word template (.dotx or .dotm).',
+    { filename: z.string().describe('Path to the .dotx or .dotm template') },
+    async ({ filename }) => {
+      const filepath = resolvePath(filename, workingDir);
+      const result = await mammoth.extractRawText({ path: filepath });
+      return { content: [{ type: 'text' as const, text: result.value || '(empty template)' }] };
+    }
+  );
+
+  server.tool(
+    'get_template_info',
+    'Retrieve metadata and properties of a Word template (.dotx or .dotm).',
+    { filename: z.string().describe('Path to the .dotx or .dotm template') },
+    async ({ filename }) => {
+      const filepath = resolvePath(filename, workingDir);
+      const zip = new AdmZip(filepath);
+      const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
+      const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
+      const ctXml = getZipEntry(zip, '[Content_Types].xml') || '';
+      const extract = (xml: string, tag: string) => {
+        const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)<\/[^:>]*:?${tag}>`));
+        return m ? m[1].trim() : '';
+      };
+      const ctMatch = ctXml.match(/PartName="\/word\/document\.xml"\s+ContentType="([^"]+)"/);
+      const contentType = ctMatch ? ctMatch[1] : '(unknown)';
+      const isTemplate = contentType.includes('template');
+      const info: Record<string, string> = {
+        file_kind: isTemplate ? 'Word template' : 'Word document',
+        content_type: contentType,
+        title: extract(coreXml, 'title'),
+        creator: extract(coreXml, 'creator'),
+        description: extract(coreXml, 'description'),
+        created: extract(coreXml, 'created'),
+        modified: extract(coreXml, 'modified'),
+        lastModifiedBy: extract(coreXml, 'lastModifiedBy'),
+        revision: extract(coreXml, 'revision'),
+        application: extract(appXml, 'Application'),
+        pages: extract(appXml, 'Pages'),
+        words: extract(appXml, 'Words'),
+      };
+      const lines = Object.entries(info).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No metadata found.' }] };
+    }
+  );
+
+  server.tool(
+    'get_template_outline',
+    'Display the heading structure of a Word template (.dotx or .dotm).',
+    { filename: z.string().describe('Path to the .dotx or .dotm template') },
+    async ({ filename }) => {
+      const filepath = resolvePath(filename, workingDir);
+      const zip = new AdmZip(filepath);
+      const docXml = getZipEntry(zip, 'word/document.xml') || '';
+      const doc = parseXmlDoc(docXml);
+      const body = getBodyEl(doc);
+      const paras = bodyParagraphs(body);
+      const lines: string[] = [];
+      for (const p of paras) {
+        const pPr = (p as any).getElementsByTagNameNS(W_NS, 'pStyle');
+        if (!pPr || pPr.length === 0) continue;
+        const style: string = pPr[0].getAttribute('w:val') || '';
+        const m = style.match(/^[Hh]eading\s*(\d)/);
+        if (m) {
+          const level = parseInt(m[1], 10);
+          const indent = '  '.repeat(level - 1);
+          lines.push(`${indent}H${level}: ${paraText(p)}`);
+        }
+      }
+      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No headings found.' }] };
+    }
+  );
+
+  server.tool(
+    'list_available_templates',
+    'List all Word template files (.dotx, .dotm) in a directory.',
+    { directory: z.string().optional().describe('Directory path (default: working directory)') },
+    async ({ directory }) => {
+      const dir = directory ? resolvePath(directory, workingDir) : workingDir;
+      const entries = await fs.readdir(dir);
+      const tpls = entries.filter(e => {
+        const lo = e.toLowerCase();
+        return lo.endsWith('.dotx') || lo.endsWith('.dotm');
+      });
+      const text = tpls.length ? tpls.map(d => path.join(dir, d)).join('\n') : 'No template files found.';
+      return { content: [{ type: 'text' as const, text }] };
+    }
+  );
+
+  server.tool(
+    'save_as_template',
+    'Convert an existing .docx (or .docm) into a Word template (.dotx or .dotm) at a new path.',
+    {
+      source_filename: z.string().describe('Path to the source .docx or .docm'),
+      output_filename: z.string().describe('Destination template file name, e.g. "MyTemplate.dotx". Extension determines output format.'),
+    },
+    async ({ source_filename, output_filename }) => {
+      const srcPath = resolvePath(source_filename, workingDir);
+      const srcExt = path.extname(srcPath).toLowerCase();
+      if (srcExt !== '.docx' && srcExt !== '.docm') {
+        throw new Error(`Source must be a .docx or .docm, got "${srcExt}"`);
+      }
+      const outName = /\.dotx$|\.dotm$/i.test(output_filename) ? output_filename : `${output_filename}.dotx`;
+      const outPath = resolvePath(outName, workingDir);
+      const outExt = path.extname(outPath).toLowerCase();
+
+      await fs.copyFile(srcPath, outPath);
+      const zip = new AdmZip(outPath);
+      const targetCt = outExt === '.dotm' ? CT_DOTM_MAIN : CT_TPL_MAIN;
+      swapDocumentContentType(zip, targetCt);
+      await saveZip(zip, outPath);
+      return { content: [{ type: 'text' as const, text: `Saved template "${outPath}" from "${srcPath}"` }] };
+    }
+  );
+
   return server;
 }
