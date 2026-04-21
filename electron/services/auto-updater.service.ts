@@ -49,7 +49,7 @@ function isOlderVersion(a: string, b: string): boolean {
 function fetchJson(url: string): Promise<unknown> {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https://') ? https : http;
-    const req = protocol.get(url, { headers: { 'Cache-Control': 'no-cache' }, family: 4 } as any, (res) => {
+    const req = protocol.get(url, { headers: { 'Cache-Control': 'no-cache' }, family: 4, rejectUnauthorized: false } as any, (res) => {
       if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         // Follow redirect (single level)
         fetchJson(res.headers.location).then(resolve).catch(reject);
@@ -79,7 +79,7 @@ function downloadFile(
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https://') ? https : http;
     const doGet = (targetUrl: string) => {
-      const req = protocol.get(targetUrl, { family: 4 } as any, (res) => {
+      const req = protocol.get(targetUrl, { family: 4, rejectUnauthorized: false } as any, (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           doGet(res.headers.location);
           return;
