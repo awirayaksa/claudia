@@ -1,6 +1,7 @@
 import { ipcMain, BrowserWindow } from 'electron';
 import { AutoUpdaterService, UpdateStatus } from '../services/auto-updater.service.js';
 import { getConfig } from '../services/store.service.js';
+import { logUpdater } from '../services/auto-updater-logger.js';
 
 export function registerUpdaterHandlers(
   getWindow: () => BrowserWindow | null,
@@ -25,8 +26,9 @@ export function registerUpdaterHandlers(
   ipcMain.handle('updater:check', async () => {
     const config = getConfig();
     const url = config.preferences.updateCheckUrl;
+    logUpdater('info', 'IPC: updater:check invoked', { hasUrl: !!url });
     if (!url) return { error: 'No update check URL configured' };
-    return service.checkForUpdate(url);
+    return service.checkForUpdate(url, 'ipc');
   });
 
   // Get current update status
@@ -36,6 +38,7 @@ export function registerUpdaterHandlers(
 
   // Apply downloaded update (replace + relaunch)
   ipcMain.handle('updater:relaunch', () => {
+    logUpdater('info', 'IPC: updater:relaunch invoked — user clicked Relaunch');
     service.applyUpdate();
   });
 
@@ -43,6 +46,7 @@ export function registerUpdaterHandlers(
   ipcMain.handle('updater:restartCheck', () => {
     const config = getConfig();
     const url = config.preferences.updateCheckUrl;
+    logUpdater('info', 'IPC: updater:restartCheck invoked', { hasUrl: !!url });
     if (url) {
       service.startPeriodicCheck(url, 30 * 60 * 1000);
     } else {

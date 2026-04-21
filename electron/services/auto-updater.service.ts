@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { spawn } from 'child_process';
+import { logUpdater, getUpdaterBatchLogPath } from './auto-updater-logger.js';
 
 export type UpdateState =
   | 'idle'
@@ -15,6 +16,8 @@ export type UpdateState =
   | 'downloaded'
   | 'error'
   | 'relaunching';
+
+export type UpdateCheckSource = 'menu' | 'periodic' | 'ipc' | 'unknown';
 
 export interface UpdateStatus {
   state: UpdateState;
@@ -67,7 +70,12 @@ function fetchJson(url: string): Promise<unknown> {
   });
 }
 
-function downloadFile(url: string, destPath: string, onProgress: (percent: number) => void): Promise<void> {
+function downloadFile(
+  url: string,
+  destPath: string,
+  onProgress: (percent: number) => void,
+  onStart?: (totalBytes: number) => void,
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const protocol = url.startsWith('https://') ? https : http;
     const doGet = (targetUrl: string) => {
@@ -81,6 +89,7 @@ function downloadFile(url: string, destPath: string, onProgress: (percent: numbe
           return;
         }
         const total = parseInt(res.headers['content-length'] ?? '0', 10);
+        onStart?.(total);
         let received = 0;
         const out = fs.createWriteStream(destPath);
         res.on('data', (chunk: Buffer) => {
@@ -109,6 +118,14 @@ export class AutoUpdaterService extends EventEmitter {
       state: 'idle',
       currentVersion: app.getVersion(),
     };
+    logUpdater('info', 'AutoUpdaterService instantiated', {
+      currentVersion: app.getVersion(),
+      platform: process.platform,
+      arch: process.arch,
+      isPackaged: app.isPackaged,
+      execPath: process.execPath,
+      appPath: app.getAppPath(),
+    });
   }
 
   getStatus(): UpdateStatus {
@@ -127,39 +144,62 @@ export class AutoUpdaterService extends EventEmitter {
   startPeriodicCheck(manifestUrl: string, intervalMs: number) {
     this.stopPeriodicCheck();
     this.manifestUrl = manifestUrl;
+    logUpdater('info', 'Periodic update check started', { manifestUrl, intervalMs });
     // Run immediately
-    this.runCheck();
-    this.timer = setInterval(() => this.runCheck(), intervalMs);
+    this.runCheck('periodic');
+    this.timer = setInterval(() => this.runCheck('periodic'), intervalMs);
   }
 
   stopPeriodicCheck() {
     if (this.timer !== null) {
       clearInterval(this.timer);
       this.timer = null;
+      logUpdater('info', 'Periodic update check stopped');
     }
   }
 
   /** Trigger a one-off check. */
-  async runCheck() {
-    if (!this.manifestUrl) return;
-    if (this.status.state === 'downloading' || this.status.state === 'relaunching') return;
-    await this.checkForUpdate(this.manifestUrl);
+  async runCheck(source: UpdateCheckSource = 'periodic') {
+    if (!this.manifestUrl) {
+      logUpdater('warn', 'runCheck skipped: no manifest URL configured', { source });
+      return;
+    }
+    if (this.status.state === 'downloading' || this.status.state === 'relaunching') {
+      logUpdater('info', 'runCheck skipped: already busy', { source, state: this.status.state });
+      return;
+    }
+    await this.checkForUpdate(this.manifestUrl, source);
   }
 
-  async checkForUpdate(manifestUrl: string): Promise<UpdateStatus> {
+  async checkForUpdate(manifestUrl: string, source: UpdateCheckSource = 'unknown'): Promise<UpdateStatus> {
+    const startedAt = Date.now();
+    logUpdater('info', 'checkForUpdate: begin', { source, manifestUrl, currentVersion: app.getVersion() });
     this.setState({ state: 'checking', error: undefined });
     try {
       const manifest = await fetchJson(manifestUrl) as VersionManifest;
+      logUpdater('info', 'checkForUpdate: manifest fetched', {
+        source,
+        elapsedMs: Date.now() - startedAt,
+        manifest,
+      });
       if (!manifest.version || !manifest.url) {
         throw new Error('Manifest missing "version" or "url" fields');
       }
       const current = app.getVersion();
-      if (isOlderVersion(current, manifest.version)) {
+      const isOlder = isOlderVersion(current, manifest.version);
+      logUpdater('info', 'checkForUpdate: version comparison', {
+        source,
+        current,
+        latest: manifest.version,
+        isOlder,
+      });
+      if (isOlder) {
         console.log(`[AutoUpdater] Update found: ${current} → ${manifest.version}`);
         this.setState({ state: 'update-available', latestVersion: manifest.version });
         // Start downloading automatically in background
         this.downloadUpdate(manifest.url, manifest.version).catch((err) => {
           console.error('[AutoUpdater] Download failed:', err);
+          logUpdater('error', 'downloadUpdate failed', { error: err });
           this.setState({ state: 'error', error: String(err) });
         });
       } else {
@@ -168,6 +208,12 @@ export class AutoUpdaterService extends EventEmitter {
       }
     } catch (err) {
       console.error('[AutoUpdater] Check failed:', err);
+      logUpdater('error', 'checkForUpdate failed', {
+        source,
+        manifestUrl,
+        elapsedMs: Date.now() - startedAt,
+        error: err,
+      });
       this.setState({ state: 'error', error: String(err) });
     }
     return this.getStatus();
@@ -176,16 +222,43 @@ export class AutoUpdaterService extends EventEmitter {
   async downloadUpdate(url: string, version: string): Promise<string> {
     const filename = `Claudia-${version}-Portable.exe`;
     const destPath = path.join(os.tmpdir(), filename);
+    const startedAt = Date.now();
+    const checkpointsSeen = new Set<number>();
 
     this.setState({ state: 'downloading', downloadProgress: 0 });
     console.log(`[AutoUpdater] Downloading to ${destPath}`);
+    logUpdater('info', 'downloadUpdate: begin', { url, version, destPath });
 
-    await downloadFile(url, destPath, (percent) => {
-      this.status.downloadProgress = percent;
-      this.emit('download-progress', percent);
-    });
+    await downloadFile(
+      url,
+      destPath,
+      (percent) => {
+        this.status.downloadProgress = percent;
+        this.emit('download-progress', percent);
+        for (const checkpoint of [25, 50, 75, 100]) {
+          if (percent >= checkpoint && !checkpointsSeen.has(checkpoint)) {
+            checkpointsSeen.add(checkpoint);
+            logUpdater('info', 'downloadUpdate: progress checkpoint', {
+              percent: checkpoint,
+              elapsedMs: Date.now() - startedAt,
+            });
+          }
+        }
+      },
+      (totalBytes) => {
+        logUpdater('info', 'downloadUpdate: response headers', { totalBytes, url });
+      },
+    );
+
+    let actualSize: number | undefined;
+    try { actualSize = fs.statSync(destPath).size; } catch { /* ignore */ }
 
     console.log(`[AutoUpdater] Download complete: ${destPath}`);
+    logUpdater('info', 'downloadUpdate: complete', {
+      destPath,
+      sizeBytes: actualSize,
+      elapsedMs: Date.now() - startedAt,
+    });
     this.setState({ state: 'downloaded', downloadedPath: destPath, downloadProgress: 100 });
     return destPath;
   }
@@ -198,43 +271,99 @@ export class AutoUpdaterService extends EventEmitter {
     const downloadedPath = this.status.downloadedPath;
     if (!downloadedPath) {
       console.error('[AutoUpdater] No downloaded update to apply');
+      logUpdater('error', 'applyUpdate: no downloaded update to apply');
       return;
     }
 
     this.setState({ state: 'relaunching' });
 
+    const currentExe = process.execPath;
+    let downloadedSize: number | undefined;
+    let downloadedExists = false;
+    try {
+      const stat = fs.statSync(downloadedPath);
+      downloadedExists = true;
+      downloadedSize = stat.size;
+    } catch { /* file missing */ }
+
+    let currentExeWritable = false;
+    try {
+      fs.accessSync(currentExe, fs.constants.W_OK);
+      currentExeWritable = true;
+    } catch { /* not writable */ }
+
+    logUpdater('info', 'applyUpdate: begin', {
+      downloadedPath,
+      downloadedExists,
+      downloadedSize,
+      currentExe,
+      currentExeWritable,
+      isPackaged: app.isPackaged,
+      platform: process.platform,
+    });
+
     if (!app.isPackaged || process.platform !== 'win32') {
       // Dev mode: relaunch without file replacement
       console.log('[AutoUpdater] Dev mode — skipping self-replace. Would replace with:', downloadedPath);
+      logUpdater('info', 'applyUpdate: dev mode — skipping self-replace, calling app.relaunch()', { downloadedPath });
       app.relaunch();
       app.exit(0);
       return;
     }
 
-    const currentExe = process.execPath;
     const batchPath = path.join(os.tmpdir(), 'claudia-update.bat');
+    const batchLogPath = getUpdaterBatchLogPath();
 
-    // Escape paths for batch script (wrap in quotes, no escaping needed for well-formed paths)
+    // Batch script tees progress to batchLogPath so we can diagnose failures
+    // even though the spawned process runs detached with stdio:'ignore'.
     const batchContent = [
       '@echo off',
+      `set "LOG=${batchLogPath}"`,
+      'echo [%date% %time%] --- claudia-update.bat start --- >> "%LOG%" 2>&1',
+      `echo [%date% %time%] source: "${downloadedPath}" >> "%LOG%" 2>&1`,
+      `echo [%date% %time%] target: "${currentExe}" >> "%LOG%" 2>&1`,
       'timeout /t 3 /nobreak >nul',
-      `copy /y "${downloadedPath}" "${currentExe}"`,
+      'echo [%date% %time%] running copy... >> "%LOG%" 2>&1',
+      `copy /y "${downloadedPath}" "${currentExe}" >> "%LOG%" 2>&1`,
       'if errorlevel 1 (',
+      '  echo [%date% %time%] copy FAILED with errorlevel %errorlevel% >> "%LOG%" 2>&1',
       '  exit /b 1',
       ')',
+      'echo [%date% %time%] copy OK, starting new exe... >> "%LOG%" 2>&1',
       `start "" "${currentExe}"`,
+      'echo [%date% %time%] start issued, deleting self >> "%LOG%" 2>&1',
       'del "%~f0"',
     ].join('\r\n');
 
-    fs.writeFileSync(batchPath, batchContent, 'utf8');
-
-    const child = spawn('cmd.exe', ['/c', batchPath], {
-      detached: true,
-      stdio: 'ignore',
-      windowsHide: true,
+    logUpdater('info', 'applyUpdate: writing batch script', {
+      batchPath,
+      batchLogPath,
+      batchContent,
     });
-    child.unref();
 
+    try {
+      fs.writeFileSync(batchPath, batchContent, 'utf8');
+    } catch (err) {
+      logUpdater('error', 'applyUpdate: failed to write batch script', { batchPath, error: err });
+      this.setState({ state: 'error', error: String(err) });
+      return;
+    }
+
+    try {
+      const child = spawn('cmd.exe', ['/c', batchPath], {
+        detached: true,
+        stdio: 'ignore',
+        windowsHide: true,
+      });
+      child.unref();
+      logUpdater('info', 'applyUpdate: batch spawned', { pid: child.pid });
+    } catch (err) {
+      logUpdater('error', 'applyUpdate: failed to spawn batch', { error: err });
+      this.setState({ state: 'error', error: String(err) });
+      return;
+    }
+
+    logUpdater('info', 'applyUpdate: calling app.exit(0) — main process terminating');
     app.exit(0);
   }
 }

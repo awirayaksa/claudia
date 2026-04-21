@@ -16,6 +16,7 @@ import { registerIconHandlers, setTrayGetter } from './handlers/icon.handler';
 import { registerSystemPromptHandlers } from './handlers/system-prompt.handler';
 import { AutoUpdaterService } from './services/auto-updater.service';
 import { registerUpdaterHandlers } from './handlers/updater.handler';
+import { logUpdater } from './services/auto-updater-logger';
 import {
   registerSkillHandlers,
   setSkillMainWindow,
@@ -176,7 +177,9 @@ function createMenu() {
           click: async () => {
             const config = store.get('config');
             const url = config?.preferences?.updateCheckUrl;
+            logUpdater('info', 'Menu: user clicked "Check for Updates..."', { hasUrl: !!url });
             if (!url) {
+              logUpdater('warn', 'Menu: no update URL configured — showing info dialog');
               const { dialog } = require('electron');
               dialog.showMessageBox({
                 type: 'info',
@@ -187,7 +190,7 @@ function createMenu() {
               });
               return;
             }
-            await updaterService.checkForUpdate(url);
+            await updaterService.checkForUpdate(url, 'menu');
           },
         },
       ],
@@ -396,7 +399,10 @@ app.whenReady().then(async () => {
   const initialConfig = store.get('config');
   const updateCheckUrl = initialConfig?.preferences?.updateCheckUrl;
   if (updateCheckUrl) {
+    logUpdater('info', 'Startup: periodic update check configured', { updateCheckUrl });
     updaterService.startPeriodicCheck(updateCheckUrl, 30 * 60 * 1000);
+  } else {
+    logUpdater('info', 'Startup: no update URL configured — periodic check disabled');
   }
 
   app.on('activate', () => {
