@@ -50,7 +50,167 @@ function setZipEntry(zip: AdmZip, name: string, content: string): void {
 }
 
 async function saveZip(zip: AdmZip, filepath: string): Promise<void> {
-  await fs.writeFile(filepath, zip.toBuffer());
+  await atomicWriteFile(filepath, zip.toBuffer());
+}
+
+// ============================================================================
+// File-lock & atomic write helpers
+// ============================================================================
+
+function lockKey(p: string): string {
+  return path.resolve(p).toLowerCase();
+}
+
+const fileLocks = new Map<string, Promise<void>>();
+
+async function acquireFileLock(filepath: string): Promise<() => void> {
+  const key = lockKey(filepath);
+  const prev = fileLocks.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const next = new Promise<void>((resolve) => { release = resolve; });
+  fileLocks.set(key, prev.then(() => next));
+  await prev;
+  return () => {
+    release();
+    queueMicrotask(() => {
+      const cur = fileLocks.get(key);
+      if (cur === next || !cur) fileLocks.delete(key);
+    });
+  };
+}
+
+const TRANSIENT_CODES = new Set(['EBUSY', 'EPERM', 'EACCES', 'ENOENT', 'UNKNOWN']);
+
+function isTransientFsError(e: unknown): boolean {
+  if (!e || typeof e !== 'object') return false;
+  const code = (e as NodeJS.ErrnoException).code ?? '';
+  if (TRANSIENT_CODES.has(code)) return true;
+  const msg = (e as Error).message || '';
+  return /EBUSY|EPERM|EACCES|ENOENT|locked|being used by another process/i.test(msg);
+}
+
+async function withRetry<T>(
+  op: () => Promise<T> | T,
+  _label: string,
+  retries = 7,
+  baseMs = 50,
+  maxMs = 1500,
+): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await op();
+    } catch (e) {
+      lastErr = e;
+      if (attempt === retries || !isTransientFsError(e)) throw e;
+      const delay = Math.min(maxMs, baseMs * Math.pow(2, attempt))
+        + Math.floor(Math.random() * 25);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
+async function atomicWriteFile(filepath: string, data: Buffer): Promise<void> {
+  const dir = path.dirname(filepath);
+  const base = path.basename(filepath);
+  const tmp = path.join(dir, `.${base}.${crypto.randomBytes(6).toString('hex')}.tmp`);
+  try {
+    await withRetry(() => fs.writeFile(tmp, data), 'atomicWriteFile.writeFile');
+    await withRetry(() => fs.rename(tmp, filepath), 'atomicWriteFile.rename');
+  } catch (err) {
+    try { await fs.unlink(tmp); } catch { /* swallow */ }
+    throw err;
+  }
+}
+
+async function openAdmZipWithRetry(filepath: string): Promise<AdmZip> {
+  return withRetry(() => new AdmZip(filepath), 'AdmZip.open');
+}
+
+async function mammothExtractRawTextWithRetry(filepath: string): Promise<{ value: string }> {
+  return withRetry(() => mammoth.extractRawText({ path: filepath }), 'mammoth.extract');
+}
+
+async function withDocxWrite<T>(
+  filepath: string,
+  fn: (zip: AdmZip) => Promise<T> | T,
+): Promise<T> {
+  const release = await acquireFileLock(filepath);
+  try {
+    const zip = await openAdmZipWithRetry(filepath);
+    const result = await fn(zip);
+    await saveZip(zip, filepath);
+    return result;
+  } finally {
+    release();
+  }
+}
+
+async function withDocxWriteTo<T>(
+  readFilepath: string,
+  writeFilepath: string,
+  fn: (zip: AdmZip) => Promise<T> | T,
+): Promise<T> {
+  const readKey = lockKey(readFilepath);
+  const writeKey = lockKey(writeFilepath);
+  if (readKey === writeKey) return withDocxWrite(readFilepath, fn);
+  const order = readKey < writeKey
+    ? [readFilepath, writeFilepath]
+    : [writeFilepath, readFilepath];
+  const releases: Array<() => void> = [];
+  try {
+    for (const p of order) releases.push(await acquireFileLock(p));
+    const zip = await openAdmZipWithRetry(readFilepath);
+    const result = await fn(zip);
+    await saveZip(zip, writeFilepath);
+    return result;
+  } finally {
+    for (const r of releases.reverse()) r();
+  }
+}
+
+async function withDocxRead<T>(
+  filepath: string,
+  fn: (zip: AdmZip) => Promise<T> | T,
+): Promise<T> {
+  const release = await acquireFileLock(filepath);
+  try {
+    const zip = await openAdmZipWithRetry(filepath);
+    return await fn(zip);
+  } finally {
+    release();
+  }
+}
+
+async function withDocxRawRead<T>(
+  filepath: string,
+  fn: () => Promise<T> | T,
+): Promise<T> {
+  const release = await acquireFileLock(filepath);
+  try {
+    return await fn();
+  } finally {
+    release();
+  }
+}
+
+async function withDocxPairRaw<T>(
+  a: string,
+  b: string,
+  fn: () => Promise<T> | T,
+): Promise<T> {
+  const ka = lockKey(a);
+  const kb = lockKey(b);
+  if (ka === kb) return withDocxRawRead(a, fn);
+  const order = ka < kb ? [a, b] : [b, a];
+  const releases: Array<() => void> = [];
+  try {
+    for (const p of order) releases.push(await acquireFileLock(p));
+    return await fn();
+  } finally {
+    for (const r of releases.reverse()) r();
+  }
 }
 
 function parseXmlDoc(xml: string): Document {
@@ -323,8 +483,10 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
         sections: [{ children: [] }],
       });
       const buf = await Packer.toBuffer(doc);
-      await fs.writeFile(filepath, buf);
-      return { content: [{ type: 'text' as const, text: `Created: ${filepath}` }] };
+      return withDocxRawRead(filepath, async () => {
+        await atomicWriteFile(filepath, buf);
+        return { content: [{ type: 'text' as const, text: `Created: ${filepath}` }] };
+      });
     }
   );
 
@@ -338,8 +500,10 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     async ({ source_filename, destination_filename }) => {
       const src = resolvePath(source_filename, workingDir);
       const dst = resolvePath(destination_filename, workingDir);
-      await fs.copyFile(src, dst);
-      return { content: [{ type: 'text' as const, text: `Copied: ${src} → ${dst}` }] };
+      return withDocxPairRaw(src, dst, async () => {
+        await withRetry(() => fs.copyFile(src, dst), 'copy_document.copyFile');
+        return { content: [{ type: 'text' as const, text: `Copied: ${src} → ${dst}` }] };
+      });
     }
   );
 
@@ -349,29 +513,30 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
-      const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
-      const extract = (xml: string, tag: string) => {
-        const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)<\/[^:>]*:?${tag}>`));
-        return m ? m[1].trim() : '';
-      };
-      const info: Record<string, string> = {
-        title: extract(coreXml, 'title'),
-        creator: extract(coreXml, 'creator'),
-        description: extract(coreXml, 'description'),
-        created: extract(coreXml, 'created'),
-        modified: extract(coreXml, 'modified'),
-        lastModifiedBy: extract(coreXml, 'lastModifiedBy'),
-        revision: extract(coreXml, 'revision'),
-        application: extract(appXml, 'Application'),
-        pages: extract(appXml, 'Pages'),
-        words: extract(appXml, 'Words'),
-        characters: extract(appXml, 'Characters'),
-        paragraphs: extract(appXml, 'Paragraphs'),
-      };
-      const lines = Object.entries(info).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
-      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No metadata found.' }] };
+      return withDocxRead(filepath, (zip) => {
+        const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
+        const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
+        const extract = (xml: string, tag: string) => {
+          const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)<\/[^:>]*:?${tag}>`));
+          return m ? m[1].trim() : '';
+        };
+        const info: Record<string, string> = {
+          title: extract(coreXml, 'title'),
+          creator: extract(coreXml, 'creator'),
+          description: extract(coreXml, 'description'),
+          created: extract(coreXml, 'created'),
+          modified: extract(coreXml, 'modified'),
+          lastModifiedBy: extract(coreXml, 'lastModifiedBy'),
+          revision: extract(coreXml, 'revision'),
+          application: extract(appXml, 'Application'),
+          pages: extract(appXml, 'Pages'),
+          words: extract(appXml, 'Words'),
+          characters: extract(appXml, 'Characters'),
+          paragraphs: extract(appXml, 'Paragraphs'),
+        };
+        const lines = Object.entries(info).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+        return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No metadata found.' }] };
+      });
     }
   );
 
@@ -381,8 +546,10 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const result = await mammoth.extractRawText({ path: filepath });
-      return { content: [{ type: 'text' as const, text: result.value || '(empty document)' }] };
+      return withDocxRawRead(filepath, async () => {
+        const result = await mammothExtractRawTextWithRetry(filepath);
+        return { content: [{ type: 'text' as const, text: result.value || '(empty document)' }] };
+      });
     }
   );
 
@@ -392,24 +559,25 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml') || '';
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      const lines: string[] = [];
-      for (const p of paras) {
-        const pPr = (p as any).getElementsByTagNameNS(W_NS, 'pStyle');
-        if (!pPr || pPr.length === 0) continue;
-        const style: string = pPr[0].getAttribute('w:val') || '';
-        const m = style.match(/^[Hh]eading\s*(\d)/);
-        if (m) {
-          const level = parseInt(m[1], 10);
-          const indent = '  '.repeat(level - 1);
-          lines.push(`${indent}H${level}: ${paraText(p)}`);
+      return withDocxRead(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml') || '';
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        const lines: string[] = [];
+        for (const p of paras) {
+          const pPr = (p as any).getElementsByTagNameNS(W_NS, 'pStyle');
+          if (!pPr || pPr.length === 0) continue;
+          const style: string = pPr[0].getAttribute('w:val') || '';
+          const m = style.match(/^[Hh]eading\s*(\d)/);
+          if (m) {
+            const level = parseInt(m[1], 10);
+            const indent = '  '.repeat(level - 1);
+            lines.push(`${indent}H${level}: ${paraText(p)}`);
+          }
         }
-      }
-      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No headings found.' }] };
+        return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No headings found.' }] };
+      });
     }
   );
 
@@ -432,9 +600,10 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const xml = getZipEntry(zip, 'word/document.xml') || '(not found)';
-      return { content: [{ type: 'text' as const, text: xml }] };
+      return withDocxRead(filepath, (zip) => {
+        const xml = getZipEntry(zip, 'word/document.xml') || '(not found)';
+        return { content: [{ type: 'text' as const, text: xml }] };
+      });
     }
   );
 
@@ -455,26 +624,26 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, target_text, header_title, position, header_style, target_paragraph_index }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      const pos = position || 'before';
-      const style = (header_style || 'Heading 1').replace(' ', '');
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        const pos = position || 'before';
+        const style = (header_style || 'Heading 1').replace(' ', '');
 
-      let idx = findParaByText(body, target_text, true);
-      if (idx === -1 && target_paragraph_index !== undefined) idx = target_paragraph_index;
-      if (idx === -1 || idx >= paras.length) throw new Error(`Paragraph containing "${target_text}" not found`);
+        let idx = findParaByText(body, target_text, true);
+        if (idx === -1 && target_paragraph_index !== undefined) idx = target_paragraph_index;
+        if (idx === -1 || idx >= paras.length) throw new Error(`Paragraph containing "${target_text}" not found`);
 
-      const newEl = importFragment(buildParaXml(header_title, { pStyle: style }), doc);
-      const refPara = paras[idx];
-      if (pos === 'before') body.insertBefore(newEl, refPara);
-      else refPara.parentNode!.insertBefore(newEl, refPara.nextSibling);
+        const newEl = importFragment(buildParaXml(header_title, { pStyle: style }), doc);
+        const refPara = paras[idx];
+        if (pos === 'before') body.insertBefore(newEl, refPara);
+        else refPara.parentNode!.insertBefore(newEl, refPara.nextSibling);
 
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Inserted heading "${header_title}" ${pos} paragraph ${idx}` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Inserted heading "${header_title}" ${pos} paragraph ${idx}` }] };
+      });
     }
   );
 
@@ -491,25 +660,25 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, target_text, line_text, position, line_style, target_paragraph_index }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      const pos = position || 'after';
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        const pos = position || 'after';
 
-      let idx = findParaByText(body, target_text, true);
-      if (idx === -1 && target_paragraph_index !== undefined) idx = target_paragraph_index;
-      if (idx === -1 || idx >= paras.length) throw new Error(`Paragraph containing "${target_text}" not found`);
+        let idx = findParaByText(body, target_text, true);
+        if (idx === -1 && target_paragraph_index !== undefined) idx = target_paragraph_index;
+        if (idx === -1 || idx >= paras.length) throw new Error(`Paragraph containing "${target_text}" not found`);
 
-      const newEl = importFragment(buildParaXml(line_text, { pStyle: line_style }), doc);
-      const refPara = paras[idx];
-      if (pos === 'before') body.insertBefore(newEl, refPara);
-      else refPara.parentNode!.insertBefore(newEl, refPara.nextSibling);
+        const newEl = importFragment(buildParaXml(line_text, { pStyle: line_style }), doc);
+        const refPara = paras[idx];
+        if (pos === 'before') body.insertBefore(newEl, refPara);
+        else refPara.parentNode!.insertBefore(newEl, refPara.nextSibling);
 
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Inserted paragraph ${pos} paragraph ${idx}` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Inserted paragraph ${pos} paragraph ${idx}` }] };
+      });
     }
   );
 
@@ -526,34 +695,34 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, target_text, list_items, position, target_paragraph_index, bullet_type }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      const pos = position || 'after';
-      const pStyle = (bullet_type || 'bullet') === 'number' ? 'ListNumber' : 'ListBullet';
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        const pos = position || 'after';
+        const pStyle = (bullet_type || 'bullet') === 'number' ? 'ListNumber' : 'ListBullet';
 
-      let idx = findParaByText(body, target_text, true);
-      if (idx === -1 && target_paragraph_index !== undefined) idx = target_paragraph_index;
-      if (idx === -1 || idx >= paras.length) throw new Error(`Paragraph containing "${target_text}" not found`);
+        let idx = findParaByText(body, target_text, true);
+        if (idx === -1 && target_paragraph_index !== undefined) idx = target_paragraph_index;
+        if (idx === -1 || idx >= paras.length) throw new Error(`Paragraph containing "${target_text}" not found`);
 
-      const refPara = paras[idx];
-      const newEls = list_items.map(item => importFragment(buildParaXml(item, { pStyle }), doc));
+        const refPara = paras[idx];
+        const newEls = list_items.map(item => importFragment(buildParaXml(item, { pStyle }), doc));
 
-      if (pos === 'before') {
-        newEls.reverse().forEach(el => body.insertBefore(el, refPara));
-      } else {
-        let anchor = refPara;
-        newEls.forEach(el => {
-          anchor.parentNode!.insertBefore(el, anchor.nextSibling);
-          anchor = el;
-        });
-      }
+        if (pos === 'before') {
+          newEls.reverse().forEach(el => body.insertBefore(el, refPara));
+        } else {
+          let anchor = refPara;
+          newEls.forEach(el => {
+            anchor.parentNode!.insertBefore(el, anchor.nextSibling);
+            anchor = el;
+          });
+        }
 
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Inserted ${list_items.length} list items ${pos} paragraph ${idx}` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Inserted ${list_items.length} list items ${pos} paragraph ${idx}` }] };
+      });
     }
   );
 
@@ -572,12 +741,12 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, text, style, font_name, font_size, bold, italic, color }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const fragment = buildParaXml(text, { pStyle: style, fontName: font_name, fontSize: font_size, bold, italic, color });
-      setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, fragment));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: 'Paragraph added.' }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const fragment = buildParaXml(text, { pStyle: style, fontName: font_name, fontSize: font_size, bold, italic, color });
+        setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, fragment));
+        return { content: [{ type: 'text' as const, text: 'Paragraph added.' }] };
+      });
     }
   );
 
@@ -596,15 +765,15 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, text, level, font_name, font_size, bold, italic, border_bottom }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const fragment = buildParaXml(text, {
-        pStyle: `Heading${level}`, fontName: font_name, fontSize: font_size,
-        bold, italic, borderBottom: border_bottom,
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const fragment = buildParaXml(text, {
+          pStyle: `Heading${level}`, fontName: font_name, fontSize: font_size,
+          bold, italic, borderBottom: border_bottom,
+        });
+        setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, fragment));
+        return { content: [{ type: 'text' as const, text: `Heading level ${level} added.` }] };
       });
-      setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, fragment));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Heading level ${level} added.` }] };
     }
   );
 
@@ -619,39 +788,39 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     async ({ filename, image_path, width }) => {
       const filepath = resolvePath(filename, workingDir);
       const imgPath = resolvePath(image_path, workingDir);
-      const imgBuf = await fs.readFile(imgPath);
+      const imgBuf = await withRetry(() => fs.readFile(imgPath), 'add_picture.readImage');
       const ext = path.extname(imgPath).toLowerCase().replace('.', '') || 'png';
       const dims = getImageDimensions(imgBuf, ext);
 
-      const zip = new AdmZip(filepath);
-      // Find next image index
-      const existingMedia = zip.getEntries().filter(e => e.entryName.startsWith('word/media/')).length;
-      const imgName = `image${existingMedia + 1}.${ext}`;
-      zip.addFile(`word/media/${imgName}`, imgBuf);
+      return withDocxWrite(filepath, (zip) => {
+        // Find next image index
+        const existingMedia = zip.getEntries().filter(e => e.entryName.startsWith('word/media/')).length;
+        const imgName = `image${existingMedia + 1}.${ext}`;
+        zip.addFile(`word/media/${imgName}`, imgBuf);
 
-      // Add content type for image
-      const ctMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif' };
-      const ct = ctMap[ext] || 'image/png';
-      let ctXml = getZipEntry(zip, '[Content_Types].xml') || '';
-      if (!ctXml.includes(`Extension="${ext}"`)) {
-        ctXml = ctXml.replace('</Types>', `<Default Extension="${ext}" ContentType="${ct}"/></Types>`);
-        setZipEntry(zip, '[Content_Types].xml', ctXml);
-      }
+        // Add content type for image
+        const ctMap: Record<string, string> = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif' };
+        const ct = ctMap[ext] || 'image/png';
+        let ctXml = getZipEntry(zip, '[Content_Types].xml') || '';
+        if (!ctXml.includes(`Extension="${ext}"`)) {
+          ctXml = ctXml.replace('</Types>', `<Default Extension="${ext}" ContentType="${ct}"/></Types>`);
+          setZipEntry(zip, '[Content_Types].xml', ctXml);
+        }
 
-      const rId = addRel(zip, REL_IMAGE, `media/${imgName}`);
+        const rId = addRel(zip, REL_IMAGE, `media/${imgName}`);
 
-      // Compute EMU dimensions
-      const widthIn = width || 4;
-      const aspectRatio = dims.h / Math.max(dims.w, 1);
-      const cxEmu = Math.round(widthIn * 914400);
-      const cyEmu = Math.round(cxEmu * aspectRatio);
+        // Compute EMU dimensions
+        const widthIn = width || 4;
+        const aspectRatio = dims.h / Math.max(dims.w, 1);
+        const cxEmu = Math.round(widthIn * 914400);
+        const cyEmu = Math.round(cxEmu * aspectRatio);
 
-      const drawingXml = `<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cxEmu}" cy="${cyEmu}"/><wp:docPr id="${existingMedia + 1}" name="${imgName}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="${imgName}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cxEmu}" cy="${cyEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+        const drawingXml = `<w:p><w:r><w:drawing><wp:inline xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cxEmu}" cy="${cyEmu}"/><wp:docPr id="${existingMedia + 1}" name="${imgName}"/><a:graphic xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:nvPicPr><pic:cNvPr id="0" name="${imgName}"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="${rId}" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill><pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cxEmu}" cy="${cyEmu}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, drawingXml));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Image "${imgName}" embedded (${cxEmu}×${cyEmu} EMU).` }] };
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, drawingXml));
+        return { content: [{ type: 'text' as const, text: `Image "${imgName}" embedded (${cxEmu}×${cyEmu} EMU).` }] };
+      });
     }
   );
 
@@ -666,28 +835,28 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, rows, cols, data }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const colWidth = Math.floor(9360 / cols); // ~6.5 inch table in twips
+      return withDocxWrite(filepath, (zip) => {
+        const colWidth = Math.floor(9360 / cols); // ~6.5 inch table in twips
 
-      let gridCols = '';
-      for (let c = 0; c < cols; c++) gridCols += `<w:gridCol w:w="${colWidth}"/>`;
+        let gridCols = '';
+        for (let c = 0; c < cols; c++) gridCols += `<w:gridCol w:w="${colWidth}"/>`;
 
-      let rowsXml = '';
-      for (let r = 0; r < rows; r++) {
-        let cells = '';
-        for (let c = 0; c < cols; c++) {
-          const cellText = data?.[r]?.[c] ?? '';
-          cells += `<w:tc><w:tcPr><w:tcW w:w="${colWidth}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${escapeXml(cellText)}</w:t></w:r></w:p></w:tc>`;
+        let rowsXml = '';
+        for (let r = 0; r < rows; r++) {
+          let cells = '';
+          for (let c = 0; c < cols; c++) {
+            const cellText = data?.[r]?.[c] ?? '';
+            cells += `<w:tc><w:tcPr><w:tcW w:w="${colWidth}" w:type="dxa"/></w:tcPr><w:p><w:r><w:t>${escapeXml(cellText)}</w:t></w:r></w:p></w:tc>`;
+          }
+          rowsXml += `<w:tr>${cells}</w:tr>`;
         }
-        rowsXml += `<w:tr>${cells}</w:tr>`;
-      }
 
-      const tblXml = `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid>${gridCols}</w:tblGrid>${rowsXml}</w:tbl>`;
+        const tblXml = `<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/><w:tblBorders><w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders></w:tblPr><w:tblGrid>${gridCols}</w:tblGrid>${rowsXml}</w:tbl>`;
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, tblXml));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Table ${rows}×${cols} added.` }] };
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, tblXml));
+        return { content: [{ type: 'text' as const, text: `Table ${rows}×${cols} added.` }] };
+      });
     }
   );
 
@@ -697,12 +866,12 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string() },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
-      setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, pageBreak));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: 'Page break added.' }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
+        setZipEntry(zip, 'word/document.xml', strInsertBeforeSectPr(docXml, pageBreak));
+        return { content: [{ type: 'text' as const, text: 'Page break added.' }] };
+      });
     }
   );
 
@@ -715,17 +884,17 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, paragraph_index }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      if (paragraph_index < 0 || paragraph_index >= paras.length)
-        throw new Error(`Index ${paragraph_index} out of range (${paras.length} paragraphs)`);
-      paras[paragraph_index].parentNode!.removeChild(paras[paragraph_index]);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Paragraph ${paragraph_index} deleted.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        if (paragraph_index < 0 || paragraph_index >= paras.length)
+          throw new Error(`Index ${paragraph_index} out of range (${paras.length} paragraphs)`);
+        paras[paragraph_index].parentNode!.removeChild(paras[paragraph_index]);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Paragraph ${paragraph_index} deleted.` }] };
+      });
     }
   );
 
@@ -739,19 +908,19 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, find_text, replace_text }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      let docXml = getZipEntry(zip, 'word/document.xml')!;
-      // Replace inside <w:t>…</w:t> nodes preserving tags
-      const escaped = escapeXml(find_text);
-      const replacement = escapeXml(replace_text);
-      let count = 0;
-      docXml = docXml.replace(new RegExp(escaped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), () => {
-        count++;
-        return replacement;
+      return withDocxWrite(filepath, (zip) => {
+        let docXml = getZipEntry(zip, 'word/document.xml')!;
+        // Replace inside <w:t>…</w:t> nodes preserving tags
+        const escaped = escapeXml(find_text);
+        const replacement = escapeXml(replace_text);
+        let count = 0;
+        docXml = docXml.replace(new RegExp(escaped.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'), () => {
+          count++;
+          return replacement;
+        });
+        setZipEntry(zip, 'word/document.xml', docXml);
+        return { content: [{ type: 'text' as const, text: `Replaced ${count} occurrence(s).` }] };
       });
-      setZipEntry(zip, 'word/document.xml', docXml);
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Replaced ${count} occurrence(s).` }] };
     }
   );
 
@@ -774,16 +943,16 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, style_name, bold, italic, font_size, font_name, color, base_style }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const stylesXml = getZipEntry(zip, 'word/styles.xml');
-      if (!stylesXml) throw new Error('word/styles.xml not found in document');
-      const safeId = style_name.replace(/\s+/g, '');
-      const rPr = buildRPr({ bold, italic, fontSize: font_size, fontName: font_name, color });
-      const styleXml = `<w:style w:type="character" w:styleId="${escapeXml(safeId)}"><w:name w:val="${escapeXml(style_name)}"/><w:basedOn w:val="${escapeXml(base_style || 'DefaultParagraphFont')}"/>${rPr ? `<w:rPr>${rPr.replace(/^<w:rPr>|<\/w:rPr>$/g, '')}</w:rPr>` : ''}</w:style>`;
-      const updated = stylesXml.replace('</w:styles>', `${styleXml}</w:styles>`);
-      setZipEntry(zip, 'word/styles.xml', updated);
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Style "${style_name}" created.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const stylesXml = getZipEntry(zip, 'word/styles.xml');
+        if (!stylesXml) throw new Error('word/styles.xml not found in document');
+        const safeId = style_name.replace(/\s+/g, '');
+        const rPr = buildRPr({ bold, italic, fontSize: font_size, fontName: font_name, color });
+        const styleXml = `<w:style w:type="character" w:styleId="${escapeXml(safeId)}"><w:name w:val="${escapeXml(style_name)}"/><w:basedOn w:val="${escapeXml(base_style || 'DefaultParagraphFont')}"/>${rPr ? `<w:rPr>${rPr.replace(/^<w:rPr>|<\/w:rPr>$/g, '')}</w:rPr>` : ''}</w:style>`;
+        const updated = stylesXml.replace('</w:styles>', `${styleXml}</w:styles>`);
+        setZipEntry(zip, 'word/styles.xml', updated);
+        return { content: [{ type: 'text' as const, text: `Style "${style_name}" created.` }] };
+      });
     }
   );
 
@@ -804,41 +973,41 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, paragraph_index, bold, italic, underline, color, font_size, font_name }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      if (paragraph_index >= paras.length) throw new Error(`Index ${paragraph_index} out of range`);
-      const para = paras[paragraph_index];
-      const runs = (para as any).getElementsByTagNameNS(W_NS, 'r');
-      for (let i = 0; i < runs.length; i++) {
-        const r = runs[i];
-        let rPrEl = (r as any).getElementsByTagNameNS(W_NS, 'rPr')[0];
-        if (!rPrEl) {
-          rPrEl = mkEl(doc, 'w:rPr');
-          r.insertBefore(rPrEl, r.firstChild);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        if (paragraph_index >= paras.length) throw new Error(`Index ${paragraph_index} out of range`);
+        const para = paras[paragraph_index];
+        const runs = (para as any).getElementsByTagNameNS(W_NS, 'r');
+        for (let i = 0; i < runs.length; i++) {
+          const r = runs[i];
+          let rPrEl = (r as any).getElementsByTagNameNS(W_NS, 'rPr')[0];
+          if (!rPrEl) {
+            rPrEl = mkEl(doc, 'w:rPr');
+            r.insertBefore(rPrEl, r.firstChild);
+          }
+          if (bold) rPrEl.appendChild(mkEl(doc, 'w:b'));
+          if (italic) rPrEl.appendChild(mkEl(doc, 'w:i'));
+          if (underline) {
+            const u = mkEl(doc, 'w:u'); setAttr(u, 'w:val', 'single'); rPrEl.appendChild(u);
+          }
+          if (color) {
+            const c = mkEl(doc, 'w:color'); setAttr(c, 'w:val', color.replace('#', '')); rPrEl.appendChild(c);
+          }
+          if (font_size) {
+            const sz = mkEl(doc, 'w:sz'); setAttr(sz, 'w:val', String(font_size * 2)); rPrEl.appendChild(sz);
+            const szCs = mkEl(doc, 'w:szCs'); setAttr(szCs, 'w:val', String(font_size * 2)); rPrEl.appendChild(szCs);
+          }
+          if (font_name) {
+            const rf = mkEl(doc, 'w:rFonts');
+            setAttr(rf, 'w:ascii', font_name); setAttr(rf, 'w:hAnsi', font_name); rPrEl.insertBefore(rf, rPrEl.firstChild);
+          }
         }
-        if (bold) rPrEl.appendChild(mkEl(doc, 'w:b'));
-        if (italic) rPrEl.appendChild(mkEl(doc, 'w:i'));
-        if (underline) {
-          const u = mkEl(doc, 'w:u'); setAttr(u, 'w:val', 'single'); rPrEl.appendChild(u);
-        }
-        if (color) {
-          const c = mkEl(doc, 'w:color'); setAttr(c, 'w:val', color.replace('#', '')); rPrEl.appendChild(c);
-        }
-        if (font_size) {
-          const sz = mkEl(doc, 'w:sz'); setAttr(sz, 'w:val', String(font_size * 2)); rPrEl.appendChild(sz);
-          const szCs = mkEl(doc, 'w:szCs'); setAttr(szCs, 'w:val', String(font_size * 2)); rPrEl.appendChild(szCs);
-        }
-        if (font_name) {
-          const rf = mkEl(doc, 'w:rFonts');
-          setAttr(rf, 'w:ascii', font_name); setAttr(rf, 'w:hAnsi', font_name); rPrEl.insertBefore(rf, rPrEl.firstChild);
-        }
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Formatting applied to paragraph ${paragraph_index}.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Formatting applied to paragraph ${paragraph_index}.` }] };
+      });
     }
   );
 
@@ -854,36 +1023,36 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, border_style, shading }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
-      const tbl = tables[table_index];
-      let tblPr = (tbl as any).getElementsByTagNameNS(W_NS, 'tblPr')[0];
-      if (!tblPr) { tblPr = mkEl(doc, 'w:tblPr'); tbl.insertBefore(tblPr, tbl.firstChild); }
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
+        const tbl = tables[table_index];
+        let tblPr = (tbl as any).getElementsByTagNameNS(W_NS, 'tblPr')[0];
+        if (!tblPr) { tblPr = mkEl(doc, 'w:tblPr'); tbl.insertBefore(tblPr, tbl.firstChild); }
 
-      const bs = border_style || 'single';
-      const bXml = bs === 'none'
-        ? '<w:tblBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tblBorders>'
-        : `<w:tblBorders><w:top w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders>`;
+        const bs = border_style || 'single';
+        const bXml = bs === 'none'
+          ? '<w:tblBorders><w:top w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:left w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:bottom w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:right w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideH w:val="none" w:sz="0" w:space="0" w:color="auto"/><w:insideV w:val="none" w:sz="0" w:space="0" w:color="auto"/></w:tblBorders>'
+          : `<w:tblBorders><w:top w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:left w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:bottom w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:right w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:insideH w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/><w:insideV w:val="${bs}" w:sz="4" w:space="0" w:color="auto"/></w:tblBorders>`;
 
-      const borderEl = importFragment(bXml, doc);
-      const existingBorder = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblBorders')[0];
-      if (existingBorder) tblPr.replaceChild(borderEl, existingBorder);
-      else tblPr.appendChild(borderEl);
+        const borderEl = importFragment(bXml, doc);
+        const existingBorder = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblBorders')[0];
+        if (existingBorder) tblPr.replaceChild(borderEl, existingBorder);
+        else tblPr.appendChild(borderEl);
 
-      if (shading) {
-        const shdEl = importFragment(`<w:shd w:val="clear" w:color="auto" w:fill="${escapeXml(shading.replace('#', ''))}"/>`, doc);
-        const existing = (tblPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
-        if (existing) tblPr.replaceChild(shdEl, existing);
-        else tblPr.appendChild(shdEl);
-      }
+        if (shading) {
+          const shdEl = importFragment(`<w:shd w:val="clear" w:color="auto" w:fill="${escapeXml(shading.replace('#', ''))}"/>`, doc);
+          const existing = (tblPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
+          if (existing) tblPr.replaceChild(shdEl, existing);
+          else tblPr.appendChild(shdEl);
+        }
 
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Table ${table_index} formatted.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Table ${table_index} formatted.` }] };
+      });
     }
   );
 
@@ -900,26 +1069,26 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, row_index, col_index, fill_color, pattern }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      if (row_index >= rows.length) throw new Error(`Row index ${row_index} out of range`);
-      const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
-      if (col_index >= cells.length) throw new Error(`Col index ${col_index} out of range`);
-      const cell = cells[col_index];
-      let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-      if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
-      const shdEl = importFragment(`<w:shd w:val="${escapeXml(pattern || 'clear')}" w:color="auto" w:fill="${escapeXml(fill_color.replace('#', ''))}"/>`, doc);
-      const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
-      if (existing) tcPr.replaceChild(shdEl, existing);
-      else tcPr.appendChild(shdEl);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] shading set to ${fill_color}.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        if (row_index >= rows.length) throw new Error(`Row index ${row_index} out of range`);
+        const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
+        if (col_index >= cells.length) throw new Error(`Col index ${col_index} out of range`);
+        const cell = cells[col_index];
+        let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
+        const shdEl = importFragment(`<w:shd w:val="${escapeXml(pattern || 'clear')}" w:color="auto" w:fill="${escapeXml(fill_color.replace('#', ''))}"/>`, doc);
+        const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
+        if (existing) tcPr.replaceChild(shdEl, existing);
+        else tcPr.appendChild(shdEl);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] shading set to ${fill_color}.` }] };
+      });
     }
   );
 
@@ -934,31 +1103,31 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, color1, color2 }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      const c1 = (color1 || 'FFFFFF').replace('#', '');
-      const c2 = (color2 || 'F2F2F2').replace('#', '');
-      for (let r = 0; r < rows.length; r++) {
-        const fill = r % 2 === 0 ? c1 : c2;
-        const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
-        for (let c = 0; c < cells.length; c++) {
-          const cell = cells[c];
-          let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-          if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
-          const shdEl = importFragment(`<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>`, doc);
-          const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
-          if (existing) tcPr.replaceChild(shdEl, existing);
-          else tcPr.appendChild(shdEl);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        const c1 = (color1 || 'FFFFFF').replace('#', '');
+        const c2 = (color2 || 'F2F2F2').replace('#', '');
+        for (let r = 0; r < rows.length; r++) {
+          const fill = r % 2 === 0 ? c1 : c2;
+          const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
+          for (let c = 0; c < cells.length; c++) {
+            const cell = cells[c];
+            let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+            if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
+            const shdEl = importFragment(`<w:shd w:val="clear" w:color="auto" w:fill="${fill}"/>`, doc);
+            const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
+            if (existing) tcPr.replaceChild(shdEl, existing);
+            else tcPr.appendChild(shdEl);
+          }
         }
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Alternating row colors applied to table ${table_index}.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Alternating row colors applied to table ${table_index}.` }] };
+      });
     }
   );
 
@@ -973,38 +1142,38 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, header_color, text_color }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      if (rows.length === 0) throw new Error('Table has no rows');
-      const hc = (header_color || '4472C4').replace('#', '');
-      const tc = (text_color || 'FFFFFF').replace('#', '');
-      const cells = (rows[0] as any).getElementsByTagNameNS(W_NS, 'tc');
-      for (let c = 0; c < cells.length; c++) {
-        const cell = cells[c];
-        let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
-        const shdEl = importFragment(`<w:shd w:val="clear" w:color="auto" w:fill="${hc}"/>`, doc);
-        const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
-        if (existing) tcPr.replaceChild(shdEl, existing);
-        else tcPr.appendChild(shdEl);
-        // Color text in cell
-        const tNodes = (cell as any).getElementsByTagNameNS(W_NS, 't');
-        for (let t = 0; t < tNodes.length; t++) {
-          const run = tNodes[t].parentNode;
-          let rPrEl = (run as any).getElementsByTagNameNS(W_NS, 'rPr')[0];
-          if (!rPrEl) { rPrEl = mkEl(doc, 'w:rPr'); run.insertBefore(rPrEl, run.firstChild); }
-          const colorEl = mkEl(doc, 'w:color'); setAttr(colorEl, 'w:val', tc); rPrEl.appendChild(colorEl);
-          const boldEl = mkEl(doc, 'w:b'); rPrEl.appendChild(boldEl);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        if (rows.length === 0) throw new Error('Table has no rows');
+        const hc = (header_color || '4472C4').replace('#', '');
+        const tc = (text_color || 'FFFFFF').replace('#', '');
+        const cells = (rows[0] as any).getElementsByTagNameNS(W_NS, 'tc');
+        for (let c = 0; c < cells.length; c++) {
+          const cell = cells[c];
+          let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+          if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
+          const shdEl = importFragment(`<w:shd w:val="clear" w:color="auto" w:fill="${hc}"/>`, doc);
+          const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'shd')[0];
+          if (existing) tcPr.replaceChild(shdEl, existing);
+          else tcPr.appendChild(shdEl);
+          // Color text in cell
+          const tNodes = (cell as any).getElementsByTagNameNS(W_NS, 't');
+          for (let t = 0; t < tNodes.length; t++) {
+            const run = tNodes[t].parentNode;
+            let rPrEl = (run as any).getElementsByTagNameNS(W_NS, 'rPr')[0];
+            if (!rPrEl) { rPrEl = mkEl(doc, 'w:rPr'); run.insertBefore(rPrEl, run.firstChild); }
+            const colorEl = mkEl(doc, 'w:color'); setAttr(colorEl, 'w:val', tc); rPrEl.appendChild(colorEl);
+            const boldEl = mkEl(doc, 'w:b'); rPrEl.appendChild(boldEl);
+          }
         }
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Header row of table ${table_index} highlighted.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Header row of table ${table_index} highlighted.` }] };
+      });
     }
   );
 
@@ -1021,36 +1190,36 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, row_index, col_index, horizontal, vertical }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
-      const cell = cells[col_index];
-      let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-      if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
-      if (vertical) {
-        const va = mkEl(doc, 'w:vAlign'); setAttr(va, 'w:val', vertical);
-        const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vAlign')[0];
-        if (existing) tcPr.replaceChild(va, existing); else tcPr.appendChild(va);
-      }
-      if (horizontal) {
-        const paras = (cell as any).getElementsByTagNameNS(W_NS, 'p');
-        for (let i = 0; i < paras.length; i++) {
-          const p = paras[i];
-          let pPr = (p as any).getElementsByTagNameNS(W_NS, 'pPr')[0];
-          if (!pPr) { pPr = mkEl(doc, 'w:pPr'); p.insertBefore(pPr, p.firstChild); }
-          const jc = mkEl(doc, 'w:jc'); setAttr(jc, 'w:val', horizontal);
-          const existing = (pPr as any).getElementsByTagNameNS(W_NS, 'jc')[0];
-          if (existing) pPr.replaceChild(jc, existing); else pPr.appendChild(jc);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        if (table_index >= tables.length) throw new Error(`Table index ${table_index} out of range`);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
+        const cell = cells[col_index];
+        let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
+        if (vertical) {
+          const va = mkEl(doc, 'w:vAlign'); setAttr(va, 'w:val', vertical);
+          const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vAlign')[0];
+          if (existing) tcPr.replaceChild(va, existing); else tcPr.appendChild(va);
         }
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] alignment set.` }] };
+        if (horizontal) {
+          const paras = (cell as any).getElementsByTagNameNS(W_NS, 'p');
+          for (let i = 0; i < paras.length; i++) {
+            const p = paras[i];
+            let pPr = (p as any).getElementsByTagNameNS(W_NS, 'pPr')[0];
+            if (!pPr) { pPr = mkEl(doc, 'w:pPr'); p.insertBefore(pPr, p.firstChild); }
+            const jc = mkEl(doc, 'w:jc'); setAttr(jc, 'w:val', horizontal);
+            const existing = (pPr as any).getElementsByTagNameNS(W_NS, 'jc')[0];
+            if (existing) pPr.replaceChild(jc, existing); else pPr.appendChild(jc);
+          }
+        }
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] alignment set.` }] };
+      });
     }
   );
 
@@ -1071,47 +1240,47 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, start_row, start_col, end_row, end_col }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      const span = end_col - start_col + 1;
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        const span = end_col - start_col + 1;
 
-      for (let r = start_row; r <= end_row; r++) {
-        const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
-        const startCell = cells[start_col];
-        let tcPr = (startCell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); startCell.insertBefore(tcPr, startCell.firstChild); }
+        for (let r = start_row; r <= end_row; r++) {
+          const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
+          const startCell = cells[start_col];
+          let tcPr = (startCell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+          if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); startCell.insertBefore(tcPr, startCell.firstChild); }
 
-        if (span > 1) {
-          const gs = mkEl(doc, 'w:gridSpan'); setAttr(gs, 'w:val', String(span));
-          const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'gridSpan')[0];
-          if (existing) tcPr.replaceChild(gs, existing); else tcPr.insertBefore(gs, tcPr.firstChild);
-        }
-        if (r > start_row) {
-          const vm = mkEl(doc, 'w:vMerge');
-          const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vMerge')[0];
-          if (existing) tcPr.replaceChild(vm, existing); else tcPr.appendChild(vm);
-        } else if (end_row > start_row) {
-          const vm = mkEl(doc, 'w:vMerge'); setAttr(vm, 'w:val', 'restart');
-          const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vMerge')[0];
-          if (existing) tcPr.replaceChild(vm, existing); else tcPr.appendChild(vm);
-        }
+          if (span > 1) {
+            const gs = mkEl(doc, 'w:gridSpan'); setAttr(gs, 'w:val', String(span));
+            const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'gridSpan')[0];
+            if (existing) tcPr.replaceChild(gs, existing); else tcPr.insertBefore(gs, tcPr.firstChild);
+          }
+          if (r > start_row) {
+            const vm = mkEl(doc, 'w:vMerge');
+            const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vMerge')[0];
+            if (existing) tcPr.replaceChild(vm, existing); else tcPr.appendChild(vm);
+          } else if (end_row > start_row) {
+            const vm = mkEl(doc, 'w:vMerge'); setAttr(vm, 'w:val', 'restart');
+            const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vMerge')[0];
+            if (existing) tcPr.replaceChild(vm, existing); else tcPr.appendChild(vm);
+          }
 
-        // Remove extra cells in the row (for horizontal merge)
-        if (span > 1) {
-          for (let c = end_col; c > start_col; c--) {
-            const cellToRemove = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc')[c];
-            if (cellToRemove) cellToRemove.parentNode!.removeChild(cellToRemove);
+          // Remove extra cells in the row (for horizontal merge)
+          if (span > 1) {
+            for (let c = end_col; c > start_col; c--) {
+              const cellToRemove = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc')[c];
+              if (cellToRemove) cellToRemove.parentNode!.removeChild(cellToRemove);
+            }
           }
         }
-      }
 
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Cells [${start_row},${start_col}]–[${end_row},${end_col}] merged.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Cells [${start_row},${start_col}]–[${end_row},${end_col}] merged.` }] };
+      });
     }
   );
 
@@ -1127,27 +1296,27 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, row_index, start_col, end_col }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
-      const span = end_col - start_col + 1;
-      const startCell = cells[start_col];
-      let tcPr = (startCell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-      if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); startCell.insertBefore(tcPr, startCell.firstChild); }
-      const gs = mkEl(doc, 'w:gridSpan'); setAttr(gs, 'w:val', String(span));
-      const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'gridSpan')[0];
-      if (existing) tcPr.replaceChild(gs, existing); else tcPr.insertBefore(gs, tcPr.firstChild);
-      for (let c = end_col; c > start_col; c--) {
-        const cellsNow = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
-        if (cellsNow[c]) cellsNow[c].parentNode!.removeChild(cellsNow[c]);
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Row ${row_index} cells ${start_col}–${end_col} merged.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
+        const span = end_col - start_col + 1;
+        const startCell = cells[start_col];
+        let tcPr = (startCell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); startCell.insertBefore(tcPr, startCell.firstChild); }
+        const gs = mkEl(doc, 'w:gridSpan'); setAttr(gs, 'w:val', String(span));
+        const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'gridSpan')[0];
+        if (existing) tcPr.replaceChild(gs, existing); else tcPr.insertBefore(gs, tcPr.firstChild);
+        for (let c = end_col; c > start_col; c--) {
+          const cellsNow = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
+          if (cellsNow[c]) cellsNow[c].parentNode!.removeChild(cellsNow[c]);
+        }
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Row ${row_index} cells ${start_col}–${end_col} merged.` }] };
+      });
     }
   );
 
@@ -1163,25 +1332,25 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, col_index, start_row, end_row }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      for (let r = start_row; r <= end_row; r++) {
-        const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
-        const cell = cells[col_index];
-        let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
-        const vm = mkEl(doc, 'w:vMerge');
-        if (r === start_row) setAttr(vm, 'w:val', 'restart');
-        const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vMerge')[0];
-        if (existing) tcPr.replaceChild(vm, existing); else tcPr.appendChild(vm);
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Column ${col_index} rows ${start_row}–${end_row} merged.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        for (let r = start_row; r <= end_row; r++) {
+          const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
+          const cell = cells[col_index];
+          let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+          if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
+          const vm = mkEl(doc, 'w:vMerge');
+          if (r === start_row) setAttr(vm, 'w:val', 'restart');
+          const existing = (tcPr as any).getElementsByTagNameNS(W_NS, 'vMerge')[0];
+          if (existing) tcPr.replaceChild(vm, existing); else tcPr.appendChild(vm);
+        }
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Column ${col_index} rows ${start_row}–${end_row} merged.` }] };
+      });
     }
   );
 
@@ -1196,35 +1365,35 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, horizontal, vertical }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const cells = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tc');
-      for (let i = 0; i < cells.length; i++) {
-        const cell = cells[i];
-        let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
-        if (vertical) {
-          const va = mkEl(doc, 'w:vAlign'); setAttr(va, 'w:val', vertical);
-          const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'vAlign')[0];
-          if (ex) tcPr.replaceChild(va, ex); else tcPr.appendChild(va);
-        }
-        if (horizontal) {
-          const paras = (cell as any).getElementsByTagNameNS(W_NS, 'p');
-          for (let p = 0; p < paras.length; p++) {
-            let pPr = (paras[p] as any).getElementsByTagNameNS(W_NS, 'pPr')[0];
-            if (!pPr) { pPr = mkEl(doc, 'w:pPr'); paras[p].insertBefore(pPr, paras[p].firstChild); }
-            const jc = mkEl(doc, 'w:jc'); setAttr(jc, 'w:val', horizontal);
-            const ex = (pPr as any).getElementsByTagNameNS(W_NS, 'jc')[0];
-            if (ex) pPr.replaceChild(jc, ex); else pPr.appendChild(jc);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const cells = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tc');
+        for (let i = 0; i < cells.length; i++) {
+          const cell = cells[i];
+          let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+          if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
+          if (vertical) {
+            const va = mkEl(doc, 'w:vAlign'); setAttr(va, 'w:val', vertical);
+            const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'vAlign')[0];
+            if (ex) tcPr.replaceChild(va, ex); else tcPr.appendChild(va);
+          }
+          if (horizontal) {
+            const paras = (cell as any).getElementsByTagNameNS(W_NS, 'p');
+            for (let p = 0; p < paras.length; p++) {
+              let pPr = (paras[p] as any).getElementsByTagNameNS(W_NS, 'pPr')[0];
+              if (!pPr) { pPr = mkEl(doc, 'w:pPr'); paras[p].insertBefore(pPr, paras[p].firstChild); }
+              const jc = mkEl(doc, 'w:jc'); setAttr(jc, 'w:val', horizontal);
+              const ex = (pPr as any).getElementsByTagNameNS(W_NS, 'jc')[0];
+              if (ex) pPr.replaceChild(jc, ex); else pPr.appendChild(jc);
+            }
           }
         }
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `All cells in table ${table_index} alignment set.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `All cells in table ${table_index} alignment set.` }] };
+      });
     }
   );
 
@@ -1240,31 +1409,31 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, col_index, width, width_type }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const tbl = tables[table_index];
-      const gridCols = (tbl as any).getElementsByTagNameNS(W_NS, 'gridCol');
-      if (col_index >= gridCols.length) throw new Error(`Column ${col_index} out of range`);
-      setAttr(gridCols[col_index], 'w:w', String(width));
-      // Also update tcW in each row
-      const rows = (tbl as any).getElementsByTagNameNS(W_NS, 'tr');
-      const wt = width_type || 'dxa';
-      for (let r = 0; r < rows.length; r++) {
-        const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
-        if (col_index < cells.length) {
-          let tcPr = (cells[col_index] as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-          if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cells[col_index].insertBefore(tcPr, cells[col_index].firstChild); }
-          const tcW = mkEl(doc, 'w:tcW'); setAttr(tcW, 'w:w', String(width)); setAttr(tcW, 'w:type', wt);
-          const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'tcW')[0];
-          if (ex) tcPr.replaceChild(tcW, ex); else tcPr.insertBefore(tcW, tcPr.firstChild);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const tbl = tables[table_index];
+        const gridCols = (tbl as any).getElementsByTagNameNS(W_NS, 'gridCol');
+        if (col_index >= gridCols.length) throw new Error(`Column ${col_index} out of range`);
+        setAttr(gridCols[col_index], 'w:w', String(width));
+        // Also update tcW in each row
+        const rows = (tbl as any).getElementsByTagNameNS(W_NS, 'tr');
+        const wt = width_type || 'dxa';
+        for (let r = 0; r < rows.length; r++) {
+          const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
+          if (col_index < cells.length) {
+            let tcPr = (cells[col_index] as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+            if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cells[col_index].insertBefore(tcPr, cells[col_index].firstChild); }
+            const tcW = mkEl(doc, 'w:tcW'); setAttr(tcW, 'w:w', String(width)); setAttr(tcW, 'w:type', wt);
+            const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'tcW')[0];
+            if (ex) tcPr.replaceChild(tcW, ex); else tcPr.insertBefore(tcW, tcPr.firstChild);
+          }
         }
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Column ${col_index} width set to ${width} ${wt}.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Column ${col_index} width set to ${width} ${wt}.` }] };
+      });
     }
   );
 
@@ -1279,31 +1448,31 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, widths, width_type }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const tbl = tables[table_index];
-      const gridCols = (tbl as any).getElementsByTagNameNS(W_NS, 'gridCol');
-      const wt = width_type || 'dxa';
-      for (let c = 0; c < Math.min(widths.length, gridCols.length); c++) {
-        setAttr(gridCols[c], 'w:w', String(widths[c]));
-        const rows = (tbl as any).getElementsByTagNameNS(W_NS, 'tr');
-        for (let r = 0; r < rows.length; r++) {
-          const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
-          if (c < cells.length) {
-            let tcPr = (cells[c] as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-            if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cells[c].insertBefore(tcPr, cells[c].firstChild); }
-            const tcW = mkEl(doc, 'w:tcW'); setAttr(tcW, 'w:w', String(widths[c])); setAttr(tcW, 'w:type', wt);
-            const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'tcW')[0];
-            if (ex) tcPr.replaceChild(tcW, ex); else tcPr.insertBefore(tcW, tcPr.firstChild);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const tbl = tables[table_index];
+        const gridCols = (tbl as any).getElementsByTagNameNS(W_NS, 'gridCol');
+        const wt = width_type || 'dxa';
+        for (let c = 0; c < Math.min(widths.length, gridCols.length); c++) {
+          setAttr(gridCols[c], 'w:w', String(widths[c]));
+          const rows = (tbl as any).getElementsByTagNameNS(W_NS, 'tr');
+          for (let r = 0; r < rows.length; r++) {
+            const cells = (rows[r] as any).getElementsByTagNameNS(W_NS, 'tc');
+            if (c < cells.length) {
+              let tcPr = (cells[c] as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+              if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cells[c].insertBefore(tcPr, cells[c].firstChild); }
+              const tcW = mkEl(doc, 'w:tcW'); setAttr(tcW, 'w:w', String(widths[c])); setAttr(tcW, 'w:type', wt);
+              const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'tcW')[0];
+              if (ex) tcPr.replaceChild(tcW, ex); else tcPr.insertBefore(tcW, tcPr.firstChild);
+            }
           }
         }
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Column widths set for table ${table_index}.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Column widths set for table ${table_index}.` }] };
+      });
     }
   );
 
@@ -1318,21 +1487,21 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, width, width_type }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const tbl = tables[table_index];
-      let tblPr = (tbl as any).getElementsByTagNameNS(W_NS, 'tblPr')[0];
-      if (!tblPr) { tblPr = mkEl(doc, 'w:tblPr'); tbl.insertBefore(tblPr, tbl.firstChild); }
-      const wt = width_type || 'dxa';
-      const tblW = mkEl(doc, 'w:tblW'); setAttr(tblW, 'w:w', String(width)); setAttr(tblW, 'w:type', wt);
-      const ex = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblW')[0];
-      if (ex) tblPr.replaceChild(tblW, ex); else tblPr.insertBefore(tblW, tblPr.firstChild);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Table ${table_index} width set to ${width} ${wt}.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const tbl = tables[table_index];
+        let tblPr = (tbl as any).getElementsByTagNameNS(W_NS, 'tblPr')[0];
+        if (!tblPr) { tblPr = mkEl(doc, 'w:tblPr'); tbl.insertBefore(tblPr, tbl.firstChild); }
+        const wt = width_type || 'dxa';
+        const tblW = mkEl(doc, 'w:tblW'); setAttr(tblW, 'w:w', String(width)); setAttr(tblW, 'w:type', wt);
+        const ex = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblW')[0];
+        if (ex) tblPr.replaceChild(tblW, ex); else tblPr.insertBefore(tblW, tblPr.firstChild);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Table ${table_index} width set to ${width} ${wt}.` }] };
+      });
     }
   );
 
@@ -1345,24 +1514,24 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const tbl = tables[table_index];
-      let tblPr = (tbl as any).getElementsByTagNameNS(W_NS, 'tblPr')[0];
-      if (!tblPr) { tblPr = mkEl(doc, 'w:tblPr'); tbl.insertBefore(tblPr, tbl.firstChild); }
-      const layout = mkEl(doc, 'w:tblLayout'); setAttr(layout, 'w:type', 'autofit');
-      const ex = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblLayout')[0];
-      if (ex) tblPr.replaceChild(layout, ex); else tblPr.appendChild(layout);
-      // Set tblW to auto
-      const tblW = mkEl(doc, 'w:tblW'); setAttr(tblW, 'w:w', '0'); setAttr(tblW, 'w:type', 'auto');
-      const exW = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblW')[0];
-      if (exW) tblPr.replaceChild(tblW, exW); else tblPr.insertBefore(tblW, tblPr.firstChild);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Table ${table_index} set to auto-fit.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const tbl = tables[table_index];
+        let tblPr = (tbl as any).getElementsByTagNameNS(W_NS, 'tblPr')[0];
+        if (!tblPr) { tblPr = mkEl(doc, 'w:tblPr'); tbl.insertBefore(tblPr, tbl.firstChild); }
+        const layout = mkEl(doc, 'w:tblLayout'); setAttr(layout, 'w:type', 'autofit');
+        const ex = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblLayout')[0];
+        if (ex) tblPr.replaceChild(layout, ex); else tblPr.appendChild(layout);
+        // Set tblW to auto
+        const tblW = mkEl(doc, 'w:tblW'); setAttr(tblW, 'w:w', '0'); setAttr(tblW, 'w:type', 'auto');
+        const exW = (tblPr as any).getElementsByTagNameNS(W_NS, 'tblW')[0];
+        if (exW) tblPr.replaceChild(tblW, exW); else tblPr.insertBefore(tblW, tblPr.firstChild);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Table ${table_index} set to auto-fit.` }] };
+      });
     }
   );
 
@@ -1384,40 +1553,40 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, row_index, col_index, text_content, bold, italic, underline, color, font_size, font_name }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
-      const cell = cells[col_index];
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
+        const cell = cells[col_index];
 
-      if (text_content !== undefined) {
-        // Replace all paragraphs in cell with a new one
-        const paras = (cell as any).getElementsByTagNameNS(W_NS, 'p');
-        const newPara = importFragment(buildParaXml(text_content, { bold, italic, underline, color, fontSize: font_size, fontName: font_name }), doc);
-        if (paras.length > 0) cell.replaceChild(newPara, paras[0]);
-        else cell.appendChild(newPara);
-        for (let i = paras.length - 1; i >= 1; i--) cell.removeChild(paras[i]);
-      } else {
-        const runs = (cell as any).getElementsByTagNameNS(W_NS, 'r');
-        for (let i = 0; i < runs.length; i++) {
-          const r = runs[i];
-          let rPrEl = (r as any).getElementsByTagNameNS(W_NS, 'rPr')[0];
-          if (!rPrEl) { rPrEl = mkEl(doc, 'w:rPr'); r.insertBefore(rPrEl, r.firstChild); }
-          if (bold) rPrEl.appendChild(mkEl(doc, 'w:b'));
-          if (italic) rPrEl.appendChild(mkEl(doc, 'w:i'));
-          if (underline) { const u = mkEl(doc, 'w:u'); setAttr(u, 'w:val', 'single'); rPrEl.appendChild(u); }
-          if (color) { const c = mkEl(doc, 'w:color'); setAttr(c, 'w:val', color.replace('#', '')); rPrEl.appendChild(c); }
-          if (font_size) { const sz = mkEl(doc, 'w:sz'); setAttr(sz, 'w:val', String(font_size * 2)); rPrEl.appendChild(sz); }
-          if (font_name) { const rf = mkEl(doc, 'w:rFonts'); setAttr(rf, 'w:ascii', font_name); setAttr(rf, 'w:hAnsi', font_name); rPrEl.insertBefore(rf, rPrEl.firstChild); }
+        if (text_content !== undefined) {
+          // Replace all paragraphs in cell with a new one
+          const paras = (cell as any).getElementsByTagNameNS(W_NS, 'p');
+          const newPara = importFragment(buildParaXml(text_content, { bold, italic, underline, color, fontSize: font_size, fontName: font_name }), doc);
+          if (paras.length > 0) cell.replaceChild(newPara, paras[0]);
+          else cell.appendChild(newPara);
+          for (let i = paras.length - 1; i >= 1; i--) cell.removeChild(paras[i]);
+        } else {
+          const runs = (cell as any).getElementsByTagNameNS(W_NS, 'r');
+          for (let i = 0; i < runs.length; i++) {
+            const r = runs[i];
+            let rPrEl = (r as any).getElementsByTagNameNS(W_NS, 'rPr')[0];
+            if (!rPrEl) { rPrEl = mkEl(doc, 'w:rPr'); r.insertBefore(rPrEl, r.firstChild); }
+            if (bold) rPrEl.appendChild(mkEl(doc, 'w:b'));
+            if (italic) rPrEl.appendChild(mkEl(doc, 'w:i'));
+            if (underline) { const u = mkEl(doc, 'w:u'); setAttr(u, 'w:val', 'single'); rPrEl.appendChild(u); }
+            if (color) { const c = mkEl(doc, 'w:color'); setAttr(c, 'w:val', color.replace('#', '')); rPrEl.appendChild(c); }
+            if (font_size) { const sz = mkEl(doc, 'w:sz'); setAttr(sz, 'w:val', String(font_size * 2)); rPrEl.appendChild(sz); }
+            if (font_name) { const rf = mkEl(doc, 'w:rFonts'); setAttr(rf, 'w:ascii', font_name); setAttr(rf, 'w:hAnsi', font_name); rPrEl.insertBefore(rf, rPrEl.firstChild); }
+          }
         }
-      }
 
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] formatted.` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] formatted.` }] };
+      });
     }
   );
 
@@ -1437,31 +1606,31 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, table_index, row_index, col_index, top, bottom, left, right, unit }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const tables = bodyTables(body);
-      const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
-      const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
-      const cell = cells[col_index];
-      let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
-      if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
-      const u = unit || 'dxa';
-      const sides = [
-        top !== undefined ? `<w:top w:w="${top}" w:type="${u}"/>` : '',
-        left !== undefined ? `<w:left w:w="${left}" w:type="${u}"/>` : '',
-        bottom !== undefined ? `<w:bottom w:w="${bottom}" w:type="${u}"/>` : '',
-        right !== undefined ? `<w:right w:w="${right}" w:type="${u}"/>` : '',
-      ].filter(Boolean).join('');
-      if (sides) {
-        const marEl = importFragment(`<w:tcMar>${sides}</w:tcMar>`, doc);
-        const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'tcMar')[0];
-        if (ex) tcPr.replaceChild(marEl, ex); else tcPr.appendChild(marEl);
-      }
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] padding set.` }] };
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const tables = bodyTables(body);
+        const rows = (tables[table_index] as any).getElementsByTagNameNS(W_NS, 'tr');
+        const cells = (rows[row_index] as any).getElementsByTagNameNS(W_NS, 'tc');
+        const cell = cells[col_index];
+        let tcPr = (cell as any).getElementsByTagNameNS(W_NS, 'tcPr')[0];
+        if (!tcPr) { tcPr = mkEl(doc, 'w:tcPr'); cell.insertBefore(tcPr, cell.firstChild); }
+        const u = unit || 'dxa';
+        const sides = [
+          top !== undefined ? `<w:top w:w="${top}" w:type="${u}"/>` : '',
+          left !== undefined ? `<w:left w:w="${left}" w:type="${u}"/>` : '',
+          bottom !== undefined ? `<w:bottom w:w="${bottom}" w:type="${u}"/>` : '',
+          right !== undefined ? `<w:right w:w="${right}" w:type="${u}"/>` : '',
+        ].filter(Boolean).join('');
+        if (sides) {
+          const marEl = importFragment(`<w:tcMar>${sides}</w:tcMar>`, doc);
+          const ex = (tcPr as any).getElementsByTagNameNS(W_NS, 'tcMar')[0];
+          if (ex) tcPr.replaceChild(marEl, ex); else tcPr.appendChild(marEl);
+        }
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Cell [${row_index},${col_index}] padding set.` }] };
+      });
     }
   );
 
@@ -1478,20 +1647,20 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, password }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      let settingsXml = getZipEntry(zip, 'word/settings.xml');
-      if (!settingsXml) throw new Error('word/settings.xml not found in document');
-      const { salt, hash, spinCount } = computePasswordHash(password);
-      const protection = `<w:documentProtection w:edit="readOnly" w:enforcement="1" w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny" w:cryptAlgorithmSid="14" w:cryptSpinCount="${spinCount}" w:salt="${escapeXml(salt)}" w:hash="${escapeXml(hash)}"/>`;
-      const existing = settingsXml.match(/<w:documentProtection[^/]*\/>/);
-      if (existing) {
-        settingsXml = settingsXml.replace(existing[0], protection);
-      } else {
-        settingsXml = settingsXml.replace('</w:settings>', `${protection}</w:settings>`);
-      }
-      setZipEntry(zip, 'word/settings.xml', settingsXml);
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: 'Document protection enabled.' }] };
+      return withDocxWrite(filepath, (zip) => {
+        let settingsXml = getZipEntry(zip, 'word/settings.xml');
+        if (!settingsXml) throw new Error('word/settings.xml not found in document');
+        const { salt, hash, spinCount } = computePasswordHash(password);
+        const protection = `<w:documentProtection w:edit="readOnly" w:enforcement="1" w:cryptProviderType="rsaAES" w:cryptAlgorithmClass="hash" w:cryptAlgorithmType="typeAny" w:cryptAlgorithmSid="14" w:cryptSpinCount="${spinCount}" w:salt="${escapeXml(salt)}" w:hash="${escapeXml(hash)}"/>`;
+        const existing = settingsXml.match(/<w:documentProtection[^/]*\/>/);
+        if (existing) {
+          settingsXml = settingsXml.replace(existing[0], protection);
+        } else {
+          settingsXml = settingsXml.replace('</w:settings>', `${protection}</w:settings>`);
+        }
+        setZipEntry(zip, 'word/settings.xml', settingsXml);
+        return { content: [{ type: 'text' as const, text: 'Document protection enabled.' }] };
+      });
     }
   );
 
@@ -1504,13 +1673,13 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      let settingsXml = getZipEntry(zip, 'word/settings.xml');
-      if (!settingsXml) throw new Error('word/settings.xml not found in document');
-      settingsXml = settingsXml.replace(/<w:documentProtection[^/]*\/>/g, '');
-      setZipEntry(zip, 'word/settings.xml', settingsXml);
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: 'Document protection removed.' }] };
+      return withDocxWrite(filepath, (zip) => {
+        let settingsXml = getZipEntry(zip, 'word/settings.xml');
+        if (!settingsXml) throw new Error('word/settings.xml not found in document');
+        settingsXml = settingsXml.replace(/<w:documentProtection[^/]*\/>/g, '');
+        setZipEntry(zip, 'word/settings.xml', settingsXml);
+        return { content: [{ type: 'text' as const, text: 'Document protection removed.' }] };
+      });
     }
   );
 
@@ -1528,24 +1697,24 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, paragraph_index, footnote_text }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      ensureFootnotes(zip);
-      let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
-      const fnId = getNextNoteId(fnXml, 'footnote');
-      const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
-      fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
-      setZipEntry(zip, 'word/footnotes.xml', fnXml);
+      return withDocxWrite(filepath, (zip) => {
+        ensureFootnotes(zip);
+        let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
+        const fnId = getNextNoteId(fnXml, 'footnote');
+        const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
+        fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
+        setZipEntry(zip, 'word/footnotes.xml', fnXml);
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      if (paragraph_index >= paras.length) throw new Error(`Paragraph index ${paragraph_index} out of range`);
-      const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
-      paras[paragraph_index].appendChild(fnRef);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Footnote ${fnId} added to paragraph ${paragraph_index}.` }] };
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        if (paragraph_index >= paras.length) throw new Error(`Paragraph index ${paragraph_index} out of range`);
+        const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
+        paras[paragraph_index].appendChild(fnRef);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Footnote ${fnId} added to paragraph ${paragraph_index}.` }] };
+      });
     }
   );
 
@@ -1561,24 +1730,24 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     async ({ filename, search_text, footnote_text, output_filename }) => {
       const filepath = resolvePath(filename, workingDir);
       const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
-      const zip = new AdmZip(filepath);
-      ensureFootnotes(zip);
-      let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
-      const fnId = getNextNoteId(fnXml, 'footnote');
-      const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
-      fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
-      setZipEntry(zip, 'word/footnotes.xml', fnXml);
+      return withDocxWriteTo(filepath, outPath, (zip) => {
+        ensureFootnotes(zip);
+        let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
+        const fnId = getNextNoteId(fnXml, 'footnote');
+        const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
+        fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
+        setZipEntry(zip, 'word/footnotes.xml', fnXml);
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const idx = findParaByText(body, search_text, true);
-      if (idx === -1) throw new Error(`Text "${search_text}" not found`);
-      const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
-      bodyParagraphs(body)[idx].appendChild(fnRef);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, outPath);
-      return { content: [{ type: 'text' as const, text: `Footnote ${fnId} added after text "${search_text}".` }] };
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const idx = findParaByText(body, search_text, true);
+        if (idx === -1) throw new Error(`Text "${search_text}" not found`);
+        const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
+        bodyParagraphs(body)[idx].appendChild(fnRef);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Footnote ${fnId} added after text "${search_text}".` }] };
+      });
     }
   );
 
@@ -1594,25 +1763,25 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     async ({ filename, search_text, footnote_text, output_filename }) => {
       const filepath = resolvePath(filename, workingDir);
       const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
-      const zip = new AdmZip(filepath);
-      ensureFootnotes(zip);
-      let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
-      const fnId = getNextNoteId(fnXml, 'footnote');
-      const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
-      fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
-      setZipEntry(zip, 'word/footnotes.xml', fnXml);
+      return withDocxWriteTo(filepath, outPath, (zip) => {
+        ensureFootnotes(zip);
+        let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
+        const fnId = getNextNoteId(fnXml, 'footnote');
+        const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
+        fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
+        setZipEntry(zip, 'word/footnotes.xml', fnXml);
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const idx = findParaByText(body, search_text, true);
-      if (idx === -1) throw new Error(`Text "${search_text}" not found`);
-      const para = bodyParagraphs(body)[idx];
-      const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
-      para.insertBefore(fnRef, para.firstChild);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, outPath);
-      return { content: [{ type: 'text' as const, text: `Footnote ${fnId} added before text "${search_text}".` }] };
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const idx = findParaByText(body, search_text, true);
+        if (idx === -1) throw new Error(`Text "${search_text}" not found`);
+        const para = bodyParagraphs(body)[idx];
+        const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
+        para.insertBefore(fnRef, para.firstChild);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Footnote ${fnId} added before text "${search_text}".` }] };
+      });
     }
   );
 
@@ -1628,24 +1797,24 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     async ({ filename, paragraph_index, footnote_text, output_filename }) => {
       const filepath = resolvePath(filename, workingDir);
       const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
-      const zip = new AdmZip(filepath);
-      ensureFootnotes(zip);
-      let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
-      const fnId = getNextNoteId(fnXml, 'footnote');
-      const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:vertAlign w:val="superscript"/><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
-      fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
-      setZipEntry(zip, 'word/footnotes.xml', fnXml);
+      return withDocxWriteTo(filepath, outPath, (zip) => {
+        ensureFootnotes(zip);
+        let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
+        const fnId = getNextNoteId(fnXml, 'footnote');
+        const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:vertAlign w:val="superscript"/><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
+        fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
+        setZipEntry(zip, 'word/footnotes.xml', fnXml);
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      if (paragraph_index >= paras.length) throw new Error(`Paragraph index ${paragraph_index} out of range`);
-      const fnRef = importFragment(`<w:r><w:rPr><w:vertAlign w:val="superscript"/><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
-      paras[paragraph_index].appendChild(fnRef);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, outPath);
-      return { content: [{ type: 'text' as const, text: `Enhanced footnote ${fnId} added.` }] };
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        if (paragraph_index >= paras.length) throw new Error(`Paragraph index ${paragraph_index} out of range`);
+        const fnRef = importFragment(`<w:r><w:rPr><w:vertAlign w:val="superscript"/><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
+        paras[paragraph_index].appendChild(fnRef);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Enhanced footnote ${fnId} added.` }] };
+      });
     }
   );
 
@@ -1659,24 +1828,24 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, paragraph_index, endnote_text }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      ensureEndnotes(zip);
-      let enXml = getZipEntry(zip, 'word/endnotes.xml')!;
-      const enId = getNextNoteId(enXml, 'endnote');
-      const newEn = `<w:endnote w:id="${enId}"><w:p><w:pPr><w:pStyle w:val="EndnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(endnote_text)}</w:t></w:r></w:p></w:endnote>`;
-      enXml = enXml.replace('</w:endnotes>', `${newEn}</w:endnotes>`);
-      setZipEntry(zip, 'word/endnotes.xml', enXml);
+      return withDocxWrite(filepath, (zip) => {
+        ensureEndnotes(zip);
+        let enXml = getZipEntry(zip, 'word/endnotes.xml')!;
+        const enId = getNextNoteId(enXml, 'endnote');
+        const newEn = `<w:endnote w:id="${enId}"><w:p><w:pPr><w:pStyle w:val="EndnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(endnote_text)}</w:t></w:r></w:p></w:endnote>`;
+        enXml = enXml.replace('</w:endnotes>', `${newEn}</w:endnotes>`);
+        setZipEntry(zip, 'word/endnotes.xml', enXml);
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      if (paragraph_index >= paras.length) throw new Error(`Paragraph index ${paragraph_index} out of range`);
-      const enRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="${enId}"/></w:r>`, doc);
-      paras[paragraph_index].appendChild(enRef);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Endnote ${enId} added to paragraph ${paragraph_index}.` }] };
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        if (paragraph_index >= paras.length) throw new Error(`Paragraph index ${paragraph_index} out of range`);
+        const enRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="EndnoteReference"/></w:rPr><w:endnoteReference w:id="${enId}"/></w:r>`, doc);
+        paras[paragraph_index].appendChild(enRef);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Endnote ${enId} added to paragraph ${paragraph_index}.` }] };
+      });
     }
   );
 
@@ -1692,32 +1861,30 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, numbering_format, start_number, font_name, font_size }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      let settingsXml = getZipEntry(zip, 'word/settings.xml');
-      if (!settingsXml) throw new Error('word/settings.xml not found');
-      const fmt = numbering_format || 'decimal';
-      const start = start_number || 1;
-      const fnPrXml = `<w:footnotePr><w:numFmt w:val="${escapeXml(fmt)}"/><w:numStart w:val="${start}"/></w:footnotePr>`;
-      const existingMatch = settingsXml.match(/<w:footnotePr>[\s\S]*?<\/w:footnotePr>/);
-      if (existingMatch) {
-        settingsXml = settingsXml.replace(existingMatch[0], fnPrXml);
-      } else {
-        settingsXml = settingsXml.replace('</w:settings>', `${fnPrXml}</w:settings>`);
-      }
-      if (font_name || font_size) {
-        // Style customization would require word/styles.xml modification
-        const stylesXml = getZipEntry(zip, 'word/styles.xml');
-        if (stylesXml) {
-          const rPr = buildRPr({ fontName: font_name, fontSize: font_size });
-          const note = `Updated FootnoteText style (manual: open styles.xml to apply font settings).`;
-          setZipEntry(zip, 'word/settings.xml', settingsXml);
-          await saveZip(zip, filepath);
-          return { content: [{ type: 'text' as const, text: `Footnote numbering set to ${fmt} starting at ${start}. ${note}` }] };
+      return withDocxWrite(filepath, (zip) => {
+        let settingsXml = getZipEntry(zip, 'word/settings.xml');
+        if (!settingsXml) throw new Error('word/settings.xml not found');
+        const fmt = numbering_format || 'decimal';
+        const start = start_number || 1;
+        const fnPrXml = `<w:footnotePr><w:numFmt w:val="${escapeXml(fmt)}"/><w:numStart w:val="${start}"/></w:footnotePr>`;
+        const existingMatch = settingsXml.match(/<w:footnotePr>[\s\S]*?<\/w:footnotePr>/);
+        if (existingMatch) {
+          settingsXml = settingsXml.replace(existingMatch[0], fnPrXml);
+        } else {
+          settingsXml = settingsXml.replace('</w:settings>', `${fnPrXml}</w:settings>`);
         }
-      }
-      setZipEntry(zip, 'word/settings.xml', settingsXml);
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Footnote style set: format=${fmt}, start=${start}.` }] };
+        let extraNote = '';
+        if (font_name || font_size) {
+          const stylesXml = getZipEntry(zip, 'word/styles.xml');
+          if (stylesXml) {
+            // buildRPr is invoked for parity with prior behavior (no-op assignment kept for side-effect compat).
+            void buildRPr({ fontName: font_name, fontSize: font_size });
+            extraNote = ' Updated FootnoteText style (manual: open styles.xml to apply font settings).';
+          }
+        }
+        setZipEntry(zip, 'word/settings.xml', settingsXml);
+        return { content: [{ type: 'text' as const, text: `Footnote numbering set to ${fmt} starting at ${start}.${extraNote}` }] };
+      });
     }
   );
 
@@ -1733,27 +1900,27 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     async ({ filename, footnote_id, search_text, output_filename }) => {
       const filepath = resolvePath(filename, workingDir);
       const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
-      const zip = new AdmZip(filepath);
-      let fnXml = getZipEntry(zip, 'word/footnotes.xml');
-      if (!fnXml) throw new Error('No footnotes found in document');
+      return withDocxWriteTo(filepath, outPath, (zip) => {
+        let fnXml = getZipEntry(zip, 'word/footnotes.xml');
+        if (!fnXml) throw new Error('No footnotes found in document');
 
-      let targetId: number | null = footnote_id ?? null;
-      if (targetId === null && search_text) {
-        const m = fnXml.match(new RegExp(`<w:footnote w:id="(\\d+)"[^>]*>[\\s\\S]*?${escapeXml(search_text)}[\\s\\S]*?<\\/w:footnote>`));
-        if (m) targetId = parseInt(m[1], 10);
-      }
-      if (targetId === null) throw new Error('Footnote not found');
+        let targetId: number | null = footnote_id ?? null;
+        if (targetId === null && search_text) {
+          const m = fnXml.match(new RegExp(`<w:footnote w:id="(\\d+)"[^>]*>[\\s\\S]*?${escapeXml(search_text)}[\\s\\S]*?<\\/w:footnote>`));
+          if (m) targetId = parseInt(m[1], 10);
+        }
+        if (targetId === null) throw new Error('Footnote not found');
 
-      fnXml = fnXml.replace(new RegExp(`<w:footnote w:id="${targetId}"[^>]*>[\\s\\S]*?<\\/w:footnote>`), '');
-      setZipEntry(zip, 'word/footnotes.xml', fnXml);
+        fnXml = fnXml.replace(new RegExp(`<w:footnote w:id="${targetId}"[^>]*>[\\s\\S]*?<\\/w:footnote>`), '');
+        setZipEntry(zip, 'word/footnotes.xml', fnXml);
 
-      // Remove reference from document
-      let docXml = getZipEntry(zip, 'word/document.xml')!;
-      docXml = docXml.replace(new RegExp(`<w:r><w:rPr>[\\s\\S]*?<\\/w:rPr><w:footnoteReference w:id="${targetId}"[^/]*/><\\/w:r>`, 'g'), '');
-      docXml = docXml.replace(new RegExp(`<w:footnoteReference w:id="${targetId}"[^/]*/>`, 'g'), '');
-      setZipEntry(zip, 'word/document.xml', docXml);
-      await saveZip(zip, outPath);
-      return { content: [{ type: 'text' as const, text: `Footnote ${targetId} deleted.` }] };
+        // Remove reference from document
+        let docXml = getZipEntry(zip, 'word/document.xml')!;
+        docXml = docXml.replace(new RegExp(`<w:r><w:rPr>[\\s\\S]*?<\\/w:rPr><w:footnoteReference w:id="${targetId}"[^/]*/><\\/w:r>`, 'g'), '');
+        docXml = docXml.replace(new RegExp(`<w:footnoteReference w:id="${targetId}"[^/]*/>`, 'g'), '');
+        setZipEntry(zip, 'word/document.xml', docXml);
+        return { content: [{ type: 'text' as const, text: `Footnote ${targetId} deleted.` }] };
+      });
     }
   );
 
@@ -1770,31 +1937,31 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, search_text, paragraph_index, footnote_text }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      ensureFootnotes(zip);
-      let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
-      const fnId = getNextNoteId(fnXml, 'footnote');
-      const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
-      fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
-      setZipEntry(zip, 'word/footnotes.xml', fnXml);
+      return withDocxWrite(filepath, (zip) => {
+        ensureFootnotes(zip);
+        let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
+        const fnId = getNextNoteId(fnXml, 'footnote');
+        const newFn = `<w:footnote w:id="${fnId}"><w:p><w:pPr><w:pStyle w:val="FootnoteText"/></w:pPr><w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteRef/></w:r><w:r><w:t xml:space="preserve"> ${escapeXml(footnote_text)}</w:t></w:r></w:p></w:footnote>`;
+        fnXml = fnXml.replace('</w:footnotes>', `${newFn}</w:footnotes>`);
+        setZipEntry(zip, 'word/footnotes.xml', fnXml);
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      let targetIdx = paragraph_index;
-      if (targetIdx === undefined && search_text) {
-        const idx = findParaByText(body, search_text, true);
-        targetIdx = idx !== -1 ? idx : paras.length - 1;
-      }
-      targetIdx = targetIdx ?? paras.length - 1;
-      if (targetIdx >= paras.length) targetIdx = paras.length - 1;
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        let targetIdx = paragraph_index;
+        if (targetIdx === undefined && search_text) {
+          const idx = findParaByText(body, search_text, true);
+          targetIdx = idx !== -1 ? idx : paras.length - 1;
+        }
+        targetIdx = targetIdx ?? paras.length - 1;
+        if (targetIdx >= paras.length) targetIdx = paras.length - 1;
 
-      const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
-      paras[targetIdx].appendChild(fnRef);
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Footnote ${fnId} robustly added to paragraph ${targetIdx}.` }] };
+        const fnRef = importFragment(`<w:r><w:rPr><w:rStyle w:val="FootnoteReference"/></w:rPr><w:footnoteReference w:id="${fnId}"/></w:r>`, doc);
+        paras[targetIdx].appendChild(fnRef);
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Footnote ${fnId} robustly added to paragraph ${targetIdx}.` }] };
+      });
     }
   );
 
@@ -1804,26 +1971,27 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string() },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const fnXml = getZipEntry(zip, 'word/footnotes.xml');
-      if (!fnXml) return { content: [{ type: 'text' as const, text: 'No footnotes.xml found in document.' }] };
+      return withDocxRead(filepath, (zip) => {
+        const fnXml = getZipEntry(zip, 'word/footnotes.xml');
+        if (!fnXml) return { content: [{ type: 'text' as const, text: 'No footnotes.xml found in document.' }] };
 
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const definedIds = [...fnXml.matchAll(/<w:footnote w:id="(-?\d+)"/g)]
-        .map(m => parseInt(m[1], 10)).filter(id => id > 0);
-      const referencedIds = [...docXml.matchAll(/<w:footnoteReference w:id="(\d+)"/g)]
-        .map(m => parseInt(m[1], 10));
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const definedIds = [...fnXml.matchAll(/<w:footnote w:id="(-?\d+)"/g)]
+          .map(m => parseInt(m[1], 10)).filter(id => id > 0);
+        const referencedIds = [...docXml.matchAll(/<w:footnoteReference w:id="(\d+)"/g)]
+          .map(m => parseInt(m[1], 10));
 
-      const orphanDefs = definedIds.filter(id => !referencedIds.includes(id));
-      const orphanRefs = referencedIds.filter(id => !definedIds.includes(id));
-      const lines = [
-        `Footnotes defined: ${definedIds.length} (IDs: ${definedIds.join(', ') || 'none'})`,
-        `Footnote references in document: ${referencedIds.length}`,
-        orphanDefs.length ? `Orphan definitions (no ref): ${orphanDefs.join(', ')}` : '',
-        orphanRefs.length ? `Broken references (no def): ${orphanRefs.join(', ')}` : '',
-        !orphanDefs.length && !orphanRefs.length ? 'All footnotes are valid.' : '',
-      ].filter(Boolean);
-      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        const orphanDefs = definedIds.filter(id => !referencedIds.includes(id));
+        const orphanRefs = referencedIds.filter(id => !definedIds.includes(id));
+        const lines = [
+          `Footnotes defined: ${definedIds.length} (IDs: ${definedIds.join(', ') || 'none'})`,
+          `Footnote references in document: ${referencedIds.length}`,
+          orphanDefs.length ? `Orphan definitions (no ref): ${orphanDefs.join(', ')}` : '',
+          orphanRefs.length ? `Broken references (no def): ${orphanRefs.join(', ')}` : '',
+          !orphanDefs.length && !orphanRefs.length ? 'All footnotes are valid.' : '',
+        ].filter(Boolean);
+        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+      });
     }
   );
 
@@ -1838,37 +2006,37 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, footnote_id, search_text, clean_orphans }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      let fnXml = getZipEntry(zip, 'word/footnotes.xml');
-      if (!fnXml) throw new Error('No footnotes.xml in document');
+      return withDocxWrite(filepath, (zip) => {
+        let fnXml = getZipEntry(zip, 'word/footnotes.xml');
+        if (!fnXml) throw new Error('No footnotes.xml in document');
 
-      let targetId: number | null = footnote_id ?? null;
-      if (targetId === null && search_text) {
-        const m = fnXml.match(new RegExp(`<w:footnote w:id="(\\d+)"[^>]*>[\\s\\S]*?${escapeXml(search_text)}[\\s\\S]*?<\\/w:footnote>`));
-        if (m) targetId = parseInt(m[1], 10);
-      }
-      if (targetId === null) throw new Error('Footnote not found');
+        let targetId: number | null = footnote_id ?? null;
+        if (targetId === null && search_text) {
+          const m = fnXml.match(new RegExp(`<w:footnote w:id="(\\d+)"[^>]*>[\\s\\S]*?${escapeXml(search_text)}[\\s\\S]*?<\\/w:footnote>`));
+          if (m) targetId = parseInt(m[1], 10);
+        }
+        if (targetId === null) throw new Error('Footnote not found');
 
-      fnXml = fnXml.replace(new RegExp(`<w:footnote w:id="${targetId}"[^>]*>[\\s\\S]*?<\\/w:footnote>`), '');
-      setZipEntry(zip, 'word/footnotes.xml', fnXml);
+        fnXml = fnXml.replace(new RegExp(`<w:footnote w:id="${targetId}"[^>]*>[\\s\\S]*?<\\/w:footnote>`), '');
+        setZipEntry(zip, 'word/footnotes.xml', fnXml);
 
-      let docXml = getZipEntry(zip, 'word/document.xml')!;
-      docXml = docXml.replace(new RegExp(`<w:footnoteReference w:id="${targetId}"[^/]*/>`, 'g'), '');
+        let docXml = getZipEntry(zip, 'word/document.xml')!;
+        docXml = docXml.replace(new RegExp(`<w:footnoteReference w:id="${targetId}"[^/]*/>`, 'g'), '');
 
-      if (clean_orphans) {
-        const remainingDefs = [...fnXml.matchAll(/<w:footnote w:id="(-?\d+)"/g)]
-          .map(m => parseInt(m[1], 10)).filter(id => id > 0);
-        const allRefs = [...docXml.matchAll(/<w:footnoteReference w:id="(\d+)"/g)]
-          .map(m => parseInt(m[1], 10));
-        const orphans = allRefs.filter(id => !remainingDefs.includes(id));
-        orphans.forEach(id => {
-          docXml = docXml.replace(new RegExp(`<w:footnoteReference w:id="${id}"[^/]*/>`, 'g'), '');
-        });
-      }
+        if (clean_orphans) {
+          const remainingDefs = [...fnXml.matchAll(/<w:footnote w:id="(-?\d+)"/g)]
+            .map(m => parseInt(m[1], 10)).filter(id => id > 0);
+          const allRefs = [...docXml.matchAll(/<w:footnoteReference w:id="(\d+)"/g)]
+            .map(m => parseInt(m[1], 10));
+          const orphans = allRefs.filter(id => !remainingDefs.includes(id));
+          orphans.forEach(id => {
+            docXml = docXml.replace(new RegExp(`<w:footnoteReference w:id="${id}"[^/]*/>`, 'g'), '');
+          });
+        }
 
-      setZipEntry(zip, 'word/document.xml', docXml);
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Footnote ${targetId} deleted with cleanup.` }] };
+        setZipEntry(zip, 'word/document.xml', docXml);
+        return { content: [{ type: 'text' as const, text: `Footnote ${targetId} deleted with cleanup.` }] };
+      });
     }
   );
 
@@ -1885,14 +2053,15 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, paragraph_index }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      if (paragraph_index >= paras.length)
-        throw new Error(`Index ${paragraph_index} out of range (${paras.length} paragraphs)`);
-      return { content: [{ type: 'text' as const, text: paraText(paras[paragraph_index]) }] };
+      return withDocxRead(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        if (paragraph_index >= paras.length)
+          throw new Error(`Index ${paragraph_index} out of range (${paras.length} paragraphs)`);
+        return { content: [{ type: 'text' as const, text: paraText(paras[paragraph_index]) }] };
+      });
     }
   );
 
@@ -1907,24 +2076,25 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, text_to_find, match_case, whole_word }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      const results: string[] = [];
-      const needle = match_case !== false ? text_to_find : text_to_find.toLowerCase();
+      return withDocxRead(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        const results: string[] = [];
+        const needle = match_case !== false ? text_to_find : text_to_find.toLowerCase();
 
-      for (let i = 0; i < paras.length; i++) {
-        let text = paraText(paras[i]);
-        const haystack = match_case !== false ? text : text.toLowerCase();
-        const searchNeedle = whole_word ? new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) : needle;
-        const found = typeof searchNeedle === 'string' ? haystack.includes(searchNeedle) : searchNeedle.test(haystack);
-        if (found) results.push(`Paragraph ${i}: "${text.slice(0, 100)}${text.length > 100 ? '…' : ''}"`);
-      }
+        for (let i = 0; i < paras.length; i++) {
+          let text = paraText(paras[i]);
+          const haystack = match_case !== false ? text : text.toLowerCase();
+          const searchNeedle = whole_word ? new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) : needle;
+          const found = typeof searchNeedle === 'string' ? haystack.includes(searchNeedle) : searchNeedle.test(haystack);
+          if (found) results.push(`Paragraph ${i}: "${text.slice(0, 100)}${text.length > 100 ? '…' : ''}"`);
+        }
 
-      const text = results.length ? results.join('\n') : `"${text_to_find}" not found.`;
-      return { content: [{ type: 'text' as const, text }] };
+        const text = results.length ? results.join('\n') : `"${text_to_find}" not found.`;
+        return { content: [{ type: 'text' as const, text }] };
+      });
     }
   );
 
@@ -1941,22 +2111,24 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       const pdfPath = output_filename
         ? resolvePath(output_filename, workingDir)
         : filepath.replace(/\.docx$/i, '.pdf');
-      const esc = (s: string) => s.replace(/'/g, "''");
-      const script = `
-        $word = New-Object -ComObject Word.Application
-        $word.Visible = $false
-        try {
-          $doc = $word.Documents.Open('${esc(filepath)}')
-          $doc.ExportAsFixedFormat('${esc(pdfPath)}', 17)
-          $doc.Close()
-          "Converted: ${esc(pdfPath)}"
-        } finally {
-          $word.Quit()
-          [Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
-        }
-      `;
-      const out = await runPS(script, 120000);
-      return { content: [{ type: 'text' as const, text: out || `PDF saved: ${pdfPath}` }] };
+      return withDocxPairRaw(filepath, pdfPath, async () => {
+        const esc = (s: string) => s.replace(/'/g, "''");
+        const script = `
+          $word = New-Object -ComObject Word.Application
+          $word.Visible = $false
+          try {
+            $doc = $word.Documents.Open('${esc(filepath)}')
+            $doc.ExportAsFixedFormat('${esc(pdfPath)}', 17)
+            $doc.Close()
+            "Converted: ${esc(pdfPath)}"
+          } finally {
+            $word.Quit()
+            [Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
+          }
+        `;
+        const out = await runPS(script, 120000);
+        return { content: [{ type: 'text' as const, text: out || `PDF saved: ${pdfPath}` }] };
+      });
     }
   );
 
@@ -1974,55 +2146,55 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, header_text, new_paragraphs }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const children = directChildren(body);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const children = directChildren(body);
 
-      // Find the header paragraph
-      let headerIdx = -1;
-      for (let i = 0; i < children.length; i++) {
-        if (children[i].localName === 'p') {
-          const pPr = (children[i] as any).getElementsByTagNameNS(W_NS, 'pStyle');
-          if (pPr && pPr.length > 0) {
-            const style: string = pPr[0].getAttribute('w:val') || '';
-            if (/heading/i.test(style) && paraText(children[i]).includes(header_text)) {
-              headerIdx = i;
-              break;
+        // Find the header paragraph
+        let headerIdx = -1;
+        for (let i = 0; i < children.length; i++) {
+          if (children[i].localName === 'p') {
+            const pPr = (children[i] as any).getElementsByTagNameNS(W_NS, 'pStyle');
+            if (pPr && pPr.length > 0) {
+              const style: string = pPr[0].getAttribute('w:val') || '';
+              if (/heading/i.test(style) && paraText(children[i]).includes(header_text)) {
+                headerIdx = i;
+                break;
+              }
             }
           }
         }
-      }
-      if (headerIdx === -1) throw new Error(`Header containing "${header_text}" not found`);
+        if (headerIdx === -1) throw new Error(`Header containing "${header_text}" not found`);
 
-      // Find block end: next heading or end of body (before sectPr)
-      let blockEnd = children.length;
-      for (let i = headerIdx + 1; i < children.length; i++) {
-        if (children[i].localName === 'sectPr') { blockEnd = i; break; }
-        if (children[i].localName === 'p') {
-          const pPr = (children[i] as any).getElementsByTagNameNS(W_NS, 'pStyle');
-          if (pPr && pPr.length > 0 && /heading/i.test(pPr[0].getAttribute('w:val') || '')) {
-            blockEnd = i; break;
+        // Find block end: next heading or end of body (before sectPr)
+        let blockEnd = children.length;
+        for (let i = headerIdx + 1; i < children.length; i++) {
+          if (children[i].localName === 'sectPr') { blockEnd = i; break; }
+          if (children[i].localName === 'p') {
+            const pPr = (children[i] as any).getElementsByTagNameNS(W_NS, 'pStyle');
+            if (pPr && pPr.length > 0 && /heading/i.test(pPr[0].getAttribute('w:val') || '')) {
+              blockEnd = i; break;
+            }
           }
         }
-      }
 
-      // Remove existing block paragraphs
-      for (let i = blockEnd - 1; i > headerIdx; i--) {
-        if (children[i] && children[i].localName !== 'sectPr') body.removeChild(children[i]);
-      }
+        // Remove existing block paragraphs
+        for (let i = blockEnd - 1; i > headerIdx; i--) {
+          if (children[i] && children[i].localName !== 'sectPr') body.removeChild(children[i]);
+        }
 
-      // Insert new paragraphs after header
-      const headerEl = children[headerIdx];
-      const newEls = new_paragraphs.map(t => importFragment(buildParaXml(t), doc));
-      newEls.reverse().forEach(el => {
-        headerEl.parentNode!.insertBefore(el, headerEl.nextSibling);
+        // Insert new paragraphs after header
+        const headerEl = children[headerIdx];
+        const newEls = new_paragraphs.map(t => importFragment(buildParaXml(t), doc));
+        newEls.reverse().forEach(el => {
+          headerEl.parentNode!.insertBefore(el, headerEl.nextSibling);
+        });
+
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Block below "${header_text}" replaced with ${new_paragraphs.length} paragraph(s).` }] };
       });
-
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Block below "${header_text}" replaced with ${new_paragraphs.length} paragraph(s).` }] };
     }
   );
 
@@ -2037,31 +2209,31 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, start_anchor_text, new_paragraphs, end_anchor_text }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
+      return withDocxWrite(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
 
-      const startIdx = paras.findIndex(p => paraText(p).includes(start_anchor_text));
-      const endIdx = paras.findIndex(p => paraText(p).includes(end_anchor_text));
-      if (startIdx === -1) throw new Error(`Start anchor "${start_anchor_text}" not found`);
-      if (endIdx === -1) throw new Error(`End anchor "${end_anchor_text}" not found`);
-      if (endIdx <= startIdx) throw new Error('End anchor must come after start anchor');
+        const startIdx = paras.findIndex(p => paraText(p).includes(start_anchor_text));
+        const endIdx = paras.findIndex(p => paraText(p).includes(end_anchor_text));
+        if (startIdx === -1) throw new Error(`Start anchor "${start_anchor_text}" not found`);
+        if (endIdx === -1) throw new Error(`End anchor "${end_anchor_text}" not found`);
+        if (endIdx <= startIdx) throw new Error('End anchor must come after start anchor');
 
-      // Remove paragraphs between anchors (exclusive)
-      for (let i = endIdx - 1; i > startIdx; i--) paras[i].parentNode!.removeChild(paras[i]);
+        // Remove paragraphs between anchors (exclusive)
+        for (let i = endIdx - 1; i > startIdx; i--) paras[i].parentNode!.removeChild(paras[i]);
 
-      // Insert new paragraphs between start and end anchors
-      const updatedParas = bodyParagraphs(body);
-      const newStartIdx = updatedParas.findIndex(p => paraText(p).includes(start_anchor_text));
-      const anchorEl = updatedParas[newStartIdx];
-      const newEls = new_paragraphs.map(t => importFragment(buildParaXml(t), doc));
-      newEls.reverse().forEach(el => anchorEl.parentNode!.insertBefore(el, anchorEl.nextSibling));
+        // Insert new paragraphs between start and end anchors
+        const updatedParas = bodyParagraphs(body);
+        const newStartIdx = updatedParas.findIndex(p => paraText(p).includes(start_anchor_text));
+        const anchorEl = updatedParas[newStartIdx];
+        const newEls = new_paragraphs.map(t => importFragment(buildParaXml(t), doc));
+        newEls.reverse().forEach(el => anchorEl.parentNode!.insertBefore(el, anchorEl.nextSibling));
 
-      setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
-      await saveZip(zip, filepath);
-      return { content: [{ type: 'text' as const, text: `Block between anchors replaced with ${new_paragraphs.length} paragraph(s).` }] };
+        setZipEntry(zip, 'word/document.xml', serializeDoc(doc));
+        return { content: [{ type: 'text' as const, text: `Block between anchors replaced with ${new_paragraphs.length} paragraph(s).` }] };
+      });
     }
   );
 
@@ -2075,23 +2247,24 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string() },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const commentsXml = getZipEntry(zip, 'word/comments.xml');
-      if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found in document.' }] };
-      const doc = parseXmlDoc(commentsXml);
-      const comments = (doc as any).getElementsByTagNameNS(W_NS, 'comment');
-      const lines: string[] = [];
-      for (let i = 0; i < comments.length; i++) {
-        const c = comments[i];
-        const id = (c as any).getAttribute('w:id');
-        const author = (c as any).getAttribute('w:author') || '(unknown)';
-        const date = (c as any).getAttribute('w:date') || '';
-        const tNodes = (c as any).getElementsByTagNameNS(W_NS, 't');
-        let text = '';
-        for (let j = 0; j < tNodes.length; j++) text += tNodes[j].textContent || '';
-        lines.push(`[${id}] ${author} (${date.slice(0, 10)}): ${text}`);
-      }
-      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No comments.' }] };
+      return withDocxRead(filepath, (zip) => {
+        const commentsXml = getZipEntry(zip, 'word/comments.xml');
+        if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found in document.' }] };
+        const doc = parseXmlDoc(commentsXml);
+        const comments = (doc as any).getElementsByTagNameNS(W_NS, 'comment');
+        const lines: string[] = [];
+        for (let i = 0; i < comments.length; i++) {
+          const c = comments[i];
+          const id = (c as any).getAttribute('w:id');
+          const author = (c as any).getAttribute('w:author') || '(unknown)';
+          const date = (c as any).getAttribute('w:date') || '';
+          const tNodes = (c as any).getElementsByTagNameNS(W_NS, 't');
+          let text = '';
+          for (let j = 0; j < tNodes.length; j++) text += tNodes[j].textContent || '';
+          lines.push(`[${id}] ${author} (${date.slice(0, 10)}): ${text}`);
+        }
+        return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No comments.' }] };
+      });
     }
   );
 
@@ -2104,24 +2277,25 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, author }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const commentsXml = getZipEntry(zip, 'word/comments.xml');
-      if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found.' }] };
-      const doc = parseXmlDoc(commentsXml);
-      const comments = (doc as any).getElementsByTagNameNS(W_NS, 'comment');
-      const lines: string[] = [];
-      for (let i = 0; i < comments.length; i++) {
-        const c = comments[i];
-        const commentAuthor = (c as any).getAttribute('w:author') || '';
-        if (!commentAuthor.toLowerCase().includes(author.toLowerCase())) continue;
-        const id = (c as any).getAttribute('w:id');
-        const date = (c as any).getAttribute('w:date') || '';
-        const tNodes = (c as any).getElementsByTagNameNS(W_NS, 't');
-        let text = '';
-        for (let j = 0; j < tNodes.length; j++) text += tNodes[j].textContent || '';
-        lines.push(`[${id}] ${commentAuthor} (${date.slice(0, 10)}): ${text}`);
-      }
-      return { content: [{ type: 'text' as const, text: lines.join('\n') || `No comments by "${author}".` }] };
+      return withDocxRead(filepath, (zip) => {
+        const commentsXml = getZipEntry(zip, 'word/comments.xml');
+        if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found.' }] };
+        const doc = parseXmlDoc(commentsXml);
+        const comments = (doc as any).getElementsByTagNameNS(W_NS, 'comment');
+        const lines: string[] = [];
+        for (let i = 0; i < comments.length; i++) {
+          const c = comments[i];
+          const commentAuthor = (c as any).getAttribute('w:author') || '';
+          if (!commentAuthor.toLowerCase().includes(author.toLowerCase())) continue;
+          const id = (c as any).getAttribute('w:id');
+          const date = (c as any).getAttribute('w:date') || '';
+          const tNodes = (c as any).getElementsByTagNameNS(W_NS, 't');
+          let text = '';
+          for (let j = 0; j < tNodes.length; j++) text += tNodes[j].textContent || '';
+          lines.push(`[${id}] ${commentAuthor} (${date.slice(0, 10)}): ${text}`);
+        }
+        return { content: [{ type: 'text' as const, text: lines.join('\n') || `No comments by "${author}".` }] };
+      });
     }
   );
 
@@ -2134,38 +2308,39 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, paragraph_index }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const commentsXml = getZipEntry(zip, 'word/comments.xml');
-      if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found.' }] };
+      return withDocxRead(filepath, (zip) => {
+        const commentsXml = getZipEntry(zip, 'word/comments.xml');
+        if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found.' }] };
 
-      // Find comment reference IDs in the target paragraph
-      const docXml = getZipEntry(zip, 'word/document.xml')!;
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      if (paragraph_index >= paras.length) throw new Error(`Index ${paragraph_index} out of range`);
-      const para = paras[paragraph_index];
-      const refs = (para as any).getElementsByTagNameNS(W_NS, 'commentReference');
-      if (!refs || refs.length === 0) return { content: [{ type: 'text' as const, text: 'No comments on this paragraph.' }] };
+        // Find comment reference IDs in the target paragraph
+        const docXml = getZipEntry(zip, 'word/document.xml')!;
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        if (paragraph_index >= paras.length) throw new Error(`Index ${paragraph_index} out of range`);
+        const para = paras[paragraph_index];
+        const refs = (para as any).getElementsByTagNameNS(W_NS, 'commentReference');
+        if (!refs || refs.length === 0) return { content: [{ type: 'text' as const, text: 'No comments on this paragraph.' }] };
 
-      const refIds = new Set<string>();
-      for (let i = 0; i < refs.length; i++) refIds.add((refs[i] as any).getAttribute('w:id') || '');
+        const refIds = new Set<string>();
+        for (let i = 0; i < refs.length; i++) refIds.add((refs[i] as any).getAttribute('w:id') || '');
 
-      const cdoc = parseXmlDoc(commentsXml);
-      const comments = (cdoc as any).getElementsByTagNameNS(W_NS, 'comment');
-      const lines: string[] = [];
-      for (let i = 0; i < comments.length; i++) {
-        const c = comments[i];
-        const id = (c as any).getAttribute('w:id');
-        if (!refIds.has(id)) continue;
-        const author = (c as any).getAttribute('w:author') || '(unknown)';
-        const date = (c as any).getAttribute('w:date') || '';
-        const tNodes = (c as any).getElementsByTagNameNS(W_NS, 't');
-        let text = '';
-        for (let j = 0; j < tNodes.length; j++) text += tNodes[j].textContent || '';
-        lines.push(`[${id}] ${author} (${date.slice(0, 10)}): ${text}`);
-      }
-      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'Comments not found by ID.' }] };
+        const cdoc = parseXmlDoc(commentsXml);
+        const comments = (cdoc as any).getElementsByTagNameNS(W_NS, 'comment');
+        const lines: string[] = [];
+        for (let i = 0; i < comments.length; i++) {
+          const c = comments[i];
+          const id = (c as any).getAttribute('w:id');
+          if (!refIds.has(id)) continue;
+          const author = (c as any).getAttribute('w:author') || '(unknown)';
+          const date = (c as any).getAttribute('w:date') || '';
+          const tNodes = (c as any).getElementsByTagNameNS(W_NS, 't');
+          let text = '';
+          for (let j = 0; j < tNodes.length; j++) text += tNodes[j].textContent || '';
+          lines.push(`[${id}] ${author} (${date.slice(0, 10)}): ${text}`);
+        }
+        return { content: [{ type: 'text' as const, text: lines.join('\n') || 'Comments not found by ID.' }] };
+      });
     }
   );
 
@@ -2205,31 +2380,33 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       const outPath = resolvePath(outName, workingDir);
       const outExt = path.extname(outPath).toLowerCase();
 
-      await fs.copyFile(srcPath, outPath);
-      const zip = new AdmZip(outPath);
+      return withDocxPairRaw(srcPath, outPath, async () => {
+        await withRetry(() => fs.copyFile(srcPath, outPath), 'create_document_from_template.copyFile');
+        const zip = await openAdmZipWithRetry(outPath);
 
-      const targetCt = outExt === '.docm' ? CT_DOCM_MAIN : CT_DOC_MAIN;
-      swapDocumentContentType(zip, targetCt);
+        const targetCt = outExt === '.docm' ? CT_DOCM_MAIN : CT_DOC_MAIN;
+        swapDocumentContentType(zip, targetCt);
 
-      if (title !== undefined || author !== undefined) {
-        let coreXml = getZipEntry(zip, 'docProps/core.xml');
-        if (!coreXml) {
-          coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"></cp:coreProperties>`;
-          addContentType(zip, '/docProps/core.xml', 'application/vnd.openxmlformats-package.core-properties+xml');
+        if (title !== undefined || author !== undefined) {
+          let coreXml = getZipEntry(zip, 'docProps/core.xml');
+          if (!coreXml) {
+            coreXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"></cp:coreProperties>`;
+            addContentType(zip, '/docProps/core.xml', 'application/vnd.openxmlformats-package.core-properties+xml');
+          }
+          const upsert = (xml: string, tag: string, value: string): string => {
+            const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\/${tag}>`);
+            const node = `<${tag}>${escapeXml(value)}</${tag}>`;
+            if (re.test(xml)) return xml.replace(re, node);
+            return xml.replace(/<\/cp:coreProperties>/, `${node}</cp:coreProperties>`);
+          };
+          if (title !== undefined) coreXml = upsert(coreXml, 'dc:title', title);
+          if (author !== undefined) coreXml = upsert(coreXml, 'dc:creator', author);
+          setZipEntry(zip, 'docProps/core.xml', coreXml);
         }
-        const upsert = (xml: string, tag: string, value: string): string => {
-          const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\/${tag}>`);
-          const node = `<${tag}>${escapeXml(value)}</${tag}>`;
-          if (re.test(xml)) return xml.replace(re, node);
-          return xml.replace(/<\/cp:coreProperties>/, `${node}</cp:coreProperties>`);
-        };
-        if (title !== undefined) coreXml = upsert(coreXml, 'dc:title', title);
-        if (author !== undefined) coreXml = upsert(coreXml, 'dc:creator', author);
-        setZipEntry(zip, 'docProps/core.xml', coreXml);
-      }
 
-      await saveZip(zip, outPath);
-      return { content: [{ type: 'text' as const, text: `Created "${outPath}" from template "${srcPath}"` }] };
+        await saveZip(zip, outPath);
+        return { content: [{ type: 'text' as const, text: `Created "${outPath}" from template "${srcPath}"` }] };
+      });
     }
   );
 
@@ -2239,8 +2416,10 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string().describe('Path to the .dotx or .dotm template') },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const result = await mammoth.extractRawText({ path: filepath });
-      return { content: [{ type: 'text' as const, text: result.value || '(empty template)' }] };
+      return withDocxRawRead(filepath, async () => {
+        const result = await mammothExtractRawTextWithRetry(filepath);
+        return { content: [{ type: 'text' as const, text: result.value || '(empty template)' }] };
+      });
     }
   );
 
@@ -2250,33 +2429,34 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string().describe('Path to the .dotx or .dotm template') },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
-      const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
-      const ctXml = getZipEntry(zip, '[Content_Types].xml') || '';
-      const extract = (xml: string, tag: string) => {
-        const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)<\/[^:>]*:?${tag}>`));
-        return m ? m[1].trim() : '';
-      };
-      const ctMatch = ctXml.match(/PartName="\/word\/document\.xml"\s+ContentType="([^"]+)"/);
-      const contentType = ctMatch ? ctMatch[1] : '(unknown)';
-      const isTemplate = contentType.includes('template');
-      const info: Record<string, string> = {
-        file_kind: isTemplate ? 'Word template' : 'Word document',
-        content_type: contentType,
-        title: extract(coreXml, 'title'),
-        creator: extract(coreXml, 'creator'),
-        description: extract(coreXml, 'description'),
-        created: extract(coreXml, 'created'),
-        modified: extract(coreXml, 'modified'),
-        lastModifiedBy: extract(coreXml, 'lastModifiedBy'),
-        revision: extract(coreXml, 'revision'),
-        application: extract(appXml, 'Application'),
-        pages: extract(appXml, 'Pages'),
-        words: extract(appXml, 'Words'),
-      };
-      const lines = Object.entries(info).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
-      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No metadata found.' }] };
+      return withDocxRead(filepath, (zip) => {
+        const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
+        const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
+        const ctXml = getZipEntry(zip, '[Content_Types].xml') || '';
+        const extract = (xml: string, tag: string) => {
+          const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)<\/[^:>]*:?${tag}>`));
+          return m ? m[1].trim() : '';
+        };
+        const ctMatch = ctXml.match(/PartName="\/word\/document\.xml"\s+ContentType="([^"]+)"/);
+        const contentType = ctMatch ? ctMatch[1] : '(unknown)';
+        const isTemplate = contentType.includes('template');
+        const info: Record<string, string> = {
+          file_kind: isTemplate ? 'Word template' : 'Word document',
+          content_type: contentType,
+          title: extract(coreXml, 'title'),
+          creator: extract(coreXml, 'creator'),
+          description: extract(coreXml, 'description'),
+          created: extract(coreXml, 'created'),
+          modified: extract(coreXml, 'modified'),
+          lastModifiedBy: extract(coreXml, 'lastModifiedBy'),
+          revision: extract(coreXml, 'revision'),
+          application: extract(appXml, 'Application'),
+          pages: extract(appXml, 'Pages'),
+          words: extract(appXml, 'Words'),
+        };
+        const lines = Object.entries(info).filter(([, v]) => v).map(([k, v]) => `${k}: ${v}`);
+        return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No metadata found.' }] };
+      });
     }
   );
 
@@ -2286,24 +2466,25 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { filename: z.string().describe('Path to the .dotx or .dotm template') },
     async ({ filename }) => {
       const filepath = resolvePath(filename, workingDir);
-      const zip = new AdmZip(filepath);
-      const docXml = getZipEntry(zip, 'word/document.xml') || '';
-      const doc = parseXmlDoc(docXml);
-      const body = getBodyEl(doc);
-      const paras = bodyParagraphs(body);
-      const lines: string[] = [];
-      for (const p of paras) {
-        const pPr = (p as any).getElementsByTagNameNS(W_NS, 'pStyle');
-        if (!pPr || pPr.length === 0) continue;
-        const style: string = pPr[0].getAttribute('w:val') || '';
-        const m = style.match(/^[Hh]eading\s*(\d)/);
-        if (m) {
-          const level = parseInt(m[1], 10);
-          const indent = '  '.repeat(level - 1);
-          lines.push(`${indent}H${level}: ${paraText(p)}`);
+      return withDocxRead(filepath, (zip) => {
+        const docXml = getZipEntry(zip, 'word/document.xml') || '';
+        const doc = parseXmlDoc(docXml);
+        const body = getBodyEl(doc);
+        const paras = bodyParagraphs(body);
+        const lines: string[] = [];
+        for (const p of paras) {
+          const pPr = (p as any).getElementsByTagNameNS(W_NS, 'pStyle');
+          if (!pPr || pPr.length === 0) continue;
+          const style: string = pPr[0].getAttribute('w:val') || '';
+          const m = style.match(/^[Hh]eading\s*(\d)/);
+          if (m) {
+            const level = parseInt(m[1], 10);
+            const indent = '  '.repeat(level - 1);
+            lines.push(`${indent}H${level}: ${paraText(p)}`);
+          }
         }
-      }
-      return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No headings found.' }] };
+        return { content: [{ type: 'text' as const, text: lines.join('\n') || 'No headings found.' }] };
+      });
     }
   );
 
@@ -2340,12 +2521,14 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       const outPath = resolvePath(outName, workingDir);
       const outExt = path.extname(outPath).toLowerCase();
 
-      await fs.copyFile(srcPath, outPath);
-      const zip = new AdmZip(outPath);
-      const targetCt = outExt === '.dotm' ? CT_DOTM_MAIN : CT_TPL_MAIN;
-      swapDocumentContentType(zip, targetCt);
-      await saveZip(zip, outPath);
-      return { content: [{ type: 'text' as const, text: `Saved template "${outPath}" from "${srcPath}"` }] };
+      return withDocxPairRaw(srcPath, outPath, async () => {
+        await withRetry(() => fs.copyFile(srcPath, outPath), 'save_as_template.copyFile');
+        const zip = await openAdmZipWithRetry(outPath);
+        const targetCt = outExt === '.dotm' ? CT_DOTM_MAIN : CT_TPL_MAIN;
+        swapDocumentContentType(zip, targetCt);
+        await saveZip(zip, outPath);
+        return { content: [{ type: 'text' as const, text: `Saved template "${outPath}" from "${srcPath}"` }] };
+      });
     }
   );
 

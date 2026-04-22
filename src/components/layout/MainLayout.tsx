@@ -70,13 +70,7 @@ export function MainLayout() {
   const isModelAvailable = selectedModel ? availableModels.includes(selectedModel) : false;
 
   function humanizeModel(model: string): string {
-    const part = model.split('/').pop() || model;
-    const cleaned = part.replace(/-\d{2,4}(?:-\d{2}(?:-\d{2})?)?$/, '');
-    return cleaned
-      .replace(/-/g, ' ')
-      .replace(/([a-zA-Z])(\d)/g, '$1 $2')
-      .replace(/(\d)([a-zA-Z])/g, '$1 $2')
-      .replace(/\b\w/g, (c) => c.toUpperCase());
+    return model;
   }
 
   return (

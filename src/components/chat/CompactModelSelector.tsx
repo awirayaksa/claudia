@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { abbreviateModelName, truncateModelName } from '../../utils/modelHelpers';
+import { truncateModelName } from '../../utils/modelHelpers';
 
 interface CompactModelSelectorProps {
   value: string;
@@ -80,8 +80,7 @@ export function CompactModelSelector({
   };
 
   const isModelAvailable = models.includes(value);
-  const displayName = abbreviateModelName(value);
-  const truncatedName = truncateModelName(displayName, 20);
+  const truncatedName = truncateModelName(value, 20);
 
   // Sort models alphabetically (ensure all models are strings)
   const sortedModels = [...models]
@@ -98,7 +97,7 @@ export function CompactModelSelector({
         className={`flex items-center gap-1.5 rounded border border-border bg-background px-3 py-2 text-sm text-text-primary transition-colors hover:border-accent focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${!isModelAvailable ? 'border-warning text-warning' : ''
           }`}
         style={{ minWidth: '140px', maxWidth: '180px' }}
-        title={isModelAvailable ? displayName : `${displayName} (unavailable)`}
+        title={isModelAvailable ? value : `${value} (unavailable)`}
         aria-label="Select model"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
@@ -132,7 +131,6 @@ export function CompactModelSelector({
             ) : (
               sortedModels.map((model) => {
                 const isSelected = model === value;
-                const modelDisplayName = abbreviateModelName(model);
 
                 return (
                   <button
@@ -146,7 +144,7 @@ export function CompactModelSelector({
                     aria-selected={isSelected}
                   >
                     <span className="flex-1 truncate" title={model}>
-                      {modelDisplayName}
+                      {model}
                     </span>
                     {isSelected && (
                       <svg
