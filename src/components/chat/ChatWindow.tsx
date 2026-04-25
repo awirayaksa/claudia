@@ -38,6 +38,7 @@ export function ChatWindow() {
     isExecutingTools,
     sendMessage,
     abortStreaming,
+    retryMessage,
   } = useChat();
 
   const editingMessage = useAppSelector((state) => state.chat.editingMessage);
@@ -394,6 +395,10 @@ export function ChatWindow() {
     }, 100);
   }, [isStreaming, abortStreaming, dispatch]);
 
+  const handleRetryMessage = useCallback(async (messageId: string) => {
+    await retryMessage(messageId);
+  }, [retryMessage]);
+
   const handleCancelEdit = useCallback(() => {
     dispatch(setEditingMessage(null));
   }, [dispatch]);
@@ -659,6 +664,7 @@ export function ChatWindow() {
                   <ChatMessage
                     message={message}
                     onEdit={handleEditMessage}
+                    onRetry={handleRetryMessage}
                     disabled={isLoading || isStreaming || isExecutingTools}
                   />
                 </div>

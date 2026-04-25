@@ -11,10 +11,11 @@ import { useAppSelector } from '../../store';
 interface ChatMessageProps {
   message: Message;
   onEdit?: (messageId: string, content: string, attachments?: Attachment[]) => void;
+  onRetry?: (messageId: string) => void;
   disabled?: boolean;
 }
 
-export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, disabled }: ChatMessageProps) {
+export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, onRetry, disabled }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isTool = message.role === 'tool';
@@ -168,7 +169,11 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, di
             >
               {copied ? '✓ Copied' : '⎘ Copy'}
             </button>
-            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">
+            <button
+              onClick={() => onRetry?.(message.id)}
+              disabled={disabled}
+              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+            >
               ↻ Retry
             </button>
             <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">

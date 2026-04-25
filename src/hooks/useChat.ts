@@ -58,6 +58,38 @@ export function useChat() {
     [isStreaming, dispatch]
   );
 
+  const handleRetryMessage = useCallback(
+    async (assistantMessageId: string) => {
+      const assistantIndex = messages.findIndex((m) => m.id === assistantMessageId);
+      if (assistantIndex === -1) return;
+
+      // Find the previous user message
+      let userMessageIndex = -1;
+      for (let i = assistantIndex - 1; i >= 0; i--) {
+        if (messages[i].role === 'user') {
+          userMessageIndex = i;
+          break;
+        }
+      }
+
+      if (userMessageIndex === -1) return;
+
+      const userMessage = messages[userMessageIndex];
+
+      // Abort streaming if active
+      if (isStreaming) {
+        dispatch(abortStreaming());
+      }
+
+      // Delete from the user message onwards (including the user message and assistant response)
+      dispatch(deleteMessagesAfter(userMessage.id));
+
+      // Re-send the user message
+      await handleSendMessage(userMessage.content, userMessage.attachments);
+    },
+    [messages, isStreaming, dispatch, handleSendMessage]
+  );
+
   return {
     messages,
     isLoading,
@@ -69,5 +101,6 @@ export function useChat() {
     clearMessages: handleClearMessages,
     abortStreaming: handleAbortStreaming,
     editMessage: handleEditMessage,
+    retryMessage: handleRetryMessage,
   };
 }
