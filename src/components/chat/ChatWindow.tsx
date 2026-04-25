@@ -399,6 +399,35 @@ export function ChatWindow() {
     await retryMessage(messageId);
   }, [retryMessage]);
 
+  const handleBranchMessage = useCallback(async (messageId: string) => {
+    const messageIndex = messages.findIndex((m) => m.id === messageId);
+    if (messageIndex === -1) return;
+
+    // Abort any active streaming
+    if (isStreaming) {
+      abortStreaming();
+    }
+
+    // Get all messages up to and including the branched message
+    const branchedMessages = messages.slice(0, messageIndex + 1);
+
+    // Create a new conversation with the same model
+    const modelToUse = currentConversation?.model || selectedModel;
+    const title = currentConversation?.title
+      ? `Branched from ${currentConversation.title}`
+      : 'Branched Conversation';
+
+    const newConversation = await createConversation(title, modelToUse);
+
+    if (!newConversation) return;
+
+    // Clear current messages and populate with branched messages
+    dispatch(clearMessages());
+    branchedMessages.forEach((msg) => {
+      dispatch(addMessage(msg));
+    });
+  }, [messages, isStreaming, abortStreaming, currentConversation, selectedModel, createConversation, dispatch]);
+
   const handleCancelEdit = useCallback(() => {
     dispatch(setEditingMessage(null));
   }, [dispatch]);
@@ -665,6 +694,7 @@ export function ChatWindow() {
                     message={message}
                     onEdit={handleEditMessage}
                     onRetry={handleRetryMessage}
+                    onBranch={handleBranchMessage}
                     disabled={isLoading || isStreaming || isExecutingTools}
                   />
                 </div>
