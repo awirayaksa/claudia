@@ -1,11 +1,12 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { ProviderType, OpenWebUIConfig, OpenRouterConfig } from '../../types/api.types';
+import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig } from '../../types/api.types';
 
 interface SettingsState {
   api: {
     provider: ProviderType;
     openwebui?: OpenWebUIConfig;
     openrouter?: OpenRouterConfig;
+    custom?: CustomProviderConfig;
     availableModels: string[];
     // Legacy fields for backward compatibility (deprecated)
     baseUrl?: string;

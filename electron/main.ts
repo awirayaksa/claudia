@@ -241,6 +241,7 @@ function createWindow() {
       contextIsolation: true,
       sandbox: true,
       preload: path.join(__dirname, 'preload.js'),
+      webSecurity: false,
     },
     show: false, // Don't show until ready-to-show
     backgroundColor: backgroundColor,

@@ -1,6 +1,6 @@
-import { ProviderType, OpenWebUIConfig, OpenRouterConfig } from '../../types/api.types';
+import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig } from '../../types/api.types';
 import { IAPIProvider } from './provider.interface';
-import { OpenWebUIProvider, OpenRouterProvider } from './providers';
+import { OpenWebUIProvider, OpenRouterProvider, CustomProvider } from './providers';
 
 /**
  * Provider Factory
@@ -17,7 +17,7 @@ export class ProviderFactory {
    */
   static getProvider(
     providerType: ProviderType,
-    config: OpenWebUIConfig | OpenRouterConfig
+    config: OpenWebUIConfig | OpenRouterConfig | CustomProviderConfig
   ): IAPIProvider {
     let provider = this.providerInstances.get(providerType);
 
@@ -41,7 +41,7 @@ export class ProviderFactory {
    */
   private static createProvider(
     providerType: ProviderType,
-    config: OpenWebUIConfig | OpenRouterConfig
+    config: OpenWebUIConfig | OpenRouterConfig | CustomProviderConfig
   ): IAPIProvider {
     switch (providerType) {
       case 'openwebui':
@@ -49,6 +49,9 @@ export class ProviderFactory {
 
       case 'openrouter':
         return new OpenRouterProvider(config as OpenRouterConfig);
+
+      case 'custom':
+        return new CustomProvider(config as CustomProviderConfig);
 
       default:
         throw new Error(`Unknown provider type: ${providerType}`);

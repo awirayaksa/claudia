@@ -3,7 +3,7 @@ import { ToolCall } from './message.types';
 import { MessageUsage } from './statistics.types';
 
 // Provider Types
-export type ProviderType = 'openwebui' | 'openrouter';
+export type ProviderType = 'openwebui' | 'openrouter' | 'custom';
 
 export interface ProviderCapabilities {
   supportsFileUpload: boolean;
@@ -26,14 +26,21 @@ export interface OpenRouterConfig {
   siteName?: string;
 }
 
+export interface CustomProviderConfig {
+  baseUrl: string;
+  apiKey: string;
+  selectedModel: string;
+}
+
 // Union type for all provider configs
-export type ProviderConfig = OpenWebUIConfig | OpenRouterConfig;
+export type ProviderConfig = OpenWebUIConfig | OpenRouterConfig | CustomProviderConfig;
 
 // API Configuration with Provider Selection
 export interface APIConfig {
   provider: ProviderType;
   openwebui?: OpenWebUIConfig;
   openrouter?: OpenRouterConfig;
+  custom?: CustomProviderConfig;
   availableModels: string[];
 }
 

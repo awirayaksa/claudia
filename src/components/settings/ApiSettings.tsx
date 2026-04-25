@@ -2,9 +2,10 @@ import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setApiConfig, setAvailableModels, setPreferences } from '../../store/slices/settingsSlice';
 import { ProviderFactory } from '../../services/api/provider.factory';
-import { ProviderType, OpenWebUIConfig, OpenRouterConfig } from '../../types/api.types';
+import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig } from '../../types/api.types';
 import { OpenWebUIConfigForm } from './OpenWebUIConfigForm';
 import { OpenRouterConfigForm } from './OpenRouterConfigForm';
+import { CustomConfigForm } from './CustomConfigForm';
 
 export function ApiSettings() {
   const dispatch = useAppDispatch();
@@ -17,6 +18,9 @@ export function ApiSettings() {
   );
   const [openrouterConfig, setOpenrouterConfig] = useState<Partial<OpenRouterConfig>>(
     api.openrouter || { apiKey: '', selectedModel: '', siteUrl: '', siteName: '' }
+  );
+  const [customConfig, setCustomConfig] = useState<Partial<CustomProviderConfig>>(
+    api.custom || { baseUrl: '', apiKey: '', selectedModel: '' }
   );
   const [streamingEnabled, setStreamingEnabled] = useState(preferences.streamingEnabled);
   const [testing, setTesting] = useState(false);
@@ -36,6 +40,9 @@ export function ApiSettings() {
     }
     if (api.openrouter) {
       setOpenrouterConfig(api.openrouter);
+    }
+    if (api.custom) {
+      setCustomConfig(api.custom);
     }
     setStreamingEnabled(preferences.streamingEnabled);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,7 +70,9 @@ export function ApiSettings() {
         provider,
         provider === 'openwebui'
           ? openwebuiConfig as OpenWebUIConfig
-          : openrouterConfig as OpenRouterConfig
+          : provider === 'openrouter'
+            ? openrouterConfig as OpenRouterConfig
+            : customConfig as CustomProviderConfig
       );
 
       console.log('[ApiSettings] Test connection - baseUrl AFTER getProvider:', openwebuiConfig?.baseUrl);
@@ -80,7 +89,7 @@ export function ApiSettings() {
       // Update available models in store
       dispatch(setAvailableModels(models.map((m) => m.id)));
 
-      // If no model selected, select the first one
+      // If no model selected, select the first one (only for providers that support model listing)
       if (provider === 'openwebui' && !openwebuiConfig.selectedModel && models.length > 0) {
         console.log('[ApiSettings] Setting selected model, baseUrl before:', openwebuiConfig?.baseUrl);
         setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: models[0].id });
@@ -123,6 +132,16 @@ export function ApiSettings() {
       } else if (provider === 'openrouter') {
         newApiConfig.openrouter = openrouterConfig;
         selectedModel = openrouterConfig.selectedModel || '';
+      } else if (provider === 'custom') {
+        // Normalize baseUrl - remove trailing slashes and /api suffix
+        const normalizedConfig = { ...customConfig };
+        if (normalizedConfig.baseUrl) {
+          normalizedConfig.baseUrl = normalizedConfig.baseUrl
+            .replace(/\/+$/, '') // Remove trailing slashes
+            .replace(/\/api$/i, ''); // Remove /api suffix to prevent duplication
+        }
+        newApiConfig.custom = normalizedConfig;
+        selectedModel = normalizedConfig.selectedModel || '';
       }
 
       // Set selectedModel at the top level for backward compatibility
@@ -143,6 +162,8 @@ export function ApiSettings() {
         setOpenwebuiConfig(newApiConfig.openwebui);
       } else if (provider === 'openrouter' && newApiConfig.openrouter) {
         setOpenrouterConfig(newApiConfig.openrouter);
+      } else if (provider === 'custom' && newApiConfig.custom) {
+        setCustomConfig(newApiConfig.custom);
       }
 
       setTestResult({
@@ -208,41 +229,61 @@ export function ApiSettings() {
               >
                 <option value="openwebui">Open WebUI</option>
                 <option value="openrouter">OpenRouter</option>
+                <option value="custom">Custom (OpenAI-compatible)</option>
               </select>
             </div>
             <div>
-              <select
-                value={
-                  provider === 'openwebui'
-                    ? openwebuiConfig.selectedModel || ''
-                    : openrouterConfig.selectedModel || ''
-                }
-                onChange={(e) => {
-                  if (provider === 'openwebui') {
-                    setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: e.target.value });
-                  } else {
-                    setOpenrouterConfig({ ...openrouterConfig, selectedModel: e.target.value });
+              {provider === 'custom' ? (
+                <input
+                  type="text"
+                  value={customConfig.selectedModel || ''}
+                  onChange={(e) => setCustomConfig({ ...customConfig, selectedModel: e.target.value })}
+                  placeholder="Enter model name..."
+                  style={{
+                    width: '100%',
+                    border: '1px solid #ebe7e1',
+                    borderRadius: 7,
+                    padding: '7px 10px',
+                    fontSize: 13,
+                    background: '#fff',
+                    color: '#2e2b27',
+                    outline: 'none',
+                  }}
+                />
+              ) : (
+                <select
+                  value={
+                    provider === 'openwebui'
+                      ? openwebuiConfig.selectedModel || ''
+                      : openrouterConfig.selectedModel || ''
                   }
-                }}
-                style={{
-                  width: '100%',
-                  border: '1px solid #ebe7e1',
-                  borderRadius: 7,
-                  padding: '7px 10px',
-                  fontSize: 13,
-                  background: '#fff',
-                  color: '#2e2b27',
-                  outline: 'none',
-                }}
-              >
-                {api.availableModels.length === 0 ? (
-                  <option value="">No models — test connection</option>
-                ) : (
-                  api.availableModels.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))
-                )}
-              </select>
+                  onChange={(e) => {
+                    if (provider === 'openwebui') {
+                      setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: e.target.value });
+                    } else {
+                      setOpenrouterConfig({ ...openrouterConfig, selectedModel: e.target.value });
+                    }
+                  }}
+                  style={{
+                    width: '100%',
+                    border: '1px solid #ebe7e1',
+                    borderRadius: 7,
+                    padding: '7px 10px',
+                    fontSize: 13,
+                    background: '#fff',
+                    color: '#2e2b27',
+                    outline: 'none',
+                  }}
+                >
+                  {api.availableModels.length === 0 ? (
+                    <option value="">No models — test connection</option>
+                  ) : (
+                    api.availableModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))
+                  )}
+                </select>
+              )}
             </div>
           </div>
         </div>
@@ -269,6 +310,20 @@ export function ApiSettings() {
             availableModels={api.availableModels}
             streamingEnabled={streamingEnabled}
             onConfigChange={(updates) => setOpenrouterConfig({ ...openrouterConfig, ...updates })}
+            onStreamingChange={setStreamingEnabled}
+            onTestConnection={handleTestConnection}
+            onSave={handleSave}
+            testResult={testResult}
+            testing={testing}
+            saving={saving}
+          />
+        )}
+
+        {provider === 'custom' && (
+          <CustomConfigForm
+            config={customConfig as CustomProviderConfig}
+            streamingEnabled={streamingEnabled}
+            onConfigChange={(updates) => setCustomConfig({ ...customConfig, ...updates })}
             onStreamingChange={setStreamingEnabled}
             onTestConnection={handleTestConnection}
             onSave={handleSave}

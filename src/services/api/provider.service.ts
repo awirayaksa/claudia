@@ -37,6 +37,16 @@ export function getAPIProvider(): IAPIProvider {
         return ProviderFactory.getProvider('openrouter', config);
       }
 
+      case 'custom': {
+        const config = (apiConfig as any).custom;
+        if (!config?.baseUrl || !config?.apiKey || !config?.selectedModel) {
+          throw new Error(
+            'Custom provider not configured. Please enter your API URL, API key, and model name in Settings.'
+          );
+        }
+        return ProviderFactory.getProvider('custom', config);
+      }
+
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }

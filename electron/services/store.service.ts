@@ -8,7 +8,7 @@ interface StoreSchema {
   version?: string; // App version for migration tracking
   config: {
     api: {
-      provider: 'openwebui' | 'openrouter';
+      provider: 'openwebui' | 'openrouter' | 'custom';
       openwebui?: {
         baseUrl: string;
         apiKey: string;
@@ -19,6 +19,11 @@ interface StoreSchema {
         selectedModel: string;
         siteUrl?: string;
         siteName?: string;
+      };
+      custom?: {
+        baseUrl: string;
+        apiKey: string;
+        selectedModel: string;
       };
       availableModels: string[];
       // Legacy fields for backward compatibility
@@ -69,6 +74,7 @@ interface StoreSchema {
   encryptedApiKeys?: {
     openwebui?: string;
     openrouter?: string;
+    custom?: string;
   };
 }
 
@@ -115,7 +121,7 @@ export const store = new Store<StoreSchema>({
 });
 
 // Helper functions for secure API key storage
-export function saveApiKey(provider: 'openwebui' | 'openrouter', apiKey: string): void {
+export function saveApiKey(provider: 'openwebui' | 'openrouter' | 'custom', apiKey: string): void {
   console.log(`[Store] saveApiKey called for ${provider}, key length:`, apiKey?.length || 0);
   try {
     if (safeStorage.isEncryptionAvailable()) {
@@ -148,7 +154,7 @@ export function saveApiKey(provider: 'openwebui' | 'openrouter', apiKey: string)
   }
 }
 
-export function getApiKey(provider: 'openwebui' | 'openrouter'): string {
+export function getApiKey(provider: 'openwebui' | 'openrouter' | 'custom'): string {
   try {
     if (safeStorage.isEncryptionAvailable()) {
       const encryptedKeys = store.get('encryptedApiKeys', {}) as Record<string, string>;
@@ -206,6 +212,18 @@ export function getConfig() {
     };
   }
 
+  if (config.api.custom) {
+    const customKey = getApiKey('custom');
+    console.log('[Store] getConfig: Custom key retrieved, length:', customKey?.length || 0);
+    decryptedConfig.api = {
+      ...decryptedConfig.api,
+      custom: {
+        ...config.api.custom,
+        apiKey: customKey,
+      },
+    };
+  }
+
   return decryptedConfig;
 }
 
@@ -234,6 +252,15 @@ export function setConfig(config: Partial<StoreSchema['config']>) {
       const { apiKey, ...openrouterRest } = config.api.openrouter;
       config.api.openrouter = openrouterRest as any;
     }
+
+    // Handle Custom provider API key
+    if (config.api.custom?.apiKey) {
+      console.log('[Store] Saving encrypted Custom API key, length:', config.api.custom.apiKey.length);
+      saveApiKey('custom', config.api.custom.apiKey);
+      // Remove apiKey from config object before saving
+      const { apiKey, ...customRest } = config.api.custom;
+      config.api.custom = customRest as any;
+    }
   }
 
   // Deep merge to preserve existing fields
@@ -245,6 +272,7 @@ export function setConfig(config: Partial<StoreSchema['config']>) {
       ...config.api,
       openwebui: config.api.openwebui ? { ...currentConfig.api.openwebui, ...config.api.openwebui } : currentConfig.api.openwebui,
       openrouter: config.api.openrouter ? { ...currentConfig.api.openrouter, ...config.api.openrouter } : currentConfig.api.openrouter,
+      custom: config.api.custom ? { ...currentConfig.api.custom, ...config.api.custom } : currentConfig.api.custom,
     } : currentConfig.api,
     appearance: config.appearance ? { ...currentConfig.appearance, ...config.appearance } : currentConfig.appearance,
     preferences: config.preferences ? { ...currentConfig.preferences, ...config.preferences } : currentConfig.preferences,

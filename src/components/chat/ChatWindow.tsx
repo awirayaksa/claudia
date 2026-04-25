@@ -67,6 +67,8 @@ export function ChatWindow() {
       return apiConfig.openwebui;
     } else if (apiConfig.provider === 'openrouter') {
       return apiConfig.openrouter;
+    } else if (apiConfig.provider === 'custom') {
+      return apiConfig.custom;
     }
     return null;
   };
@@ -81,6 +83,8 @@ export function ChatWindow() {
       return !!(apiConfig.openwebui?.baseUrl && apiConfig.openwebui?.apiKey && apiConfig.openwebui?.selectedModel);
     } else if (apiConfig.provider === 'openrouter') {
       return !!(apiConfig.openrouter?.apiKey && apiConfig.openrouter?.selectedModel);
+    } else if (apiConfig.provider === 'custom') {
+      return !!(apiConfig.custom?.baseUrl && apiConfig.custom?.apiKey && apiConfig.custom?.selectedModel);
     }
     return false;
   })();
@@ -302,6 +306,8 @@ export function ChatWindow() {
         updatedConfig.openwebui = { ...updatedConfig.openwebui, selectedModel: newModel };
       } else if (apiConfig.provider === 'openrouter' && updatedConfig.openrouter) {
         updatedConfig.openrouter = { ...updatedConfig.openrouter, selectedModel: newModel };
+      } else if (apiConfig.provider === 'custom' && updatedConfig.custom) {
+        updatedConfig.custom = { ...updatedConfig.custom, selectedModel: newModel };
       }
 
       // IMPORTANT: Update the top-level selectedModel for backward compatibility

@@ -64,7 +64,9 @@ export function MainLayout() {
   // Determine selected model based on provider
   const selectedModel = api.provider === 'openrouter'
     ? api.openrouter?.selectedModel
-    : api.openwebui?.selectedModel;
+    : api.provider === 'custom'
+      ? api.custom?.selectedModel
+      : api.openwebui?.selectedModel;
 
   const availableModels = api.availableModels || [];
   const isModelAvailable = selectedModel ? availableModels.includes(selectedModel) : false;

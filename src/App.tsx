@@ -80,6 +80,16 @@ function App() {
             if (config.api.openrouter) {
               apiConfig.openrouter = config.api.openrouter;
             }
+            if (config.api.custom) {
+              // Normalize baseUrl - remove trailing slashes and /api suffix
+              const normalizedCustom = { ...config.api.custom };
+              if (normalizedCustom.baseUrl) {
+                normalizedCustom.baseUrl = normalizedCustom.baseUrl
+                  .replace(/\/+$/, '') // Remove trailing slashes
+                  .replace(/\/api$/i, ''); // Remove /api suffix to prevent duplication
+              }
+              apiConfig.custom = normalizedCustom;
+            }
 
             // Extract selectedModel from the active provider for backward compatibility
             const provider = config.api.provider || 'openwebui';
@@ -88,6 +98,8 @@ function App() {
               selectedModel = config.api.openwebui.selectedModel;
             } else if (provider === 'openrouter' && config.api.openrouter?.selectedModel) {
               selectedModel = config.api.openrouter.selectedModel;
+            } else if (provider === 'custom' && config.api.custom?.selectedModel) {
+              selectedModel = config.api.custom.selectedModel;
             }
             // Set selectedModel at the top level for backward compatibility
             apiConfig.selectedModel = selectedModel;
