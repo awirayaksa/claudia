@@ -59,22 +59,6 @@ export function MainLayout() {
       window.removeEventListener('mouseup', onMouseUp);
     };
   }, []);
-  const { api } = useAppSelector((state) => state.settings);
-
-  // Determine selected model based on provider
-  const selectedModel = api.provider === 'openrouter'
-    ? api.openrouter?.selectedModel
-    : api.provider === 'custom'
-      ? api.custom?.selectedModel
-      : api.openwebui?.selectedModel;
-
-  const availableModels = api.availableModels || [];
-  const isModelAvailable = selectedModel ? availableModels.includes(selectedModel) : false;
-
-  function humanizeModel(model: string): string {
-    return model;
-  }
-
   return (
     <div className="flex flex-col h-full w-full overflow-hidden">
       {/* Custom title bar */}
@@ -111,19 +95,6 @@ export function MainLayout() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v18" />
               </svg>
             </button>
-
-            <div className="flex items-center gap-2 text-sm">
-              <div
-                className="flex items-center gap-1.5 rounded-md border border-border bg-background px-2.5 py-1 font-medium text-text-primary"
-                title={selectedModel ? (isModelAvailable ? 'Model available' : 'Model unavailable or offline') : 'No model selected'}
-              >
-                {selectedModel ? (
-                  <span>{humanizeModel(selectedModel)}</span>
-                ) : (
-                  <span className="text-text-secondary">Not selected</span>
-                )}
-              </div>
-            </div>
           </div>
 
           <div className="flex items-center gap-1">

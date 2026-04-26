@@ -47,6 +47,16 @@ export function getAPIProvider(): IAPIProvider {
         return ProviderFactory.getProvider('custom', config);
       }
 
+      case 'opencode-go': {
+        const config = (apiConfig as any).opencodeGo;
+        if (!config?.apiKey || !config?.selectedModel) {
+          throw new Error(
+            'Opencode Go not fully configured. Please set your API key and model name in Settings.'
+          );
+        }
+        return ProviderFactory.getProvider('opencode-go', config);
+      }
+
       default:
         throw new Error(`Unknown provider: ${provider}`);
     }

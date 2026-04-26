@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig } from '../../types/api.types';
+import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig, OpencodeGoConfig } from '../../types/api.types';
 
 interface SettingsState {
   api: {
@@ -7,6 +7,7 @@ interface SettingsState {
     openwebui?: OpenWebUIConfig;
     openrouter?: OpenRouterConfig;
     custom?: CustomProviderConfig;
+    opencodeGo?: OpencodeGoConfig;
     availableModels: string[];
     // Legacy fields for backward compatibility (deprecated)
     baseUrl?: string;

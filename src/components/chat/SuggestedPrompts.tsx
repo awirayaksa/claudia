@@ -13,7 +13,14 @@ interface SuggestedPromptsProps {
   model: string;
 }
 
-const FALLBACK_EMOJIS = ['💡', '✍️', '🔍'];
+const CARD_ICONS = [
+  // Code / debug
+  <svg key="code" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>,
+  // Chart / analyze
+  <svg key="chart" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg>,
+  // Spark / ideas
+  <svg key="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6M12 16v6M2 12h6M16 12h6M5 5l4 4M15 15l4 4M5 19l4-4M15 9l4-4"/></svg>,
+];
 
 const DEFAULT_SUGGESTIONS: PromptSuggestion[] = [
   {
@@ -165,9 +172,12 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
             onClick={() => onSelect(suggestion.prompt)}
             className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40"
           >
-            <span className="text-xl leading-none">
-              {suggestion.emoji || FALLBACK_EMOJIS[index]}
-            </span>
+            <div
+              className="flex items-center justify-center rounded-md text-accent"
+              style={{ width: 26, height: 26, background: 'color-mix(in srgb, var(--color-accent) 12%, transparent)' }}
+            >
+              {CARD_ICONS[index % CARD_ICONS.length]}
+            </div>
             <div>
               <p className="text-sm font-semibold text-text-primary leading-snug">
                 {suggestion.title}

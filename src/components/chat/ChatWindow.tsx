@@ -70,6 +70,8 @@ export function ChatWindow() {
       return apiConfig.openrouter;
     } else if (apiConfig.provider === 'custom') {
       return apiConfig.custom;
+    } else if (apiConfig.provider === 'opencode-go') {
+      return (apiConfig as any).opencodeGo;
     }
     return null;
   };
@@ -86,6 +88,9 @@ export function ChatWindow() {
       return !!(apiConfig.openrouter?.apiKey && apiConfig.openrouter?.selectedModel);
     } else if (apiConfig.provider === 'custom') {
       return !!(apiConfig.custom?.baseUrl && apiConfig.custom?.apiKey && apiConfig.custom?.selectedModel);
+    } else if (apiConfig.provider === 'opencode-go') {
+      const cfg = (apiConfig as any).opencodeGo;
+      return !!(cfg?.apiKey && cfg?.selectedModel);
     }
     return false;
   })();
@@ -573,7 +578,7 @@ export function ChatWindow() {
             <FilesystemDirectoryBar disabled={isLoading || isStreaming || isExecutingTools} />
 
             {/* Centered input — same surface wrap as the bottom input */}
-            <div className="rounded-2xl border border-border bg-surface overflow-hidden">
+            <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-[0_6px_20px_-10px_rgba(60,40,20,0.16)]" style={{ borderWidth: '1.5px' }}>
               <ChatInput
                 ref={chatInputRef}
                 variant="centered"
@@ -581,7 +586,7 @@ export function ChatWindow() {
                 onAbort={handleAbortStreaming}
                 disabled={isLoading}
                 isGenerating={isStreaming || isExecutingTools}
-                placeholder={`Message ${currentConversation?.model || pendingModel || selectedModel}...`}
+                placeholder="Message Claudia…"
                 selectedModel={currentConversation?.model || pendingModel || selectedModel}
                 availableModels={availableModels}
                 onModelChange={handleModelChange}
@@ -600,20 +605,26 @@ export function ChatWindow() {
                   </p>
                 </div>
                 <div className="grid grid-cols-3 gap-2.5">
-                  {conversations.slice(0, 3).map((conv) => (
-                    <button
-                      key={conv.id}
-                      onClick={() => dispatch(setCurrentConversation(conv.id))}
-                      className="flex flex-col items-start gap-1 rounded-xl border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40"
-                    >
-                      <p className="w-full truncate text-sm font-semibold text-text-primary leading-snug">
-                        {conv.title}
-                      </p>
-                      <p className="text-xs text-text-secondary">
-                        {format(parseISO(conv.updatedAt), 'h:mm a')}
-                      </p>
-                    </button>
-                  ))}
+                  {conversations.slice(0, 3).map((conv) => {
+                    const date = parseISO(conv.updatedAt);
+                    const whenLabel = isToday(date) ? 'Today' : isYesterday(date) ? 'Yesterday' : format(date, 'MMM d');
+                    const timeLabel = format(date, 'h:mm a');
+                    return (
+                      <button
+                        key={conv.id}
+                        onClick={() => dispatch(setCurrentConversation(conv.id))}
+                        className="flex flex-col items-start gap-1.5 rounded-xl border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40 min-h-[80px]"
+                      >
+                        <p className="w-full truncate text-sm font-semibold text-text-primary leading-snug">
+                          {conv.title}
+                        </p>
+                        <div className="flex-1" />
+                        <p className="text-xs text-text-secondary tabular-nums">
+                          {whenLabel} · {timeLabel}
+                        </p>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             )}

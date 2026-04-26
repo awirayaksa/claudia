@@ -90,6 +90,13 @@ function App() {
               }
               apiConfig.custom = normalizedCustom;
             }
+            if ((config.api as any).opencodeGo) {
+              const normalizedOpencodeGo = { ...(config.api as any).opencodeGo };
+              if (normalizedOpencodeGo.baseUrl) {
+                normalizedOpencodeGo.baseUrl = normalizedOpencodeGo.baseUrl.replace(/\/+$/, '');
+              }
+              apiConfig.opencodeGo = normalizedOpencodeGo;
+            }
 
             // Extract selectedModel from the active provider for backward compatibility
             const provider = config.api.provider || 'openwebui';
@@ -100,6 +107,8 @@ function App() {
               selectedModel = config.api.openrouter.selectedModel;
             } else if (provider === 'custom' && config.api.custom?.selectedModel) {
               selectedModel = config.api.custom.selectedModel;
+            } else if (provider === 'opencode-go' && (config.api as any).opencodeGo?.selectedModel) {
+              selectedModel = (config.api as any).opencodeGo.selectedModel;
             }
             // Set selectedModel at the top level for backward compatibility
             apiConfig.selectedModel = selectedModel;

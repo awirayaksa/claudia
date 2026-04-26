@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setApiConfig, setAvailableModels, setPreferences } from '../../store/slices/settingsSlice';
 import { ProviderFactory } from '../../services/api/provider.factory';
-import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig } from '../../types/api.types';
+import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig, OpencodeGoConfig } from '../../types/api.types';
 import { OpenWebUIConfigForm } from './OpenWebUIConfigForm';
 import { OpenRouterConfigForm } from './OpenRouterConfigForm';
 import { CustomConfigForm } from './CustomConfigForm';
+import { OpencodeGoConfigForm } from './OpencodeGoConfigForm';
 
 export function ApiSettings() {
   const dispatch = useAppDispatch();
@@ -21,6 +22,9 @@ export function ApiSettings() {
   );
   const [customConfig, setCustomConfig] = useState<Partial<CustomProviderConfig>>(
     api.custom || { baseUrl: '', apiKey: '', selectedModel: '' }
+  );
+  const [opencodeGoConfig, setOpencodeGoConfig] = useState<Partial<OpencodeGoConfig>>(
+    api.opencodeGo || { baseUrl: 'https://opencode.ai/zen/go', apiKey: '', selectedModel: '', apiCompatibility: 'openai' }
   );
   const [streamingEnabled, setStreamingEnabled] = useState(preferences.streamingEnabled);
   const [testing, setTesting] = useState(false);
@@ -43,6 +47,9 @@ export function ApiSettings() {
     }
     if (api.custom) {
       setCustomConfig(api.custom);
+    }
+    if (api.opencodeGo) {
+      setOpencodeGoConfig(api.opencodeGo);
     }
     setStreamingEnabled(preferences.streamingEnabled);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -72,7 +79,9 @@ export function ApiSettings() {
           ? openwebuiConfig as OpenWebUIConfig
           : provider === 'openrouter'
             ? openrouterConfig as OpenRouterConfig
-            : customConfig as CustomProviderConfig
+            : provider === 'opencode-go'
+              ? opencodeGoConfig as OpencodeGoConfig
+              : customConfig as CustomProviderConfig
       );
 
       console.log('[ApiSettings] Test connection - baseUrl AFTER getProvider:', openwebuiConfig?.baseUrl);
@@ -142,6 +151,13 @@ export function ApiSettings() {
         }
         newApiConfig.custom = normalizedConfig;
         selectedModel = normalizedConfig.selectedModel || '';
+      } else if (provider === 'opencode-go') {
+        const normalizedConfig = { ...opencodeGoConfig };
+        if (normalizedConfig.baseUrl) {
+          normalizedConfig.baseUrl = normalizedConfig.baseUrl.replace(/\/+$/, '');
+        }
+        newApiConfig.opencodeGo = normalizedConfig;
+        selectedModel = normalizedConfig.selectedModel || '';
       }
 
       // Set selectedModel at the top level for backward compatibility
@@ -164,6 +180,8 @@ export function ApiSettings() {
         setOpenrouterConfig(newApiConfig.openrouter);
       } else if (provider === 'custom' && newApiConfig.custom) {
         setCustomConfig(newApiConfig.custom);
+      } else if (provider === 'opencode-go' && newApiConfig.opencodeGo) {
+        setOpencodeGoConfig(newApiConfig.opencodeGo);
       }
 
       setTestResult({
@@ -230,15 +248,22 @@ export function ApiSettings() {
                 <option value="openwebui">Open WebUI</option>
                 <option value="openrouter">OpenRouter</option>
                 <option value="custom">Custom (OpenAI-compatible)</option>
+                <option value="opencode-go">Opencode Go</option>
               </select>
             </div>
             <div>
-              {provider === 'custom' ? (
+              {(provider === 'custom' || provider === 'opencode-go') ? (
                 <input
                   type="text"
-                  value={customConfig.selectedModel || ''}
-                  onChange={(e) => setCustomConfig({ ...customConfig, selectedModel: e.target.value })}
-                  placeholder="Enter model name..."
+                  value={provider === 'custom' ? (customConfig.selectedModel || '') : (opencodeGoConfig.selectedModel || '')}
+                  onChange={(e) => {
+                    if (provider === 'custom') {
+                      setCustomConfig({ ...customConfig, selectedModel: e.target.value });
+                    } else {
+                      setOpencodeGoConfig({ ...opencodeGoConfig, selectedModel: e.target.value });
+                    }
+                  }}
+                  placeholder={provider === 'opencode-go' ? 'opencode-go/kimi-k2.6' : 'Enter model name...'}
                   style={{
                     width: '100%',
                     border: '1px solid #ebe7e1',
@@ -324,6 +349,20 @@ export function ApiSettings() {
             config={customConfig as CustomProviderConfig}
             streamingEnabled={streamingEnabled}
             onConfigChange={(updates) => setCustomConfig({ ...customConfig, ...updates })}
+            onStreamingChange={setStreamingEnabled}
+            onTestConnection={handleTestConnection}
+            onSave={handleSave}
+            testResult={testResult}
+            testing={testing}
+            saving={saving}
+          />
+        )}
+
+        {provider === 'opencode-go' && (
+          <OpencodeGoConfigForm
+            config={opencodeGoConfig as OpencodeGoConfig}
+            streamingEnabled={streamingEnabled}
+            onConfigChange={(updates) => setOpencodeGoConfig({ ...opencodeGoConfig, ...updates })}
             onStreamingChange={setStreamingEnabled}
             onTestConnection={handleTestConnection}
             onSave={handleSave}
