@@ -14,6 +14,7 @@ interface ConversationItemProps {
   isActive: boolean;
   isSelectionMode?: boolean;
   isSelected?: boolean;
+  hideDate?: boolean;
   onClick: () => void;
   onToggleSelect?: (id: string) => void;
   onRename: (id: string, newTitle: string) => void;
@@ -26,6 +27,7 @@ export const ConversationItem = React.memo(function ConversationItem({
   isActive,
   isSelectionMode = false,
   isSelected = false,
+  hideDate = false,
   onClick,
   onToggleSelect,
   onRename,
@@ -144,11 +146,13 @@ export const ConversationItem = React.memo(function ConversationItem({
             >
               {conversation.title}
             </p>
-            <span
-              className="flex-shrink-0 text-xs tabular-nums text-text-secondary"
-            >
-              {timeLabel}
-            </span>
+            {!hideDate && (
+              <span
+                className="flex-shrink-0 text-xs tabular-nums text-text-secondary"
+              >
+                {timeLabel}
+              </span>
+            )}
           </div>
         )}
       </div>

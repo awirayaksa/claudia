@@ -20,12 +20,17 @@ import { ConversationMetadata } from '../../types/conversation.types';
 import { isToday, isYesterday, isThisWeek, parseISO } from 'date-fns';
 
 function groupConversations(conversations: ConversationMetadata[]) {
+  const starred: ConversationMetadata[] = [];
   const today: ConversationMetadata[] = [];
   const yesterday: ConversationMetadata[] = [];
   const week: ConversationMetadata[] = [];
   const earlier: ConversationMetadata[] = [];
 
   for (const c of conversations) {
+    if (c.starred) {
+      starred.push(c);
+      continue;
+    }
     const date = parseISO(c.updatedAt);
     if (isToday(date)) today.push(c);
     else if (isYesterday(date)) yesterday.push(c);
@@ -33,7 +38,7 @@ function groupConversations(conversations: ConversationMetadata[]) {
     else earlier.push(c);
   }
 
-  return { today, yesterday, week, earlier };
+  return { starred, today, yesterday, week, earlier };
 }
 
 export function ConversationList({ width }: { width?: number }) {
@@ -185,6 +190,7 @@ export function ConversationList({ width }: { width?: number }) {
             isActive={conversation.id === currentConversationId}
             isSelectionMode={isSelectionMode}
             isSelected={selectedIds.has(conversation.id)}
+            hideDate
             onClick={() => handleSelectConversation(conversation.id)}
             onToggleSelect={handleToggleSelect}
             onRename={handleRename}
@@ -291,6 +297,7 @@ export function ConversationList({ width }: { width?: number }) {
           </div>
         ) : (
           <div className="py-1">
+            {renderGroup('Starred', groups.starred)}
             {renderGroup('Today', groups.today)}
             {renderGroup('Yesterday', groups.yesterday)}
             {renderGroup('Previous 7 days', groups.week)}
