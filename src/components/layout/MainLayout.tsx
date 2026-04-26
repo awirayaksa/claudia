@@ -107,7 +107,8 @@ export function MainLayout() {
               title={sidebarOpen ? 'Hide sidebar' : 'Show sidebar'}
             >
               <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" strokeWidth={2} />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v18" />
               </svg>
             </button>
 
