@@ -171,7 +171,7 @@ export function SettingsPanel() {
                       padding: '1px 4px',
                     }}
                   >
-                    ⌘,
+                    {navigator.platform.includes('Mac') ? '⌘,' : 'Ctrl+,'}
                   </span>
                 </div>
               </div>
