@@ -13,7 +13,21 @@ export function useChat() {
     error,
     isExecutingTools,
   } = useAppSelector((state) => state.chat);
-  const { selectedModel } = useAppSelector((state) => state.settings.api);
+  const api = useAppSelector((state) => state.settings.api);
+  const selectedModel = (() => {
+    switch (api.provider) {
+      case 'openwebui':
+        return api.openwebui?.selectedModel || '';
+      case 'openrouter':
+        return api.openrouter?.selectedModel || '';
+      case 'custom':
+        return api.custom?.selectedModel || '';
+      case 'opencode-go':
+        return (api as any).opencodeGo?.selectedModel || '';
+      default:
+        return api.selectedModel || '';
+    }
+  })();
   const { streamingEnabled } = useAppSelector((state) => state.settings.preferences);
 
   const handleSendMessage = useCallback(

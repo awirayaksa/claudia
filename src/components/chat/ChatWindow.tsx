@@ -314,10 +314,11 @@ export function ChatWindow() {
         updatedConfig.openrouter = { ...updatedConfig.openrouter, selectedModel: newModel };
       } else if (apiConfig.provider === 'custom' && updatedConfig.custom) {
         updatedConfig.custom = { ...updatedConfig.custom, selectedModel: newModel };
+      } else if (apiConfig.provider === 'opencode-go' && (updatedConfig as any).opencodeGo) {
+        (updatedConfig as any).opencodeGo = { ...(updatedConfig as any).opencodeGo, selectedModel: newModel };
       }
 
       // IMPORTANT: Update the top-level selectedModel for backward compatibility
-      // (useChat hook reads from this)
       updatedConfig.selectedModel = newModel;
 
       console.log('[ChatWindow] Updated config:', updatedConfig);

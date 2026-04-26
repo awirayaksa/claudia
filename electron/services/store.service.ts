@@ -8,7 +8,7 @@ interface StoreSchema {
   version?: string; // App version for migration tracking
   config: {
     api: {
-      provider: 'openwebui' | 'openrouter' | 'custom';
+      provider: 'openwebui' | 'openrouter' | 'custom' | 'opencode-go';
       openwebui?: {
         baseUrl: string;
         apiKey: string;
@@ -24,6 +24,12 @@ interface StoreSchema {
         baseUrl: string;
         apiKey: string;
         selectedModel: string;
+      };
+      opencodeGo?: {
+        baseUrl: string;
+        apiKey: string;
+        selectedModel: string;
+        apiCompatibility: 'openai' | 'anthropic';
       };
       availableModels: string[];
       // Legacy fields for backward compatibility
@@ -75,6 +81,7 @@ interface StoreSchema {
     openwebui?: string;
     openrouter?: string;
     custom?: string;
+    'opencode-go'?: string;
   };
 }
 
@@ -121,7 +128,7 @@ export const store = new Store<StoreSchema>({
 });
 
 // Helper functions for secure API key storage
-export function saveApiKey(provider: 'openwebui' | 'openrouter' | 'custom', apiKey: string): void {
+export function saveApiKey(provider: 'openwebui' | 'openrouter' | 'custom' | 'opencode-go', apiKey: string): void {
   console.log(`[Store] saveApiKey called for ${provider}, key length:`, apiKey?.length || 0);
   try {
     if (safeStorage.isEncryptionAvailable()) {
@@ -154,7 +161,7 @@ export function saveApiKey(provider: 'openwebui' | 'openrouter' | 'custom', apiK
   }
 }
 
-export function getApiKey(provider: 'openwebui' | 'openrouter' | 'custom'): string {
+export function getApiKey(provider: 'openwebui' | 'openrouter' | 'custom' | 'opencode-go'): string {
   try {
     if (safeStorage.isEncryptionAvailable()) {
       const encryptedKeys = store.get('encryptedApiKeys', {}) as Record<string, string>;
@@ -224,6 +231,18 @@ export function getConfig() {
     };
   }
 
+  if (config.api.opencodeGo) {
+    const opencodeGoKey = getApiKey('opencode-go');
+    console.log('[Store] getConfig: Opencode Go key retrieved, length:', opencodeGoKey?.length || 0);
+    decryptedConfig.api = {
+      ...decryptedConfig.api,
+      opencodeGo: {
+        ...config.api.opencodeGo,
+        apiKey: opencodeGoKey,
+      },
+    };
+  }
+
   return decryptedConfig;
 }
 
@@ -261,6 +280,15 @@ export function setConfig(config: Partial<StoreSchema['config']>) {
       const { apiKey, ...customRest } = config.api.custom;
       config.api.custom = customRest as any;
     }
+
+    // Handle Opencode Go API key
+    if (config.api.opencodeGo?.apiKey) {
+      console.log('[Store] Saving encrypted Opencode Go API key, length:', config.api.opencodeGo.apiKey.length);
+      saveApiKey('opencode-go', config.api.opencodeGo.apiKey);
+      // Remove apiKey from config object before saving
+      const { apiKey, ...opencodeGoRest } = config.api.opencodeGo;
+      config.api.opencodeGo = opencodeGoRest as any;
+    }
   }
 
   // Deep merge to preserve existing fields
@@ -273,6 +301,7 @@ export function setConfig(config: Partial<StoreSchema['config']>) {
       openwebui: config.api.openwebui ? { ...currentConfig.api.openwebui, ...config.api.openwebui } : currentConfig.api.openwebui,
       openrouter: config.api.openrouter ? { ...currentConfig.api.openrouter, ...config.api.openrouter } : currentConfig.api.openrouter,
       custom: config.api.custom ? { ...currentConfig.api.custom, ...config.api.custom } : currentConfig.api.custom,
+      opencodeGo: config.api.opencodeGo ? { ...currentConfig.api.opencodeGo, ...config.api.opencodeGo } : currentConfig.api.opencodeGo,
     } : currentConfig.api,
     appearance: config.appearance ? { ...currentConfig.appearance, ...config.appearance } : currentConfig.appearance,
     preferences: config.preferences ? { ...currentConfig.preferences, ...config.preferences } : currentConfig.preferences,

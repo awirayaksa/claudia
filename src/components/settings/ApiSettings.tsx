@@ -104,6 +104,8 @@ export function ApiSettings() {
         setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: models[0].id });
       } else if (provider === 'openrouter' && !openrouterConfig.selectedModel && models.length > 0) {
         setOpenrouterConfig({ ...openrouterConfig, selectedModel: models[0].id });
+      } else if (provider === 'opencode-go' && !opencodeGoConfig.selectedModel && models.length > 0) {
+        setOpencodeGoConfig({ ...opencodeGoConfig, selectedModel: models[0].id });
       }
 
       console.log('[ApiSettings] Test connection complete - baseUrl FINAL:', openwebuiConfig?.baseUrl);
@@ -154,7 +156,9 @@ export function ApiSettings() {
       } else if (provider === 'opencode-go') {
         const normalizedConfig = { ...opencodeGoConfig };
         if (normalizedConfig.baseUrl) {
-          normalizedConfig.baseUrl = normalizedConfig.baseUrl.replace(/\/+$/, '');
+          normalizedConfig.baseUrl = normalizedConfig.baseUrl
+            .replace(/\/+$/, '') // Remove trailing slashes
+            .replace(/\/v1$/i, ''); // Remove /v1 suffix to prevent duplication
         }
         newApiConfig.opencodeGo = normalizedConfig;
         selectedModel = normalizedConfig.selectedModel || '';
@@ -172,6 +176,9 @@ export function ApiSettings() {
       // Update Redux store
       dispatch(setApiConfig(newApiConfig));
       dispatch(setPreferences({ streamingEnabled }));
+
+      // Clear cached provider instances so the next chat uses fresh config
+      ProviderFactory.clearProviders();
 
       // Update local form state to match what was saved (with normalized URLs)
       if (provider === 'openwebui' && newApiConfig.openwebui) {
@@ -252,18 +259,14 @@ export function ApiSettings() {
               </select>
             </div>
             <div>
-              {(provider === 'custom' || provider === 'opencode-go') ? (
+              {provider === 'custom' ? (
                 <input
                   type="text"
-                  value={provider === 'custom' ? (customConfig.selectedModel || '') : (opencodeGoConfig.selectedModel || '')}
+                  value={customConfig.selectedModel || ''}
                   onChange={(e) => {
-                    if (provider === 'custom') {
-                      setCustomConfig({ ...customConfig, selectedModel: e.target.value });
-                    } else {
-                      setOpencodeGoConfig({ ...opencodeGoConfig, selectedModel: e.target.value });
-                    }
+                    setCustomConfig({ ...customConfig, selectedModel: e.target.value });
                   }}
-                  placeholder={provider === 'opencode-go' ? 'opencode-go/kimi-k2.6' : 'Enter model name...'}
+                  placeholder="Enter model name..."
                   style={{
                     width: '100%',
                     border: '1px solid #ebe7e1',
@@ -280,13 +283,17 @@ export function ApiSettings() {
                   value={
                     provider === 'openwebui'
                       ? openwebuiConfig.selectedModel || ''
-                      : openrouterConfig.selectedModel || ''
+                      : provider === 'openrouter'
+                        ? openrouterConfig.selectedModel || ''
+                        : opencodeGoConfig.selectedModel || ''
                   }
                   onChange={(e) => {
                     if (provider === 'openwebui') {
                       setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: e.target.value });
-                    } else {
+                    } else if (provider === 'openrouter') {
                       setOpenrouterConfig({ ...openrouterConfig, selectedModel: e.target.value });
+                    } else {
+                      setOpencodeGoConfig({ ...opencodeGoConfig, selectedModel: e.target.value });
                     }
                   }}
                   style={{

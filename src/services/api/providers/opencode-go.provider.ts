@@ -14,6 +14,32 @@ import { MessageUsage } from '../../../types/statistics.types';
 import { IAPIProvider } from '../provider.interface';
 import { StreamCallbacks } from '../streaming.service';
 
+const OPENCODE_GO_MODELS: Model[] = [
+  // OpenAI-compatible models
+  { id: 'glm-5.1', name: 'GLM-5.1', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'glm-5', name: 'GLM-5', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'kimi-k2.5', name: 'Kimi K2.5', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'kimi-k2.6', name: 'Kimi K2.6', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'mimo-v2-pro', name: 'MiMo-V2-Pro', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'mimo-v2-omni', name: 'MiMo-V2-Omni', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'mimo-v2.5-pro', name: 'MiMo-V2.5-Pro', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'mimo-v2.5', name: 'MiMo-V2.5', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'qwen3.6-plus', name: 'Qwen3.6 Plus', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'qwen3.5-plus', name: 'Qwen3.5 Plus', object: 'model', created: 0, owned_by: 'opencode-go' },
+  // Anthropic-compatible models
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'minimax-m2.7', name: 'MiniMax M2.7', object: 'model', created: 0, owned_by: 'opencode-go' },
+  { id: 'minimax-m2.5', name: 'MiniMax M2.5', object: 'model', created: 0, owned_by: 'opencode-go' },
+];
+
+const ANTHROPIC_MODEL_IDS = new Set([
+  'deepseek-v4-pro',
+  'deepseek-v4-flash',
+  'minimax-m2.7',
+  'minimax-m2.5',
+]);
+
 export class OpencodeGoProvider implements IAPIProvider {
   private axiosInstance: AxiosInstance;
   private config: OpencodeGoConfig;
@@ -24,7 +50,27 @@ export class OpencodeGoProvider implements IAPIProvider {
   }
 
   private normalizeBaseUrl(url: string): string {
-    return url.replace(/\/+$/, '').replace(/\/api$/i, '');
+    return url
+      .replace(/\/+$/, '') // Remove trailing slashes
+      .replace(/\/api$/i, '') // Remove /api suffix
+      .replace(/\/v1$/i, ''); // Remove /v1 suffix (prevents double /v1 in requests)
+  }
+
+  private normalizeModelId(modelId: string): string {
+    // Strip opencode-go/ prefix if present (e.g. opencode-go/kimi-k2.6 → kimi-k2.6)
+    if (modelId.startsWith('opencode-go/')) {
+      return modelId.slice('opencode-go/'.length);
+    }
+    // Strip other common provider prefixes (e.g. moonshotai/kimi-k2.6 → kimi-k2.6)
+    const prefixSeparator = modelId.indexOf('/');
+    if (prefixSeparator > 0 && prefixSeparator < modelId.length - 1) {
+      // Check if prefix looks like a provider slug (alphanumeric + dashes)
+      const prefix = modelId.slice(0, prefixSeparator);
+      if (/^[a-z0-9-]+$/.test(prefix)) {
+        return modelId.slice(prefixSeparator + 1);
+      }
+    }
+    return modelId;
   }
 
   private createAxiosInstance(config: OpencodeGoConfig): AxiosInstance {
@@ -52,17 +98,22 @@ export class OpencodeGoProvider implements IAPIProvider {
   }
 
   async getModels(): Promise<Model[]> {
-    return [];
+    const isAnthropic = this.config.apiCompatibility === 'anthropic';
+    return OPENCODE_GO_MODELS.filter((m) => {
+      const isAnthropicModel = ANTHROPIC_MODEL_IDS.has(m.id);
+      return isAnthropic ? isAnthropicModel : !isAnthropicModel;
+    });
   }
 
   async chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+    const normalizedRequest = { ...request, model: this.normalizeModelId(request.model) };
     try {
       if (this.config.apiCompatibility === 'anthropic') {
-        return await this.chatCompletionAnthropic(request);
+        return await this.chatCompletionAnthropic(normalizedRequest);
       }
       const response = await this.axiosInstance.post<ChatCompletionResponse>(
         '/v1/chat/completions',
-        { ...request, stream: false }
+        { ...normalizedRequest, stream: false }
       );
       return response.data;
     } catch (error) {
@@ -127,10 +178,11 @@ export class OpencodeGoProvider implements IAPIProvider {
     abortSignal?: AbortSignal,
     _traceId?: string
   ): Promise<void> {
+    const normalizedRequest = { ...request, model: this.normalizeModelId(request.model) };
     if (this.config.apiCompatibility === 'anthropic') {
-      return this.streamChatCompletionAnthropic(request, callbacks, abortSignal);
+      return this.streamChatCompletionAnthropic(normalizedRequest, callbacks, abortSignal);
     }
-    return this.streamChatCompletionOpenAI(request, callbacks, abortSignal);
+    return this.streamChatCompletionOpenAI(normalizedRequest, callbacks, abortSignal);
   }
 
   private async streamChatCompletionOpenAI(
@@ -343,7 +395,7 @@ export class OpencodeGoProvider implements IAPIProvider {
   async testConnection(): Promise<boolean> {
     try {
       await this.chatCompletion({
-        model: this.config.selectedModel,
+        model: this.normalizeModelId(this.config.selectedModel),
         messages: [{ role: 'user', content: 'hi' }],
         max_tokens: 1,
       });
@@ -354,8 +406,9 @@ export class OpencodeGoProvider implements IAPIProvider {
   }
 
   updateConfig(config: OpencodeGoConfig): void {
-    this.config = config;
-    this.axiosInstance = this.createAxiosInstance(config);
+    // Defensive copy to avoid holding a reference to external (e.g. Redux) state objects
+    this.config = { ...config };
+    this.axiosInstance = this.createAxiosInstance(this.config);
   }
 
   private handleError(error: unknown): Error {

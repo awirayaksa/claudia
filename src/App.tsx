@@ -93,7 +93,9 @@ function App() {
             if ((config.api as any).opencodeGo) {
               const normalizedOpencodeGo = { ...(config.api as any).opencodeGo };
               if (normalizedOpencodeGo.baseUrl) {
-                normalizedOpencodeGo.baseUrl = normalizedOpencodeGo.baseUrl.replace(/\/+$/, '');
+                normalizedOpencodeGo.baseUrl = normalizedOpencodeGo.baseUrl
+                  .replace(/\/+$/, '') // Remove trailing slashes
+                  .replace(/\/v1$/i, ''); // Remove /v1 suffix to prevent duplication
               }
               apiConfig.opencodeGo = normalizedOpencodeGo;
             }

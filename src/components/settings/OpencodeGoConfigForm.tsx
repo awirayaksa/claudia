@@ -136,11 +136,11 @@ export function OpencodeGoConfigForm({
 
       <Input
         label="Model Name"
-        placeholder="opencode-go/kimi-k2.6"
+        placeholder="kimi-k2.6"
         value={config?.selectedModel || ''}
         onChange={(e) => onConfigChange({ selectedModel: e.target.value })}
         error={errors.selectedModel}
-        helperText="Enter the model identifier manually (e.g., opencode-go/kimi-k2.6, opencode-go/deepseek-v4-pro)"
+        helperText="Models are auto-populated when you click Test Connection. You can also enter a model ID manually (e.g., kimi-k2.6, deepseek-v4-pro)."
       />
 
       <div className="flex gap-2">
