@@ -4,10 +4,11 @@ import { useTheme } from './hooks/useTheme';
 import { useAccentColor } from './hooks/useAccentColor';
 import { useAppTitle } from './hooks/useAppTitle';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
-import { useConversations } from './hooks/useConversations';
 import { useAppDispatch, useAppSelector } from './store';
 import { setApiConfig, setAppearance, setPreferences } from './store/slices/settingsSlice';
 import { setSettingsOpen, toggleSidebar } from './store/slices/uiSlice';
+import { clearMessages } from './store/slices/chatSlice';
+import { createConversation } from './store/slices/conversationSlice';
 import { discoverPlugins, loadPluginConfigs, refreshActivePlugins } from './store/slices/pluginSlice';
 import { loadSkills, setSkills } from './store/slices/skillSlice';
 import packageJson from '../package.json';
@@ -15,7 +16,8 @@ import packageJson from '../package.json';
 function App() {
   const dispatch = useAppDispatch();
   const appearance = useAppSelector((state) => state.settings.appearance);
-  const { create: createConversation } = useConversations();
+  const { selectedModel } = useAppSelector((state) => state.settings.api);
+  const { currentProjectId } = useAppSelector((state) => state.project);
 
   // Initialize skills on app start and listen for file-watcher push events
   useEffect(() => {
@@ -147,9 +149,18 @@ function App() {
     });
 
     const cleanupNewChat = window.electron.onMenuEvent('menu:new-conversation', () => {
-      createConversation().catch((error) => {
-        console.error('Failed to create conversation from menu:', error);
-      });
+      if (!selectedModel) {
+        alert('Please select a model in settings first');
+        return;
+      }
+      dispatch(clearMessages());
+      dispatch(
+        createConversation({
+          projectId: currentProjectId,
+          title: 'New Conversation',
+          model: selectedModel,
+        })
+      );
     });
 
     const cleanupAbout = window.electron.onMenuEvent('menu:about', () => {
@@ -164,7 +175,7 @@ function App() {
       cleanupNewChat?.();
       cleanupAbout?.();
     };
-  }, [dispatch, createConversation, appearance.customization?.appTitle]);
+  }, [dispatch, selectedModel, currentProjectId, appearance.customization?.appTitle]);
 
   // Initialize theme on app load
   useTheme();

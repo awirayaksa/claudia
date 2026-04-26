@@ -1,11 +1,13 @@
 import { useEffect } from 'react';
-import { useAppDispatch } from '../store';
+import { useAppDispatch, useAppSelector } from '../store';
 import { setSettingsOpen, toggleSidebar } from '../store/slices/uiSlice';
-import { useConversations } from './useConversations';
+import { clearMessages } from '../store/slices/chatSlice';
+import { createConversation } from '../store/slices/conversationSlice';
 
 export function useKeyboardShortcuts() {
   const dispatch = useAppDispatch();
-  const { create: createConversation } = useConversations();
+  const { selectedModel } = useAppSelector((state) => state.settings.api);
+  const { currentProjectId } = useAppSelector((state) => state.project);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -21,9 +23,18 @@ export function useKeyboardShortcuts() {
       // Ctrl/Cmd + N: New conversation
       if (modifier && event.key === 'n') {
         event.preventDefault();
-        createConversation().catch((error) => {
-          console.error('Failed to create conversation:', error);
-        });
+        if (!selectedModel) {
+          alert('Please select a model in settings first');
+          return;
+        }
+        dispatch(clearMessages());
+        dispatch(
+          createConversation({
+            projectId: currentProjectId,
+            title: 'New Conversation',
+            model: selectedModel,
+          })
+        );
       }
 
       // Escape: Close modals/settings
@@ -37,5 +48,5 @@ export function useKeyboardShortcuts() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [dispatch, createConversation]);
+  }, [dispatch, selectedModel, currentProjectId]);
 }

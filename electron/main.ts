@@ -153,7 +153,13 @@ function createMenu() {
         { type: 'separator' },
         { role: 'reload' },
         { role: 'forceReload' },
-        { role: 'toggleDevTools' },
+        {
+          label: 'Toggle Developer Tools',
+          accelerator: 'Ctrl+Shift+I',
+          click: () => {
+            mainWindow?.webContents.toggleDevTools();
+          },
+        },
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },

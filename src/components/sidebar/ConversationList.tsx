@@ -228,7 +228,6 @@ export function ConversationList({ width }: { width?: number }) {
             placeholder="Search conversations"
             className="flex-1 bg-transparent text-xs text-text-primary placeholder-text-secondary outline-none"
           />
-          <kbd className="rounded border border-border bg-surface px-1 py-0.5 text-xs text-text-secondary">{navigator.platform.includes('Mac') ? '⌘K' : 'Ctrl+K'}</kbd>
         </div>
       </div>
 
