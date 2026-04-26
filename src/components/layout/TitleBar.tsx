@@ -46,6 +46,9 @@ export function TitleBar() {
           </svg>
         </button>
         <span className="text-sm font-medium text-text-primary">{appTitle}</span>
+        <span className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-text-secondary">
+          Alpha
+        </span>
       </div>
 
       {/* Window controls */}

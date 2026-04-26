@@ -123,9 +123,6 @@ export function MainLayout() {
                   <span className="text-text-secondary">Not selected</span>
                 )}
               </div>
-              <span className="rounded border border-border bg-background px-1.5 py-0.5 text-xs text-text-secondary">
-                Alpha
-              </span>
             </div>
           </div>
 
