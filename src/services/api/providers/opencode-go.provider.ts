@@ -194,22 +194,31 @@ export class OpencodeGoProvider implements IAPIProvider {
     const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
 
     try {
+      const requestBody = JSON.stringify({ ...request, stream: true });
+      console.log('[OpencodeGoProvider] Request body:', requestBody);
+
       const response = await fetch(`${baseUrl}/v1/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.config.apiKey}`,
         },
-        body: JSON.stringify({ ...request, stream: true }),
+        body: requestBody,
         signal: abortSignal,
       });
 
       if (!response.ok) {
         let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
+        let rawBody = '';
         try {
-          const errorData = await response.json();
+          rawBody = await response.text();
+          const errorData = JSON.parse(rawBody);
           errorMessage = errorData.error?.message || errorMessage;
-        } catch { /* ignore */ }
+          console.error('[OpencodeGoProvider] API error response:', errorData);
+          console.error('[OpencodeGoProvider] API error message:', errorData.error?.message || 'No message');
+        } catch {
+          console.error('[OpencodeGoProvider] API error raw body:', rawBody);
+        }
         throw new Error(errorMessage);
       }
 

@@ -12,17 +12,46 @@ import { isUIResource } from '@mcp-ui/client';
  */
 export class ToolIntegrationService {
   /**
-   * Convert MCP tools to OpenAI function calling format
+   * Convert MCP tools to OpenAI function calling format.
+   * Strips non-standard fields (e.g. $schema, additionalProperties) from the
+   * JSON Schema to avoid strict-proxy 400 errors.
    */
   static mcpToolsToOpenAI(mcpTools: MCPTool[]): OpenAITool[] {
-    return mcpTools.map((tool) => ({
-      type: 'function' as const,
-      function: {
-        name: tool.name,
-        description: tool.description || '', // Provide empty string as fallback
-        parameters: tool.inputSchema,
-      },
-    }));
+    return mcpTools.map((tool) => {
+      const cleanedParameters = tool.inputSchema
+        ? this.cleanJsonSchema(tool.inputSchema)
+        : { type: 'object', properties: {} };
+
+      return {
+        type: 'function' as const,
+        function: {
+          name: tool.name,
+          description: tool.description || '', // Provide empty string as fallback
+          parameters: cleanedParameters,
+        },
+      };
+    });
+  }
+
+  /**
+   * Recursively strip non-standard JSON Schema fields that OpenAI-compatible
+   * providers may reject (e.g. $schema, additionalProperties).
+   */
+  private static cleanJsonSchema(schema: any): any {
+    if (schema === null || typeof schema !== 'object') {
+      return schema;
+    }
+
+    if (Array.isArray(schema)) {
+      return schema.map((item) => this.cleanJsonSchema(item));
+    }
+
+    const { $schema, additionalProperties, ...rest } = schema;
+    const cleaned: any = {};
+    for (const [key, value] of Object.entries(rest)) {
+      cleaned[key] = this.cleanJsonSchema(value);
+    }
+    return cleaned;
   }
 
   /**

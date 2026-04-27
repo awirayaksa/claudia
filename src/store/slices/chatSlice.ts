@@ -39,6 +39,79 @@ function buildMessageContent(
   return parts;
 }
 
+/**
+ * Truncate text to a maximum length, adding an ellipsis if truncated.
+ */
+function truncateText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return text.slice(0, maxLength - 3) + '...';
+}
+
+/**
+ * Build API message from a Redux Message with normalization for tool calling.
+ * Assistant messages with tool_calls but empty content must send content: null.
+ * Tool messages must have non-empty content.
+ */
+function buildAPIMessage(msg: Message) {
+  let content: string | ContentPart[] | null = buildMessageContent(msg.content, msg.attachments);
+
+  // OpenAI-compatible APIs: assistant messages with tool_calls should omit empty content entirely
+  // rather than sending null or empty string, to avoid strict-proxy 400s.
+  let omitContent = false;
+  if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
+    if (typeof content === 'string' && !content.trim()) {
+      omitContent = true;
+    } else if (Array.isArray(content) && content.length === 0) {
+      omitContent = true;
+    }
+  }
+
+  // Tool messages must have non-empty content, and should be truncated
+  // to avoid hitting provider size limits on follow-up requests.
+  if (msg.role === 'tool') {
+    if (typeof content === 'string' && !content.trim()) {
+      content = '{}';
+    } else if (Array.isArray(content) && content.length === 0) {
+      content = '{}';
+    } else if (typeof content === 'string') {
+      content = truncateText(content, 4000);
+    }
+  }
+
+  const result: any = {
+    role: msg.role,
+  };
+
+  // Strict providers (e.g. Kimi) reject assistant messages that have BOTH
+  // 'content' and 'tool_calls'. When tool_calls are present, omit content
+  // from the API message entirely, even if it has text.
+  const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
+  if (!omitContent && !hasToolCalls) {
+    result.content = content;
+  }
+
+  // Only include tool_calls for non-empty arrays (some proxies reject [])
+  if (hasToolCalls) {
+    result.tool_calls = msg.toolCalls;
+  }
+  if (msg.tool_call_id) result.tool_call_id = msg.tool_call_id;
+
+  // 'name' is NOT part of the OpenAI tool-message spec and can cause 400s on
+  // strict proxies. Keep it only for assistant messages (inside tool_calls) or
+  // legacy function messages — never for role === 'tool'.
+  if (msg.name && msg.role !== 'tool') {
+    result.name = msg.name;
+  }
+
+  // DeepSeek (and some other providers) require reasoning_content to be echoed
+  // back in the conversation history when the assistant used thinking mode.
+  if (msg.role === 'assistant' && msg.reasoning) {
+    result.reasoning_content = msg.reasoning;
+  }
+
+  return result;
+}
+
 interface ChatState {
   messages: Message[];
   isLoading: boolean;
@@ -89,10 +162,7 @@ export const sendMessage = createAsyncThunk(
       const temperature = state.settings.preferences.temperature;
 
       // Get all messages for context (include attachments for prior messages)
-      const messages = state.chat.messages.map((msg: Message) => ({
-        role: msg.role,
-        content: buildMessageContent(msg.content, msg.attachments),
-      }));
+      const messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
 
       // Add the new user message with attachments
       messages.push({
@@ -189,16 +259,28 @@ const chatSlice = createSlice({
     },
     completeStreaming: (state) => {
       if (state.streamingMessageId && (state.streamingContent || state.streamingReasoning)) {
-        const newMessage = {
-          id: state.streamingMessageId,
-          role: 'assistant' as const,
-          content: state.streamingContent,
-          reasoning: state.streamingReasoning || undefined,
-          usage: state.streamingUsage || undefined,
-          timestamp: new Date().toISOString(),
-        };
-        // Add the complete assistant message
-        state.messages.push(newMessage);
+        const existingIndex = state.messages.findIndex((m) => m.id === state.streamingMessageId);
+        if (existingIndex !== -1) {
+          // Update existing message (e.g. one that already has toolCalls)
+          state.messages[existingIndex] = {
+            ...state.messages[existingIndex],
+            content: state.streamingContent,
+            reasoning: state.streamingReasoning || undefined,
+            usage: state.streamingUsage || undefined,
+            timestamp: new Date().toISOString(),
+          };
+        } else {
+          const newMessage = {
+            id: state.streamingMessageId,
+            role: 'assistant' as const,
+            content: state.streamingContent,
+            reasoning: state.streamingReasoning || undefined,
+            usage: state.streamingUsage || undefined,
+            timestamp: new Date().toISOString(),
+          };
+          // Add the complete assistant message
+          state.messages.push(newMessage);
+        }
       }
 
       state.isStreaming = false;
@@ -393,10 +475,7 @@ export const sendStreamingMessage = createAsyncThunk(
     }));
 
     // Get all messages for context (include attachments for prior messages)
-    const messages = state.chat.messages.map((msg: Message) => ({
-      role: msg.role,
-      content: buildMessageContent(msg.content, msg.attachments),
-    }));
+    const messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
 
     // Add the new user message with attachments
     messages.push({
@@ -476,13 +555,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     dispatch(clearToolCalls());
 
     // Get all messages for context (include attachments for prior messages)
-    let messages = state.chat.messages.map((msg: Message) => ({
-      role: msg.role,
-      content: buildMessageContent(msg.content, msg.attachments),
-      tool_calls: msg.toolCalls,
-      tool_call_id: msg.tool_call_id,
-      name: msg.name,
-    }));
+    let messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
 
     // Add the new user message with attachments
     messages.push({
@@ -548,11 +621,14 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
 
       try {
         // Convert MCP tools to OpenAI format
-        const openAITools = hasTools
+        // Only send tools on the first iteration. Some strict proxies
+        // (e.g. Kimi via opencode-go) fail when tools are resent after
+        // tool results have already been added to the conversation.
+        const openAITools = hasTools && iteration === 0
           ? ToolIntegrationService.mcpToolsToOpenAI(availableTools)
           : undefined;
 
-        const tool_choice = !hasTools ? 'none' : (iteration >= MAX_TOOL_ITERATIONS - 1 ? 'none' : 'auto');
+        const tool_choice = !hasTools || iteration > 0 ? 'none' : 'auto';
 
         let assistantToolCalls: ToolCall[] = [];
 
@@ -597,8 +673,8 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
 
         // Check if we have tool calls to execute
         if (assistantToolCalls.length > 0) {
-          // Add assistant message with tool calls
-          const assistantMessageId = uuidv4();
+          // Add assistant message with tool calls - reuse current streaming message ID
+          const assistantMessageId = (getState() as RootState).chat.streamingMessageId || uuidv4();
           const assistantContent = (getState() as RootState).chat.streamingContent || '';
           const assistantReasoning = (getState() as RootState).chat.streamingReasoning || '';
           const assistantMessage: Message = {
@@ -612,13 +688,17 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           dispatch(addToolCallMessage(assistantMessage));
 
           // IMPORTANT: Add assistant message to messages array for LLM context
-          messages.push({
+          // Strict providers (e.g. DeepSeek) reject assistant messages that have
+          // BOTH 'content' and 'tool_calls'. We must send one or the other.
+          // reasoning_content must still be included for DeepSeek thinking mode.
+          const assistantAPIMessage: any = {
             role: 'assistant',
-            content: assistantContent,
             tool_calls: assistantToolCalls,
-            tool_call_id: undefined,
-            name: undefined,
-          });
+          };
+          if (assistantReasoning && assistantReasoning.trim()) {
+            assistantAPIMessage.reasoning_content = assistantReasoning;
+          }
+          messages.push(assistantAPIMessage);
 
           // Clear streaming content for next iteration
           dispatch(completeStreaming());
@@ -686,12 +766,13 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             }
 
             // Add to messages for next iteration (both UI and regular results)
+            // Note: OpenAI tool messages only need role, content, tool_call_id.
+            // 'name' is NOT part of the spec for role === 'tool' and can cause 400s.
+            // Also truncate content to avoid hitting provider size limits.
             messages.push({
               role: 'tool',
-              content: contentString,
-              tool_calls: undefined,
+              content: truncateText(contentString || '{}', 4000),
               tool_call_id: result.tool_call_id,
-              name: result.name,
             });
           }
 
