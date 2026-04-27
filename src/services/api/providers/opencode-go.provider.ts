@@ -134,8 +134,12 @@ export class OpencodeGoProvider implements IAPIProvider {
       })),
       max_tokens: request.max_tokens ?? 1024,
       stream: false,
+      thinking: { type: 'enabled' },
+      output_config: { effort: 'high' },
     };
     if (systemText) anthropicBody.system = systemText;
+
+    console.log('[OpencodeGoProvider] Anthropic non-streaming request body:', JSON.stringify(anthropicBody));
 
     const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
     const response = await fetch(`${baseUrl}/v1/messages`, {
@@ -157,13 +161,22 @@ export class OpencodeGoProvider implements IAPIProvider {
     }
 
     const data: any = await response.json();
-    const text = data.content?.[0]?.text ?? '';
+    console.log('[OpencodeGoProvider] Anthropic non-streaming response:', JSON.stringify(data));
+    let text = '';
+    let reasoning = '';
+    for (const block of data.content || []) {
+      if (block.type === 'text') {
+        text += block.text ?? '';
+      } else if (block.type === 'thinking' || block.type === 'reasoning') {
+        reasoning += block.thinking ?? block.reasoning ?? '';
+      }
+    }
     return {
       id: data.id || '',
       object: 'chat.completion',
       created: Date.now(),
       model: data.model || request.model,
-      choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: data.stop_reason || 'stop' }],
+      choices: [{ index: 0, message: { role: 'assistant', content: text, reasoning: reasoning || undefined }, finish_reason: data.stop_reason || 'stop' }],
       usage: data.usage ? {
         prompt_tokens: data.usage.input_tokens ?? 0,
         completion_tokens: data.usage.output_tokens ?? 0,
@@ -237,7 +250,7 @@ export class OpencodeGoProvider implements IAPIProvider {
             const delta = json.choices?.[0]?.delta;
             const content = delta?.content;
             const toolCallDeltas = delta?.tool_calls;
-            const reasoningContent = delta?.reasoning;
+            const reasoningContent = delta?.reasoning ?? delta?.reasoning_content;
             const usage = json.usage;
 
             if (content) onChunk(content);
@@ -303,7 +316,7 @@ export class OpencodeGoProvider implements IAPIProvider {
     callbacks: StreamCallbacks,
     abortSignal?: AbortSignal
   ): Promise<void> {
-    const { onChunk, onComplete, onError, onUsage } = callbacks;
+    const { onChunk, onComplete, onError, onReasoning, onUsage } = callbacks;
 
     const systemMessages = request.messages.filter((m) => m.role === 'system');
     const nonSystemMessages = request.messages.filter((m) => m.role !== 'system');
@@ -317,8 +330,12 @@ export class OpencodeGoProvider implements IAPIProvider {
       })),
       max_tokens: request.max_tokens ?? 1024,
       stream: true,
+      thinking: { type: 'enabled' },
+      output_config: { effort: 'high' },
     };
     if (systemText) anthropicBody.system = systemText;
+
+    console.log('[OpencodeGoProvider] Anthropic streaming request body:', JSON.stringify(anthropicBody));
 
     const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
 
@@ -354,9 +371,26 @@ export class OpencodeGoProvider implements IAPIProvider {
         const data = event.data;
 
         try {
-          if (eventName === 'content_block_delta') {
+          console.log('[OpencodeGoProvider] Anthropic SSE event:', eventName, data);
+          if (eventName === 'content_block_start') {
+            const json = JSON.parse(data);
+            if (json.content_block?.type === 'thinking' && json.content_block?.thinking && onReasoning) {
+              onReasoning(json.content_block.thinking);
+            } else if (json.content_block?.type === 'reasoning' && json.content_block?.reasoning && onReasoning) {
+              onReasoning(json.content_block.reasoning);
+            }
+          } else if (eventName === 'content_block_delta') {
             const json = JSON.parse(data);
             if (json.delta?.type === 'text_delta' && json.delta?.text) {
+              onChunk(json.delta.text);
+            } else if (json.delta?.type === 'thinking_delta' && json.delta?.thinking && onReasoning) {
+              onReasoning(json.delta.thinking);
+            } else if (json.delta?.reasoning && onReasoning) {
+              onReasoning(json.delta.reasoning);
+            } else if (json.delta?.reasoning_content && onReasoning) {
+              onReasoning(json.delta.reasoning_content);
+            } else if (json.delta?.text) {
+              // Some proxies send plain text deltas without the text_delta wrapper
               onChunk(json.delta.text);
             }
           } else if (eventName === 'message_delta') {
@@ -372,6 +406,26 @@ export class OpencodeGoProvider implements IAPIProvider {
           } else if (eventName === 'message_stop') {
             completed = true;
             onComplete();
+          }
+
+          // Fallback: some proxies send OpenAI-format events even on Anthropic endpoints
+          if (eventName === 'message' || eventName === '') {
+            const json = JSON.parse(data);
+            if (json.choices) {
+              const delta = json.choices[0]?.delta;
+              if (delta?.content) onChunk(delta.content);
+              if ((delta?.reasoning ?? delta?.reasoning_content) && onReasoning) {
+                onReasoning(delta.reasoning ?? delta.reasoning_content);
+              }
+              if (json.usage && onUsage) onUsage(json.usage);
+            }
+            if (json.delta && !json.choices) {
+              // Direct delta format (some proxies)
+              if (json.delta.content) onChunk(json.delta.content);
+              if ((json.delta.reasoning ?? json.delta.reasoning_content ?? json.delta.thinking) && onReasoning) {
+                onReasoning(json.delta.reasoning ?? json.delta.reasoning_content ?? json.delta.thinking);
+              }
+            }
           }
         } catch { /* continue on parse error */ }
       });

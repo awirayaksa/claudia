@@ -187,6 +187,7 @@ export const sendMessage = createAsyncThunk(
       // Assistant responses are always plain text strings
       const rawContent = response.choices[0].message.content;
       const assistantContent = typeof rawContent === 'string' ? rawContent : '';
+      const assistantReasoning = response.choices[0].message.reasoning;
 
       return {
         userMessageId: uuidv4(),
@@ -194,6 +195,7 @@ export const sendMessage = createAsyncThunk(
         userContent: content,
         userAttachments: attachments,
         assistantContent: assistantContent,
+        assistantReasoning: assistantReasoning,
         timestamp: new Date().toISOString(),
       };
     } catch (error) {
@@ -377,6 +379,7 @@ const chatSlice = createSlice({
           id: action.payload.assistantMessageId,
           role: 'assistant',
           content: action.payload.assistantContent || '',
+          reasoning: action.payload.assistantReasoning || undefined,
           timestamp: action.payload.timestamp,
         });
       })

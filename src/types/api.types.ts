@@ -94,6 +94,7 @@ export interface ChatMessage {
   tool_calls?: ToolCall[];
   tool_call_id?: string; // For tool role messages
   name?: string; // Tool name for tool role messages
+  reasoning?: string; // Reasoning/thinking content from the model
 }
 
 export interface ChatCompletionRequest {
