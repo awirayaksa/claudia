@@ -52,6 +52,7 @@ export interface ElectronAPI {
     getPreview: (iconPath: string) => Promise<string | null>;
   };
   onMenuEvent: (channel: string, callback: () => void) => (() => void) | undefined;
+  setNewConversationEnabled: (enabled: boolean) => void;
   mcp: {
     // Server management
     startServer: (serverId: string) => Promise<any>;

@@ -18,6 +18,8 @@ function App() {
   const appearance = useAppSelector((state) => state.settings.appearance);
   const { selectedModel } = useAppSelector((state) => state.settings.api);
   const { currentProjectId } = useAppSelector((state) => state.project);
+  const { currentConversationId } = useAppSelector((state) => state.conversation);
+  const { messages } = useAppSelector((state) => state.chat);
 
   // Initialize skills on app start and listen for file-watcher push events
   useEffect(() => {
@@ -153,6 +155,10 @@ function App() {
         alert('Please select a model in settings first');
         return;
       }
+      // Don't create a new conversation if the current one is still empty
+      if (currentConversationId && messages.length === 0) {
+        return;
+      }
       dispatch(clearMessages());
       dispatch(
         createConversation({
@@ -175,7 +181,13 @@ function App() {
       cleanupNewChat?.();
       cleanupAbout?.();
     };
-  }, [dispatch, selectedModel, currentProjectId, appearance.customization?.appTitle]);
+  }, [dispatch, selectedModel, currentProjectId, appearance.customization?.appTitle, currentConversationId, messages.length]);
+
+  // Sync New Conversation menu enabled state with current conversation
+  useEffect(() => {
+    const isEmpty = currentConversationId && messages.length === 0;
+    window.electron.setNewConversationEnabled(!isEmpty);
+  }, [currentConversationId, messages.length]);
 
   // Initialize theme on app load
   useTheme();

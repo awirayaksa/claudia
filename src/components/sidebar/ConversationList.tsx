@@ -51,6 +51,7 @@ export function ConversationList({ width }: { width?: number }) {
   } = useAppSelector((state) => state.conversation);
   const { selectedModel } = useAppSelector((state) => state.settings.api);
   const { currentProjectId } = useProjects();
+  const { messages } = useAppSelector((state) => state.chat);
 
   const [isProjectManagerOpen, setIsProjectManagerOpen] = useState(false);
   const [isSelectionMode, setIsSelectionMode] = useState(false);
@@ -206,7 +207,13 @@ export function ConversationList({ width }: { width?: number }) {
     <div className="flex h-full flex-col bg-surface border-r border-border flex-shrink-0" style={{ width: width ?? 288 }}>
       {/* New Chat — ghost button, orange is reserved for Send */}
       <div className="p-3 pb-2">
-        <Button onClick={handleNewConversation} variant="secondary" className="w-full" size="sm">
+        <Button
+          onClick={handleNewConversation}
+          variant="secondary"
+          className="w-full"
+          size="sm"
+          disabled={!!currentConversationId && messages.length === 0}
+        >
           <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>

@@ -104,6 +104,7 @@ function createMenu() {
       label: 'File',
       submenu: [
         {
+          id: 'new-conversation',
           label: 'New Conversation',
           accelerator: 'CmdOrCtrl+N',
           click: () => {
@@ -155,7 +156,7 @@ function createMenu() {
         { role: 'forceReload' },
         {
           label: 'Toggle Developer Tools',
-          accelerator: 'Ctrl+Shift+I',
+          accelerator: 'Ctrl+D',
           click: () => {
             mainWindow?.webContents.toggleDevTools();
           },
@@ -389,6 +390,19 @@ app.whenReady().then(async () => {
       if (menu) {
         menu.popup({ window: mainWindow, x, y });
       }
+    }
+  });
+
+  // Enable/disable New Conversation menu item
+  ipcMain.on('menu:set-new-conversation-enabled', (_event, enabled: boolean) => {
+    const menu = Menu.getApplicationMenu();
+    if (!menu) return;
+    const fileMenu = menu.items.find((item) => item.label === 'File');
+    if (!fileMenu || !fileMenu.submenu) return;
+    const item = fileMenu.submenu.items.find((i) => i.id === 'new-conversation');
+    if (item) {
+      item.enabled = enabled;
+      Menu.setApplicationMenu(menu);
     }
   });
 

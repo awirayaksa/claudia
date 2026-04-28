@@ -81,6 +81,10 @@ contextBridge.exposeInMainWorld('electron', {
     }
   },
 
+  // Menu state control
+  setNewConversationEnabled: (enabled: boolean) =>
+    ipcRenderer.send('menu:set-new-conversation-enabled', enabled),
+
   // MCP (Model Context Protocol) operations
   mcp: {
     // Server management

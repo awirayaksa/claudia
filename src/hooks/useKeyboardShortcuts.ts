@@ -8,6 +8,8 @@ export function useKeyboardShortcuts() {
   const dispatch = useAppDispatch();
   const { selectedModel } = useAppSelector((state) => state.settings.api);
   const { currentProjectId } = useAppSelector((state) => state.project);
+  const { currentConversationId } = useAppSelector((state) => state.conversation);
+  const { messages } = useAppSelector((state) => state.chat);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -25,6 +27,10 @@ export function useKeyboardShortcuts() {
         event.preventDefault();
         if (!selectedModel) {
           alert('Please select a model in settings first');
+          return;
+        }
+        // Don't create a new conversation if the current one is still empty
+        if (currentConversationId && messages.length === 0) {
           return;
         }
         dispatch(clearMessages());
@@ -48,5 +54,5 @@ export function useKeyboardShortcuts() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [dispatch, selectedModel, currentProjectId]);
+  }, [dispatch, selectedModel, currentProjectId, currentConversationId, messages.length]);
 }
