@@ -212,6 +212,9 @@ export function ChatWindow() {
     if (titleGeneratedRef.current.has(conversationId)) return;
     titleGeneratedRef.current.add(conversationId);
 
+    // Fallback title: truncated user message
+    const fallbackTitle = firstUserMessage.slice(0, 50) + (firstUserMessage.length > 50 ? '...' : '');
+
     try {
       const provider = getAPIProvider();
       const response = await provider.chatCompletion({
@@ -240,10 +243,15 @@ export function ChatWindow() {
         const title = rawTitle.trim().replace(/^["']|["']$/g, '').slice(0, 60);
         if (title) {
           updateConversation(conversationId, { title });
+          return;
         }
       }
+      // If title is empty, fall through to fallback
+      updateConversation(conversationId, { title: fallbackTitle });
     } catch (error) {
       console.error('Failed to generate conversation title:', error);
+      // Fallback to user message on error
+      updateConversation(conversationId, { title: fallbackTitle });
     }
   }, [updateConversation]);
 
@@ -276,9 +284,6 @@ export function ChatWindow() {
         const firstUserMessage = messages.find((m) => m.role === 'user');
         const firstAssistantMessage = messages.find((m) => m.role === 'assistant');
         if (firstUserMessage && firstAssistantMessage) {
-          // Set a temporary truncated title immediately as placeholder
-          const tempTitle = firstUserMessage.content.slice(0, 50) + (firstUserMessage.content.length > 50 ? '...' : '');
-          conversation.title = tempTitle;
           // Kick off async AI title generation (will update Redux + disk when done)
           generateConversationTitle(
             currentConversationId,
