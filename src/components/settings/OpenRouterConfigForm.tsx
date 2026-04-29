@@ -11,10 +11,8 @@ interface OpenRouterConfigFormProps {
   onConfigChange: (config: Partial<OpenRouterConfig>) => void;
   onStreamingChange: (enabled: boolean) => void;
   onTestConnection: () => Promise<void>;
-  onSave: () => Promise<void>;
   testResult: { success: boolean; message: string } | null;
   testing: boolean;
-  saving: boolean;
 }
 
 export function OpenRouterConfigForm({
@@ -24,10 +22,8 @@ export function OpenRouterConfigForm({
   onConfigChange,
   onStreamingChange,
   onTestConnection,
-  onSave,
   testResult,
   testing,
-  saving,
 }: OpenRouterConfigFormProps) {
   const [errors, setErrors] = useState<{
     apiKey?: string;
@@ -47,11 +43,6 @@ export function OpenRouterConfigForm({
   const handleTestConnection = async () => {
     if (!validateForm()) return;
     await onTestConnection();
-  };
-
-  const handleSave = async () => {
-    if (!validateForm()) return;
-    await onSave();
   };
 
   return (
@@ -99,9 +90,6 @@ export function OpenRouterConfigForm({
           variant="secondary"
         >
           {testing ? 'Testing...' : 'Test Connection'}
-        </Button>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
 

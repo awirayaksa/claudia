@@ -11,10 +11,8 @@ interface OpenWebUIConfigFormProps {
   onConfigChange: (config: Partial<OpenWebUIConfig>) => void;
   onStreamingChange: (enabled: boolean) => void;
   onTestConnection: () => Promise<void>;
-  onSave: () => Promise<void>;
   testResult: { success: boolean; message: string } | null;
   testing: boolean;
-  saving: boolean;
 }
 
 export function OpenWebUIConfigForm({
@@ -24,10 +22,8 @@ export function OpenWebUIConfigForm({
   onConfigChange,
   onStreamingChange,
   onTestConnection,
-  onSave,
   testResult,
   testing,
-  saving,
 }: OpenWebUIConfigFormProps) {
   const [errors, setErrors] = useState<{
     baseUrl?: string;
@@ -58,11 +54,6 @@ export function OpenWebUIConfigForm({
   const handleTestConnection = async () => {
     if (!validateForm()) return;
     await onTestConnection();
-  };
-
-  const handleSave = async () => {
-    if (!validateForm()) return;
-    await onSave();
   };
 
   return (
@@ -103,9 +94,6 @@ export function OpenWebUIConfigForm({
           variant="secondary"
         >
           {testing ? 'Testing...' : 'Test Connection'}
-        </Button>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
 

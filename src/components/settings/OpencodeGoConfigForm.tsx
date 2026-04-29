@@ -9,10 +9,8 @@ interface OpencodeGoConfigFormProps {
   onConfigChange: (config: Partial<OpencodeGoConfig>) => void;
   onStreamingChange: (enabled: boolean) => void;
   onTestConnection: () => Promise<void>;
-  onSave: () => Promise<void>;
   testResult: { success: boolean; message: string } | null;
   testing: boolean;
-  saving: boolean;
 }
 
 export function OpencodeGoConfigForm({
@@ -21,10 +19,8 @@ export function OpencodeGoConfigForm({
   onConfigChange,
   onStreamingChange,
   onTestConnection,
-  onSave,
   testResult,
   testing,
-  saving,
 }: OpencodeGoConfigFormProps) {
   const [errors, setErrors] = useState<{
     baseUrl?: string;
@@ -60,11 +56,6 @@ export function OpencodeGoConfigForm({
   const handleTestConnection = async () => {
     if (!validateForm()) return;
     await onTestConnection();
-  };
-
-  const handleSave = async () => {
-    if (!validateForm()) return;
-    await onSave();
   };
 
   return (
@@ -146,9 +137,6 @@ export function OpencodeGoConfigForm({
       <div className="flex gap-2">
         <Button onClick={handleTestConnection} disabled={testing} variant="secondary">
           {testing ? 'Testing...' : 'Test Connection'}
-        </Button>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
 

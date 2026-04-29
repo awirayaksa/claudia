@@ -14,7 +14,7 @@ interface SettingsContextValue {
   isDirty: boolean;
   setIsDirty: (dirty: boolean) => void;
   requestSave: () => void;
-  registerSave: (fn: () => Promise<void>) => void;
+  registerSave: (fn: () => Promise<boolean>) => void;
 }
 
 export const SettingsContext = createContext<SettingsContextValue>({
@@ -23,6 +23,7 @@ export const SettingsContext = createContext<SettingsContextValue>({
   requestSave: () => {},
   registerSave: () => {},
 });
+
 
 export function useSettingsContext() {
   return useContext(SettingsContext);
@@ -43,21 +44,28 @@ export function SettingsPanel() {
   const { settingsOpen } = useAppSelector((state) => state.ui);
   const [activeTab, setActiveTab] = useState<TabId>('api');
   const [isDirty, setIsDirty] = useState(false);
-  const [saveRef, setSaveRef] = useState<(() => Promise<void>) | null>(null);
+  const [saveRef, setSaveRef] = useState<(() => Promise<boolean>) | null>(null);
 
   const handleClose = useCallback(() => {
+    if (isDirty) {
+      const confirmed = window.confirm('You have unsaved changes. Are you sure you want to discard them?');
+      if (!confirmed) return;
+    }
     dispatch(setSettingsOpen(false));
     setIsDirty(false);
-  }, [dispatch]);
+  }, [dispatch, isDirty]);
 
   const handleSave = async () => {
+    let success = true;
     if (saveRef) {
-      await saveRef();
+      success = await saveRef();
     }
-    handleClose();
+    if (success) {
+      handleClose();
+    }
   };
 
-  const registerSave = useCallback((fn: () => Promise<void>) => {
+  const registerSave = useCallback((fn: () => Promise<boolean>) => {
     setSaveRef(() => fn);
   }, []);
 
@@ -288,7 +296,7 @@ export function SettingsPanel() {
                 onClick={handleSave}
                 style={{
                   border: 'none',
-                  background: '#1a1a19',
+                  background: 'var(--color-accent, #c96a3d)',
                   color: '#fff',
                   borderRadius: 7,
                   padding: '6px 14px',

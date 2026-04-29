@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { useSettingsContext } from './SettingsPanel';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setApiConfig, setAvailableModels, setPreferences } from '../../store/slices/settingsSlice';
 import { ProviderFactory } from '../../services/api/provider.factory';
@@ -11,6 +12,7 @@ import { OpencodeGoConfigForm } from './OpencodeGoConfigForm';
 export function ApiSettings() {
   const dispatch = useAppDispatch();
   const { api, preferences } = useAppSelector((state) => state.settings);
+  const { setIsDirty, registerSave } = useSettingsContext();
 
   // Local state for form inputs
   const [provider, setProvider] = useState<ProviderType>(api.provider || 'openwebui');
@@ -28,7 +30,6 @@ export function ApiSettings() {
   );
   const [streamingEnabled, setStreamingEnabled] = useState(preferences.streamingEnabled);
   const [testing, setTesting] = useState(false);
-  const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<{
     success: boolean;
     message: string;
@@ -63,9 +64,37 @@ export function ApiSettings() {
   const handleProviderChange = (newProvider: ProviderType) => {
     setProvider(newProvider);
     setTestResult(null);
+    setIsDirty(true);
+  };
+
+  const validateConfig = (): string => {
+    if (provider === 'openwebui') {
+      if (!openwebuiConfig?.baseUrl?.trim()) return 'API URL is required';
+      try { new URL(openwebuiConfig.baseUrl); } catch { return 'Please enter a valid URL'; }
+      if (!openwebuiConfig?.apiKey?.trim()) return 'API Key is required';
+    } else if (provider === 'openrouter') {
+      if (!openrouterConfig?.apiKey?.trim()) return 'API Key is required';
+    } else if (provider === 'custom') {
+      if (!customConfig?.baseUrl?.trim()) return 'API URL is required';
+      try { new URL(customConfig.baseUrl); } catch { return 'Please enter a valid URL'; }
+      if (!customConfig?.apiKey?.trim()) return 'API Key is required';
+      if (!customConfig?.selectedModel?.trim()) return 'Model name is required';
+    } else if (provider === 'opencode-go') {
+      if (!opencodeGoConfig?.baseUrl?.trim()) return 'Base URL is required';
+      try { new URL(opencodeGoConfig.baseUrl); } catch { return 'Please enter a valid URL'; }
+      if (!opencodeGoConfig?.apiKey?.trim()) return 'API Key is required';
+      if (!opencodeGoConfig?.selectedModel?.trim()) return 'Model name is required';
+    }
+    return '';
   };
 
   const handleTestConnection = async () => {
+    const validationError = validateConfig();
+    if (validationError) {
+      setTestResult({ success: false, message: validationError });
+      return;
+    }
+
     setTesting(true);
     setTestResult(null);
 
@@ -119,8 +148,14 @@ export function ApiSettings() {
     }
   };
 
-  const handleSave = async () => {
-    setSaving(true);
+  const handleSave = async (): Promise<boolean> => {
+    const validationError = validateConfig();
+    if (validationError) {
+      setTestResult({ success: false, message: validationError });
+      return false;
+    }
+
+    setTestResult(null);
 
     try {
       const newApiConfig: any = {
@@ -195,13 +230,13 @@ export function ApiSettings() {
         success: true,
         message: 'Settings saved successfully!',
       });
+      return true;
     } catch (error) {
       setTestResult({
         success: false,
         message: 'Failed to save settings',
       });
-    } finally {
-      setSaving(false);
+      return false;
     }
   };
 
@@ -210,6 +245,44 @@ export function ApiSettings() {
     : testResult?.success === false
       ? { dot: '#b14a3b', text: 'Error', sub: `· ${testResult.message}` }
       : null;
+
+  // Register save function with settings context
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
+  useEffect(() => {
+    registerSave(async () => handleSaveRef.current());
+  }, [registerSave]);
+
+  // Wrapped change handlers that mark dirty
+  const handleOpenwebuiConfigChange = (updates: Partial<OpenWebUIConfig>) => {
+    setOpenwebuiConfig((prev) => ({ ...prev, ...updates }));
+    setTestResult(null);
+    setIsDirty(true);
+  };
+
+  const handleOpenrouterConfigChange = (updates: Partial<OpenRouterConfig>) => {
+    setOpenrouterConfig((prev) => ({ ...prev, ...updates }));
+    setTestResult(null);
+    setIsDirty(true);
+  };
+
+  const handleCustomConfigChange = (updates: Partial<CustomProviderConfig>) => {
+    setCustomConfig((prev) => ({ ...prev, ...updates }));
+    setTestResult(null);
+    setIsDirty(true);
+  };
+
+  const handleOpencodeGoConfigChange = (updates: Partial<OpencodeGoConfig>) => {
+    setOpencodeGoConfig((prev) => ({ ...prev, ...updates }));
+    setTestResult(null);
+    setIsDirty(true);
+  };
+
+  const handleStreamingChange = (enabled: boolean) => {
+    setStreamingEnabled(enabled);
+    setIsDirty(true);
+  };
 
   return (
     <div>
@@ -264,7 +337,7 @@ export function ApiSettings() {
                   type="text"
                   value={customConfig.selectedModel || ''}
                   onChange={(e) => {
-                    setCustomConfig({ ...customConfig, selectedModel: e.target.value });
+                    handleCustomConfigChange({ selectedModel: e.target.value });
                   }}
                   placeholder="Enter model name..."
                   style={{
@@ -289,11 +362,11 @@ export function ApiSettings() {
                   }
                   onChange={(e) => {
                     if (provider === 'openwebui') {
-                      setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: e.target.value });
+                      handleOpenwebuiConfigChange({ selectedModel: e.target.value });
                     } else if (provider === 'openrouter') {
-                      setOpenrouterConfig({ ...openrouterConfig, selectedModel: e.target.value });
+                      handleOpenrouterConfigChange({ selectedModel: e.target.value });
                     } else {
-                      setOpencodeGoConfig({ ...opencodeGoConfig, selectedModel: e.target.value });
+                      handleOpencodeGoConfigChange({ selectedModel: e.target.value });
                     }
                   }}
                   style={{
@@ -326,13 +399,11 @@ export function ApiSettings() {
             config={openwebuiConfig as OpenWebUIConfig}
             availableModels={api.availableModels}
             streamingEnabled={streamingEnabled}
-            onConfigChange={(updates) => setOpenwebuiConfig({ ...openwebuiConfig, ...updates })}
-            onStreamingChange={setStreamingEnabled}
+            onConfigChange={handleOpenwebuiConfigChange}
+            onStreamingChange={handleStreamingChange}
             onTestConnection={handleTestConnection}
-            onSave={handleSave}
             testResult={testResult}
             testing={testing}
-            saving={saving}
           />
         )}
 
@@ -341,13 +412,11 @@ export function ApiSettings() {
             config={openrouterConfig as OpenRouterConfig}
             availableModels={api.availableModels}
             streamingEnabled={streamingEnabled}
-            onConfigChange={(updates) => setOpenrouterConfig({ ...openrouterConfig, ...updates })}
-            onStreamingChange={setStreamingEnabled}
+            onConfigChange={handleOpenrouterConfigChange}
+            onStreamingChange={handleStreamingChange}
             onTestConnection={handleTestConnection}
-            onSave={handleSave}
             testResult={testResult}
             testing={testing}
-            saving={saving}
           />
         )}
 
@@ -355,13 +424,11 @@ export function ApiSettings() {
           <CustomConfigForm
             config={customConfig as CustomProviderConfig}
             streamingEnabled={streamingEnabled}
-            onConfigChange={(updates) => setCustomConfig({ ...customConfig, ...updates })}
-            onStreamingChange={setStreamingEnabled}
+            onConfigChange={handleCustomConfigChange}
+            onStreamingChange={handleStreamingChange}
             onTestConnection={handleTestConnection}
-            onSave={handleSave}
             testResult={testResult}
             testing={testing}
-            saving={saving}
           />
         )}
 
@@ -369,13 +436,11 @@ export function ApiSettings() {
           <OpencodeGoConfigForm
             config={opencodeGoConfig as OpencodeGoConfig}
             streamingEnabled={streamingEnabled}
-            onConfigChange={(updates) => setOpencodeGoConfig({ ...opencodeGoConfig, ...updates })}
-            onStreamingChange={setStreamingEnabled}
+            onConfigChange={handleOpencodeGoConfigChange}
+            onStreamingChange={handleStreamingChange}
             onTestConnection={handleTestConnection}
-            onSave={handleSave}
             testResult={testResult}
             testing={testing}
-            saving={saving}
           />
         )}
       </div>

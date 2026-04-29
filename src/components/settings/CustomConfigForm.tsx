@@ -9,10 +9,8 @@ interface CustomConfigFormProps {
   onConfigChange: (config: Partial<CustomProviderConfig>) => void;
   onStreamingChange: (enabled: boolean) => void;
   onTestConnection: () => Promise<void>;
-  onSave: () => Promise<void>;
   testResult: { success: boolean; message: string } | null;
   testing: boolean;
-  saving: boolean;
 }
 
 export function CustomConfigForm({
@@ -21,10 +19,8 @@ export function CustomConfigForm({
   onConfigChange,
   onStreamingChange,
   onTestConnection,
-  onSave,
   testResult,
   testing,
-  saving,
 }: CustomConfigFormProps) {
   const [errors, setErrors] = useState<{
     baseUrl?: string;
@@ -60,11 +56,6 @@ export function CustomConfigForm({
   const handleTestConnection = async () => {
     if (!validateForm()) return;
     await onTestConnection();
-  };
-
-  const handleSave = async () => {
-    if (!validateForm()) return;
-    await onSave();
   };
 
   return (
@@ -114,9 +105,6 @@ export function CustomConfigForm({
           variant="secondary"
         >
           {testing ? 'Testing...' : 'Test Connection'}
-        </Button>
-        <Button onClick={handleSave} disabled={saving}>
-          {saving ? 'Saving...' : 'Save Settings'}
         </Button>
       </div>
 
