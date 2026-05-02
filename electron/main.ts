@@ -264,6 +264,16 @@ function createWindow() {
     mainWindow?.show();
   });
 
+  // Once the renderer has loaded its IPC subscribers, check whether the
+  // previous update attempt left a failure sentinel and surface it to the UI.
+  mainWindow.webContents.once('did-finish-load', () => {
+    try {
+      updaterService.checkLastAttempt();
+    } catch (err) {
+      logUpdater('error', 'checkLastAttempt threw', { error: err });
+    }
+  });
+
   // Set main window reference for MCP handlers
   setMainWindow(mainWindow);
 

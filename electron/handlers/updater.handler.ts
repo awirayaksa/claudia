@@ -22,6 +22,16 @@ export function registerUpdaterHandlers(
     }
   });
 
+  // The helper script writes a sentinel JSON when it fails. main.ts invokes
+  // checkLastAttempt() only after the renderer is ready, so a direct send is
+  // sufficient here.
+  service.on('last-attempt-failed', (payload: unknown) => {
+    const win = getWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('updater:last-attempt-failed', payload);
+    }
+  });
+
   // Manual check trigger
   ipcMain.handle('updater:check', async () => {
     const config = getConfig();

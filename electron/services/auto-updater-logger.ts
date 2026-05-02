@@ -56,6 +56,18 @@ export function getUpdaterBatchLogPath(): string {
   return path.join(dir, 'auto-updater-batch.log');
 }
 
+// Staging dir lives under userData (not %TEMP%) so it isn't blocked by AppLocker
+// rules that commonly forbid executing unsigned binaries from temp paths.
+export function getUpdaterStagingDir(): string {
+  const dir = path.join(app.getPath('userData'), 'updater');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* best-effort */ }
+  return dir;
+}
+
+export function getUpdaterFlagPath(): string {
+  return path.join(getUpdaterStagingDir(), 'last-attempt.json');
+}
+
 function safeStringify(data: Record<string, unknown>): string {
   try {
     return JSON.stringify(data, (_key, value) => {

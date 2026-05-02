@@ -254,6 +254,11 @@ contextBridge.exposeInMainWorld('electron', {
       ipcRenderer.on('updater:download-progress', (_event, percent) => callback(percent));
       return () => ipcRenderer.removeListener('updater:download-progress', callback);
     },
+    onLastAttemptFailed: (callback: (payload: any) => void) => {
+      const handler = (_event: any, data: any) => callback(data);
+      ipcRenderer.on('updater:last-attempt-failed', handler);
+      return () => ipcRenderer.removeListener('updater:last-attempt-failed', handler);
+    },
   },
 });
 
@@ -398,6 +403,7 @@ export interface ElectronAPI {
     restartCheck: () => Promise<void>;
     onStatusChanged: (callback: (status: any) => void) => () => void;
     onDownloadProgress: (callback: (percent: number) => void) => () => void;
+    onLastAttemptFailed: (callback: (payload: any) => void) => () => void;
   };
 }
 

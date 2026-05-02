@@ -127,6 +127,7 @@ export interface ElectronAPI {
     restartCheck: () => Promise<void>;
     onStatusChanged: (callback: (status: any) => void) => () => void;
     onDownloadProgress: (callback: (percent: number) => void) => () => void;
+    onLastAttemptFailed: (callback: (payload: any) => void) => () => void;
   };
   skills: {
     list: () => Promise<any>;
