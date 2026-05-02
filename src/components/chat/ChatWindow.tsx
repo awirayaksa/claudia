@@ -7,6 +7,7 @@ import { FilesystemDirectoryBar } from './FilesystemDirectoryBar';
 import { TextSelectionMenu } from './TextSelectionMenu';
 import { SuggestedPrompts } from './SuggestedPrompts';
 import { TokenUsageIndicator } from './TokenUsageIndicator';
+import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { getContextWindow, getCurrentContextTokens } from '../../utils/modelContextLimits';
 import { useChat } from '../../hooks/useChat';
 import { useConversations } from '../../hooks/useConversations';
@@ -753,7 +754,7 @@ export function ChatWindow() {
             {!isStreaming && isExecutingTools && (
               <div className="py-4">
                 <div className="mb-2 flex items-center gap-2">
-                  <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">C</div>
+                  <ClaudiaAvatar isThinking />
                   <span className="text-sm font-semibold text-text-primary">Claudia</span>
                   <button
                     onClick={handleAbortStreaming}
@@ -776,7 +777,7 @@ export function ChatWindow() {
             {isLoading && !isStreaming && (
               <div className="py-4">
                 <div className="mb-2 flex items-center gap-2">
-                  <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">C</div>
+                  <ClaudiaAvatar isThinking />
                   <span className="text-sm font-semibold text-text-primary">Claudia</span>
                 </div>
                 <div className="pl-[30px] flex gap-1">

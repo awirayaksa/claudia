@@ -199,3 +199,19 @@ body {
 .animate-slide-in-right {
   animation: slide-in-right 0.3s ease-out;
 }
+
+/* Claudia avatar thinking animation */
+@keyframes claudia-thinking {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-accent) 40%, transparent);
+  }
+  50% {
+    transform: scale(1.12);
+    box-shadow: 0 0 10px 2px color-mix(in srgb, var(--color-accent) 25%, transparent);
+  }
+}
+
+.animate-claudia-thinking {
+  animation: claudia-thinking 1.4s ease-in-out infinite;
+}

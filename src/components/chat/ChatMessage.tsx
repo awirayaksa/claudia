@@ -5,6 +5,7 @@ import { MarkdownRenderer } from './MarkdownRenderer';
 import { ToolCallMessage } from './ToolCallMessage';
 import { ReasoningMessage } from './ReasoningMessage';
 import { UIResourceDisplay } from './UIResourceDisplay';
+import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { format } from 'date-fns';
 import { useAppSelector } from '../../store';
 
@@ -96,9 +97,7 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
       <div className="group py-4">
         {/* Avatar chip + name + inline stats */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
-          <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">
-            C
-          </div>
+          <ClaudiaAvatar />
           <span className="text-sm font-semibold text-text-primary">Claudia</span>
           <span className="text-xs text-text-secondary">{formattedTime}</span>
           {showStatistics && message.usage?.total_tokens != null && (

@@ -1,6 +1,7 @@
 import { format } from 'date-fns';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { ReasoningMessage } from './ReasoningMessage';
+import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { useThrottledValue } from '../../hooks/useThrottledValue';
 import { useAppSelector } from '../../store';
 
@@ -23,9 +24,7 @@ export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessa
     <div className="py-4">
       {/* Avatar chip + name */}
       <div className="mb-2 flex items-center gap-2">
-        <div className="flex h-[22px] w-[22px] flex-shrink-0 items-center justify-center rounded-[5px] bg-accent text-[11px] font-bold text-white">
-          C
-        </div>
+        <ClaudiaAvatar isThinking />
         <span className="text-sm font-semibold text-text-primary">Claudia</span>
         <span className="text-xs text-text-secondary">{formattedTime}</span>
         {/* Abort button */}
