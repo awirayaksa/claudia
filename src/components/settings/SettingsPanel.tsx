@@ -7,8 +7,10 @@ import { PreferencesSettings } from './PreferencesSettings';
 import { SkillSettings } from './SkillSettings';
 import { ProfileSwitcher } from './ProfileSwitcher';
 import { ProfilesSettings } from './ProfilesSettings';
-import { useAppSelector, useAppDispatch } from '../../store';
+import { useAppSelector, useAppDispatch, store } from '../../store';
 import { setSettingsOpen } from '../../store/slices/uiSlice';
+import { clearMessages } from '../../store/slices/chatSlice';
+import { createConversation } from '../../store/slices/conversationSlice';
 
 type TabId = 'profiles' | 'api' | 'mcp' | 'plugins' | 'appearance' | 'preferences' | 'skills' | 'advanced';
 
@@ -67,6 +69,22 @@ export function SettingsPanel() {
     if (success) {
       dispatch(setSettingsOpen(false));
       setIsDirty(false);
+
+      // Read the latest state directly so we pick up any model/provider changes
+      const latestState = store.getState();
+      const latestModel = latestState.settings.api.selectedModel;
+      const latestProjectId = latestState.project.currentProjectId;
+
+      if (latestModel) {
+        dispatch(clearMessages());
+        dispatch(
+          createConversation({
+            projectId: latestProjectId,
+            title: 'New Conversation',
+            model: latestModel,
+          })
+        );
+      }
     }
   };
 
