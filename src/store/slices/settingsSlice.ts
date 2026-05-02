@@ -1,5 +1,6 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig, OpencodeGoConfig } from '../../types/api.types';
+import { ProfileMeta } from '../../types/profile.types';
 
 interface SettingsState {
   api: {
@@ -37,6 +38,8 @@ interface SettingsState {
     systemPromptFileName: string;
     updateCheckUrl: string;
   };
+  profiles: ProfileMeta[];
+  currentProfileId: string | null;
 }
 
 const initialState: SettingsState = {
@@ -62,6 +65,8 @@ const initialState: SettingsState = {
     systemPromptFileName: '',
     updateCheckUrl: '',
   },
+  profiles: [],
+  currentProfileId: null,
 };
 
 const settingsSlice = createSlice({
@@ -83,6 +88,12 @@ const settingsSlice = createSlice({
     loadSettings: (state, action: PayloadAction<Partial<SettingsState>>) => {
       return { ...state, ...action.payload };
     },
+    setProfiles: (state, action: PayloadAction<ProfileMeta[]>) => {
+      state.profiles = action.payload;
+    },
+    setCurrentProfileId: (state, action: PayloadAction<string | null>) => {
+      state.currentProfileId = action.payload;
+    },
   },
 });
 
@@ -92,6 +103,8 @@ export const {
   setPreferences,
   setAvailableModels,
   loadSettings,
+  setProfiles,
+  setCurrentProfileId,
 } = settingsSlice.actions;
 
 export default settingsSlice.reducer;

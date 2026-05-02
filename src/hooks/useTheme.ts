@@ -7,7 +7,13 @@ export type Theme = 'light' | 'dark' | 'system';
 export function useTheme() {
   const dispatch = useAppDispatch();
   const { theme } = useAppSelector((state) => state.settings.appearance);
+  const { currentProfileId } = useAppSelector((state) => state.settings);
   const isInitialMount = useRef(true);
+
+  // Reset initial mount flag when profile switches so we don't write back the just-loaded theme
+  useEffect(() => {
+    isInitialMount.current = true;
+  }, [currentProfileId]);
 
   // Apply theme to document root
   useEffect(() => {

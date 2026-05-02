@@ -9,6 +9,16 @@ contextBridge.exposeInMainWorld('electron', {
     set: (config: any) => ipcRenderer.invoke('config:set', config),
   },
 
+  // Profile operations
+  profile: {
+    list: () => ipcRenderer.invoke('profile:list'),
+    switch: (id: string) => ipcRenderer.invoke('profile:switch', id),
+    create: (payload: { name: string; cloneCurrent: boolean }) => ipcRenderer.invoke('profile:create', payload),
+    rename: (id: string, name: string) => ipcRenderer.invoke('profile:rename', id, name),
+    duplicate: (id: string, newName: string) => ipcRenderer.invoke('profile:duplicate', id, newName),
+    delete: (id: string) => ipcRenderer.invoke('profile:delete', id),
+  },
+
   // File operations
   file: {
     select: () => ipcRenderer.invoke('file:select'),
@@ -252,6 +262,14 @@ export interface ElectronAPI {
   config: {
     get: () => Promise<any>;
     set: (config: any) => Promise<void>;
+  };
+  profile: {
+    list: () => Promise<{ profiles: any[]; currentProfileId: string }>;
+    switch: (id: string) => Promise<any>;
+    create: (payload: { name: string; cloneCurrent: boolean }) => Promise<any>;
+    rename: (id: string, name: string) => Promise<void>;
+    duplicate: (id: string, newName: string) => Promise<any>;
+    delete: (id: string) => Promise<void>;
   };
   file: {
     select: () => Promise<string[]>;

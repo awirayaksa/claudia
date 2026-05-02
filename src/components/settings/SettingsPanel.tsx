@@ -5,10 +5,12 @@ import { ThemeSettings } from './ThemeSettings';
 import { PluginSettings } from './PluginSettings';
 import { PreferencesSettings } from './PreferencesSettings';
 import { SkillSettings } from './SkillSettings';
+import { ProfileSwitcher } from './ProfileSwitcher';
+import { ProfilesSettings } from './ProfilesSettings';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setSettingsOpen } from '../../store/slices/uiSlice';
 
-type TabId = 'api' | 'mcp' | 'plugins' | 'appearance' | 'preferences' | 'skills' | 'advanced';
+type TabId = 'profiles' | 'api' | 'mcp' | 'plugins' | 'appearance' | 'preferences' | 'skills' | 'advanced';
 
 interface SettingsContextValue {
   isDirty: boolean;
@@ -30,6 +32,7 @@ export function useSettingsContext() {
 }
 
 const tabs: { id: TabId; label: string }[] = [
+  { id: 'profiles', label: 'Profiles' },
   { id: 'api', label: 'API Configuration' },
   { id: 'mcp', label: 'MCP Servers' },
   { id: 'plugins', label: 'Plugins' },
@@ -42,6 +45,7 @@ const tabs: { id: TabId; label: string }[] = [
 export function SettingsPanel() {
   const dispatch = useAppDispatch();
   const { settingsOpen } = useAppSelector((state) => state.ui);
+  const { currentProfileId } = useAppSelector((state) => state.settings);
   const [activeTab, setActiveTab] = useState<TabId>('api');
   const [isDirty, setIsDirty] = useState(false);
   const [saveRef, setSaveRef] = useState<(() => Promise<boolean>) | null>(null);
@@ -61,7 +65,8 @@ export function SettingsPanel() {
       success = await saveRef();
     }
     if (success) {
-      handleClose();
+      dispatch(setSettingsOpen(false));
+      setIsDirty(false);
     }
   };
 
@@ -121,7 +126,10 @@ export function SettingsPanel() {
               flexShrink: 0,
             }}
           >
-            <div style={{ fontSize: 15, fontWeight: 600, color: '#1a1a19' }}>Settings</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: '#1a1a19' }}>Settings</div>
+              <ProfileSwitcher onOpenProfilesTab={() => setActiveTab('profiles')} />
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 12, color: '#6f6b66' }}>Esc to close</span>
               <button
@@ -236,14 +244,29 @@ export function SettingsPanel() {
 
             {/* Content */}
             <div style={{ flex: 1, overflowY: 'auto', background: '#fff', minWidth: 0 }}>
-              {activeTab === 'api' && <ApiSettings />}
-              {activeTab === 'mcp' && <MCPSettings />}
-              {activeTab === 'plugins' && <PluginSettings />}
-              {activeTab === 'appearance' && <ThemeSettings />}
-              {activeTab === 'preferences' && <PreferencesSettings />}
-              {activeTab === 'skills' && <SkillSettings />}
+              {activeTab === 'profiles' && (
+                <div key={currentProfileId ?? 'none'}><ProfilesSettings /></div>
+              )}
+              {activeTab === 'api' && (
+                <div key={currentProfileId ?? 'none'}><ApiSettings /></div>
+              )}
+              {activeTab === 'mcp' && (
+                <div key={currentProfileId ?? 'none'}><MCPSettings /></div>
+              )}
+              {activeTab === 'plugins' && (
+                <div key={currentProfileId ?? 'none'}><PluginSettings /></div>
+              )}
+              {activeTab === 'appearance' && (
+                <div key={currentProfileId ?? 'none'}><ThemeSettings /></div>
+              )}
+              {activeTab === 'preferences' && (
+                <div key={currentProfileId ?? 'none'}><PreferencesSettings /></div>
+              )}
+              {activeTab === 'skills' && (
+                <div key={currentProfileId ?? 'none'}><SkillSettings /></div>
+              )}
               {activeTab === 'advanced' && (
-                <div style={{ padding: '22px 28px' }}>
+                <div key={currentProfileId ?? 'none'} style={{ padding: '22px 28px' }}>
                   <div style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>Advanced</div>
                   <div style={{ fontSize: 13, color: '#6f6b66' }}>
                     Advanced configuration options coming soon.

@@ -5,6 +5,14 @@ export interface ElectronAPI {
     get: () => Promise<any>;
     set: (config: any) => Promise<void>;
   };
+  profile: {
+    list: () => Promise<{ profiles: any[]; currentProfileId: string }>;
+    switch: (id: string) => Promise<any>;
+    create: (payload: { name: string; cloneCurrent: boolean }) => Promise<any>;
+    rename: (id: string, name: string) => Promise<void>;
+    duplicate: (id: string, newName: string) => Promise<any>;
+    delete: (id: string) => Promise<void>;
+  };
   file: {
     select: () => Promise<string[]>;
     selectDirectories: () => Promise<string[]>;
