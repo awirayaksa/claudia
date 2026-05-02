@@ -10,6 +10,7 @@ interface SettingsState {
     custom?: CustomProviderConfig;
     opencodeGo?: OpencodeGoConfig;
     availableModels: string[];
+    modelContextLengths?: Record<string, number>;
     // Legacy fields for backward compatibility (deprecated)
     baseUrl?: string;
     apiKey?: string;
@@ -94,6 +95,9 @@ const settingsSlice = createSlice({
     setCurrentProfileId: (state, action: PayloadAction<string | null>) => {
       state.currentProfileId = action.payload;
     },
+    setModelContextLengths: (state, action: PayloadAction<Record<string, number>>) => {
+      state.api.modelContextLengths = action.payload;
+    },
   },
 });
 
@@ -105,6 +109,7 @@ export const {
   loadSettings,
   setProfiles,
   setCurrentProfileId,
+  setModelContextLengths,
 } = settingsSlice.actions;
 
 export default settingsSlice.reducer;

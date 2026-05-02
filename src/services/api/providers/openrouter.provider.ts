@@ -72,6 +72,7 @@ export class OpenRouterProvider implements IAPIProvider {
         object: 'model',
         created: Date.now(),
         owned_by: model.created_by || 'openrouter',
+        context_length: model.context_length,
       }));
     } catch (error) {
       throw this.handleError(error);

@@ -6,6 +6,8 @@ import { ChatInput, ChatInputRef } from './ChatInput';
 import { FilesystemDirectoryBar } from './FilesystemDirectoryBar';
 import { TextSelectionMenu } from './TextSelectionMenu';
 import { SuggestedPrompts } from './SuggestedPrompts';
+import { TokenUsageIndicator } from './TokenUsageIndicator';
+import { getContextWindow, getCurrentContextTokens } from '../../utils/modelContextLimits';
 import { useChat } from '../../hooks/useChat';
 import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
@@ -45,6 +47,8 @@ export function ChatWindow() {
   const streamingReasoning = useAppSelector((state) => state.chat.streamingReasoning);
   const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
+  const streamingUsage = useAppSelector((state) => state.chat.streamingUsage);
+  const modelContextLengths = useAppSelector((state) => state.settings.api.modelContextLengths);
 
   const {
     conversations,
@@ -541,6 +545,13 @@ export function ChatWindow() {
     );
   }
 
+  // Token usage computation
+  const usage = getCurrentContextTokens(messages, streamingUsage, isStreaming);
+  const contextWindow = getContextWindow(
+    currentConversation?.model || selectedModel,
+    modelContextLengths
+  );
+
   return (
     <div
       className="flex flex-1 flex-col overflow-hidden relative"
@@ -661,8 +672,21 @@ export function ChatWindow() {
                 {currentConversation?.createdAt ? ` · ${format(parseISO(currentConversation.createdAt), 'h:mm a')}` : ''}
               </span>
             </div>
-            {/* ⋯ menu */}
-            <div className="relative" ref={headerMenuRef}>
+
+            <div className="flex items-center gap-3">
+              {usage.used != null && (
+                <TokenUsageIndicator
+                  tokensUsed={usage.used}
+                  contextWindow={contextWindow}
+                  promptTokens={usage.promptTokens}
+                  completionTokens={usage.completionTokens}
+                  cachedTokens={usage.cached}
+                  isStreaming={isStreaming}
+                  modelId={currentConversation?.model || selectedModel}
+                />
+              )}
+              {/* ⋯ menu */}
+              <div className="relative" ref={headerMenuRef}>
               <button
                 className="rounded p-1.5 text-text-secondary hover:bg-surface-hover transition-colors"
                 onClick={() => setShowHeaderMenu((v) => !v)}
@@ -682,6 +706,7 @@ export function ChatWindow() {
                   </button>
                 </div>
               )}
+            </div>
             </div>
           </div>
 

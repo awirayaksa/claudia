@@ -58,6 +58,7 @@ export interface Model {
   object: string;
   created: number;
   owned_by: string;
+  context_length?: number;
 }
 
 export interface ModelsResponse {
