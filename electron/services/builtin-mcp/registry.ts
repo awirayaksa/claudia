@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { createDiagramServer } from './diagram.server';
+import { createFetchServer } from './fetch.server';
 import { createFilesystemServer } from './filesystem.server';
 import { createMsOfficeServer } from './msoffice.server';
-import { createDiagramServer } from './diagram.server';
 
 // ============================================================================
 // Built-in Server Definitions
@@ -32,6 +33,12 @@ const BUILTIN_SERVERS: BuiltinServerDefinition[] = [
     name: 'Diagram Generator',
     description: 'Generate diagram images (ER, network, architecture, flowchart, etc.) from DOT/Graphviz syntax to SVG or PNG',
     createServer: (config) => createDiagramServer(config),
+  },
+  {
+    id: 'builtin-fetch-001',
+    name: 'Web Fetch',
+    description: 'Fetch a URL and return its content as markdown (or raw). Useful for reading documentation, articles, and APIs.',
+    createServer: (config) => createFetchServer(config),
   },
 ];
 
