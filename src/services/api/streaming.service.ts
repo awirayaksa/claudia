@@ -40,6 +40,7 @@ export async function streamChatCompletion(
       body: JSON.stringify({
         ...request,
         stream: true,
+        stream_options: { include_usage: true },
       }),
       signal: abortSignal,
     });
@@ -88,7 +89,7 @@ export async function streamChatCompletion(
           const delta = json.choices?.[0]?.delta;
           const content = delta?.content;
           const toolCallDeltas = delta?.tool_calls;
-          const reasoningContent = delta?.reasoning;
+          const reasoningContent = delta?.reasoning ?? delta?.reasoning_content;
           const usage = json.usage;
 
           if (content) {
