@@ -1,6 +1,7 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig, OpencodeGoConfig } from '../../types/api.types';
 import { ProfileMeta } from '../../types/profile.types';
+import { ReasoningEffort } from '../../utils/effort-utils';
 
 interface SettingsState {
   api: {
@@ -38,6 +39,8 @@ interface SettingsState {
     systemPrompt: string;
     systemPromptFileName: string;
     updateCheckUrl: string;
+    /** Default reasoning effort; null = leave it to the provider. */
+    reasoningEffort: ReasoningEffort | null;
   };
   profiles: ProfileMeta[];
   currentProfileId: string | null;
@@ -65,6 +68,7 @@ const initialState: SettingsState = {
     systemPrompt: '',
     systemPromptFileName: '',
     updateCheckUrl: '',
+    reasoningEffort: null,
   },
   profiles: [],
   currentProfileId: null,

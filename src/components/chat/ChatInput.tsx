@@ -8,8 +8,11 @@ import { FileMentionDropdown } from './FileMentionDropdown';
 import { SkillMentionDropdown } from './SkillMentionDropdown';
 import { useFileMention } from '../../hooks/useFileMention';
 import { useSkillMention } from '../../hooks/useSkillMention';
-import { useAppSelector } from '../../store';
+import { useAppSelector, useAppDispatch } from '../../store';
 import { CompactModelSelector } from './CompactModelSelector';
+import { EffortSelector } from './EffortSelector';
+import { setEffortLevel } from '../../store/slices/chatSlice';
+import { parseEffortDirective } from '../../utils/effort-utils';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -64,6 +67,14 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const { uploadFiles, uploading, progress, error: uploadError } = useFileUpload();
+
+  const dispatch = useAppDispatch();
+
+  // Reasoning effort: session override, Preferences default, and any directive
+  // present in the text being typed right now (applies to the next message only).
+  const sessionEffort = useAppSelector((state) => state.chat.effortLevel);
+  const preferredEffort = useAppSelector((state) => state.settings.preferences.reasoningEffort);
+  const pendingEffort = useMemo(() => parseEffortDirective(message).effort, [message]);
 
   // Redux selectors for filesystem mention feature
   const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
@@ -517,6 +528,16 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           </button>
 
           <div className="flex items-center gap-2">
+            {/* Reasoning effort selector */}
+            <EffortSelector
+              value={sessionEffort}
+              fallback={preferredEffort}
+              pending={pendingEffort}
+              model={selectedModel}
+              onChange={(effort) => dispatch(setEffortLevel(effort))}
+              disabled={disabled || isGenerating}
+            />
+
             {/* Model selector */}
             {selectedModel !== undefined && availableModels && availableModels.length > 0 && onModelChange && (
               <CompactModelSelector
@@ -598,7 +619,8 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       )}
 
       <p className="mt-2 text-xs text-text-secondary">
-        Enter to send · Shift+Enter for new line
+        Enter to send · Shift+Enter for new line · <code>--effort high</code> to set effort for one
+        message
       </p>
     </div>
     </div>

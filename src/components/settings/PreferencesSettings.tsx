@@ -1,14 +1,20 @@
 import { Input } from '../common/Input';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setPreferences } from '../../store/slices/settingsSlice';
+import { EFFORT_LEVELS, ReasoningEffort, formatEffort } from '../../utils/effort-utils';
 
 export function PreferencesSettings() {
   const dispatch = useAppDispatch();
-  const { temperature, showReasoning, showStatistics, systemPrompt, systemPromptFileName, updateCheckUrl } = useAppSelector((state) => state.settings.preferences);
+  const { temperature, showReasoning, showStatistics, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
 
   const handleTemperatureChange = async (value: number) => {
     dispatch(setPreferences({ temperature: value }));
     await window.electron.config.set({ preferences: { temperature: value } });
+  };
+
+  const handleReasoningEffortChange = async (value: ReasoningEffort | null) => {
+    dispatch(setPreferences({ reasoningEffort: value }));
+    await window.electron.config.set({ preferences: { reasoningEffort: value } });
   };
 
   const handleShowReasoningChange = async (value: boolean) => {
@@ -67,6 +73,30 @@ export function PreferencesSettings() {
         onChange={(e) => handleTemperatureChange(Number(e.target.value))}
         helperText="Controls randomness. Lower is more focused, higher is more creative (0-2, default: 0.7)"
       />
+
+      <div>
+        <label className="mb-1.5 block text-sm font-medium text-text-primary">
+          Reasoning effort
+        </label>
+        <select
+          value={reasoningEffort ?? ''}
+          onChange={(e) => handleReasoningEffortChange((e.target.value || null) as ReasoningEffort | null)}
+          className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent"
+        >
+          <option value="">Auto (provider default)</option>
+          {EFFORT_LEVELS.map((level) => (
+            <option key={level} value={level}>
+              {formatEffort(level)}
+            </option>
+          ))}
+        </select>
+        <p className="mt-1.5 text-xs text-text-secondary">
+          Default thinking budget for reasoning models. Models that don&apos;t offer the tier you
+          pick fall back to their closest one (Qwen3.8, for example, only takes Low, Medium and
+          X-High). Override it per session with the effort button next to the chat input, or per
+          message by typing <code className="text-text-primary">--effort high</code> in the prompt.
+        </p>
+      </div>
 
       <div className="rounded border border-border bg-surface p-4">
         <p className="text-sm text-text-secondary">

@@ -61,6 +61,8 @@ interface StoreSchema {
       systemPrompt: string;
       systemPromptFileName: string;
       updateCheckUrl: string;
+      /** Default reasoning effort; null = leave it to the provider. */
+      reasoningEffort: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null;
     };
   };
   windowState: {
@@ -123,6 +125,7 @@ export const store = new Store<StoreSchema>({
         systemPrompt: '',
         systemPromptFileName: '',
         updateCheckUrl: '',
+        reasoningEffort: null,
       },
     },
     windowState: {
@@ -479,6 +482,7 @@ function migrateSettings() {
       enableFileLogging: true,
       showReasoning: false,
       showStatistics: false,
+      reasoningEffort: null,
     };
     needsSave = true;
   } else {
@@ -506,6 +510,11 @@ function migrateSettings() {
     if (config.preferences.updateCheckUrl === undefined) {
       console.log('[Store Migration] Adding updateCheckUrl field');
       config.preferences.updateCheckUrl = '';
+      needsSave = true;
+    }
+    if (config.preferences.reasoningEffort === undefined) {
+      console.log('[Store Migration] Adding reasoningEffort field');
+      config.preferences.reasoningEffort = null;
       needsSave = true;
     }
   }

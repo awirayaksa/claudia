@@ -1,6 +1,7 @@
 // Open WebUI API Types
 import { ToolCall } from './message.types';
 import { MessageUsage } from './statistics.types';
+import { ReasoningEffort } from '../utils/effort-utils';
 
 // Provider Types
 export type ProviderType = 'openwebui' | 'openrouter' | 'custom' | 'opencode-go';
@@ -109,6 +110,12 @@ export interface ChatCompletionRequest {
   presence_penalty?: number;
   tools?: OpenAITool[];
   tool_choice?: 'auto' | 'none' | { type: 'function'; function: { name: string } };
+  /**
+   * How hard the model should think. Sent as `reasoning_effort` on
+   * OpenAI-compatible endpoints; providers with a different shape
+   * (OpenRouter, Anthropic) translate it in their own request builder.
+   */
+  reasoning_effort?: ReasoningEffort;
 }
 
 export interface ChatCompletionResponse {

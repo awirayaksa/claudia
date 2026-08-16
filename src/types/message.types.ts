@@ -1,6 +1,7 @@
 // Message types for chat functionality
 import { UIResourceContent } from './mcp.types';
 import { MessageUsage } from './statistics.types';
+import { ReasoningEffort } from '../utils/effort-utils';
 
 export interface Attachment {
   id: string;
@@ -49,6 +50,8 @@ export interface Message {
   reasoning?: string;
   // Usage statistics
   usage?: MessageUsage;
+  // Reasoning effort this message was sent with (user messages only, so retries reuse it)
+  effort?: ReasoningEffort;
 }
 
 export interface ChatState {

@@ -13,6 +13,7 @@ import { ToolCall } from '../../../types/message.types';
 import { MessageUsage } from '../../../types/statistics.types';
 import { IAPIProvider } from '../provider.interface';
 import { StreamCallbacks } from '../streaming.service';
+import { toAnthropicEffort } from '../../../utils/effort-utils';
 
 const OPENCODE_GO_MODELS: Model[] = [
   // OpenAI-compatible models
@@ -105,6 +106,14 @@ export class OpencodeGoProvider implements IAPIProvider {
     });
   }
 
+  /**
+   * Anthropic-style endpoints take `output_config.effort`. Without an explicit
+   * choice we keep the long-standing 'high' default.
+   */
+  private anthropicEffort(request: ChatCompletionRequest): 'low' | 'medium' | 'high' {
+    return request.reasoning_effort ? toAnthropicEffort(request.reasoning_effort) : 'high';
+  }
+
   async chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
     const normalizedRequest = { ...request, model: this.normalizeModelId(request.model) };
     try {
@@ -135,7 +144,7 @@ export class OpencodeGoProvider implements IAPIProvider {
       max_tokens: request.max_tokens ?? 1024,
       stream: false,
       thinking: { type: 'enabled' },
-      output_config: { effort: 'high' },
+      output_config: { effort: this.anthropicEffort(request) },
     };
     if (systemText) anthropicBody.system = systemText;
 
@@ -331,7 +340,7 @@ export class OpencodeGoProvider implements IAPIProvider {
       max_tokens: request.max_tokens ?? 1024,
       stream: true,
       thinking: { type: 'enabled' },
-      output_config: { effort: 'high' },
+      output_config: { effort: this.anthropicEffort(request) },
     };
     if (systemText) anthropicBody.system = systemText;
 

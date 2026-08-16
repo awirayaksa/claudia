@@ -6,6 +6,7 @@ import { getAPIProvider } from '../../services/api/provider.service';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
 import { v4 as uuidv4 } from 'uuid';
 import type { RootState } from '../index';
+import { ReasoningEffort, resolveEffort, coerceEffort } from '../../utils/effort-utils';
 
 /**
  * Build message content with attachments in OpenAI multi-part format.
@@ -130,6 +131,8 @@ interface ChatState {
   editingMessage: { id: string; content: string; attachments?: Attachment[] } | null;
   // Per-session filesystem directory (volatile, not persisted)
   filesystemDirectory: string | null;
+  // Per-session reasoning effort override set via `/effort <level>` (volatile)
+  effortLevel: ReasoningEffort | null;
 }
 
 const initialState: ChatState = {
@@ -147,19 +150,35 @@ const initialState: ChatState = {
   toolCallIteration: 0,
   editingMessage: null,
   filesystemDirectory: null,
+  effortLevel: null,
 };
+
+/**
+ * Effort that applies to an outgoing request: an explicit per-message override,
+ * then the session override, then the Preferences default — mapped onto a tier
+ * the target model actually accepts.
+ */
+function effortForRequest(
+  state: RootState,
+  model: string,
+  oneShot?: ReasoningEffort | null
+): ReasoningEffort | undefined {
+  const resolved = resolveEffort(oneShot, state.chat.effortLevel, state.settings.preferences.reasoningEffort);
+  return coerceEffort(resolved, model);
+}
 
 // Async thunk for sending a message
 export const sendMessage = createAsyncThunk(
   'chat/sendMessage',
   async (
-    { content, model, attachments }: { content: string; model: string; attachments?: Attachment[] },
+    { content, model, attachments, effort }: { content: string; model: string; attachments?: Attachment[]; effort?: ReasoningEffort | null },
     { getState, rejectWithValue }
   ) => {
     try {
-      const state = getState() as any;
+      const state = getState() as RootState;
       const provider = getAPIProvider();
       const temperature = state.settings.preferences.temperature;
+      const reasoningEffort = effortForRequest(state, model, effort);
 
       // Get all messages for context (include attachments for prior messages)
       const messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
@@ -182,6 +201,7 @@ export const sendMessage = createAsyncThunk(
         messages,
         stream: false,
         temperature: temperature,
+        reasoning_effort: reasoningEffort,
       });
 
       // Assistant responses are always plain text strings
@@ -194,6 +214,7 @@ export const sendMessage = createAsyncThunk(
         assistantMessageId: uuidv4(),
         userContent: content,
         userAttachments: attachments,
+        userEffort: reasoningEffort,
         assistantContent: assistantContent,
         assistantReasoning: assistantReasoning,
         timestamp: new Date().toISOString(),
@@ -231,7 +252,7 @@ const chatSlice = createSlice({
       state.error = action.payload;
     },
     // Streaming actions
-    startStreaming: (state, action: PayloadAction<{ userMessageId: string; assistantMessageId: string; userContent: string; userAttachments?: Attachment[]; timestamp: string }>) => {
+    startStreaming: (state, action: PayloadAction<{ userMessageId: string; assistantMessageId: string; userContent: string; userAttachments?: Attachment[]; timestamp: string; effort?: ReasoningEffort }>) => {
       state.isStreaming = true;
       state.streamingContent = '';
       state.streamingReasoning = '';
@@ -247,6 +268,7 @@ const chatSlice = createSlice({
           content: action.payload.userContent,
           attachments: action.payload.userAttachments,
           timestamp: action.payload.timestamp,
+          effort: action.payload.effort,
         });
       }
     },
@@ -353,6 +375,10 @@ const chatSlice = createSlice({
     setFilesystemDirectory: (state, action: PayloadAction<string | null>) => {
       state.filesystemDirectory = action.payload;
     },
+    /** Session-wide effort override set from the input via `/effort <level>`. */
+    setEffortLevel: (state, action: PayloadAction<ReasoningEffort | null>) => {
+      state.effortLevel = action.payload;
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -372,6 +398,7 @@ const chatSlice = createSlice({
           content: action.payload.userContent,
           attachments: action.payload.userAttachments,
           timestamp: action.payload.timestamp,
+          effort: action.payload.userEffort,
         });
 
         // Add assistant message
@@ -451,18 +478,20 @@ export const {
   deleteMessagesAfter,
   setEditingMessage,
   setFilesystemDirectory,
+  setEffortLevel,
 } = chatSlice.actions;
 
 // Thunk for sending streaming message
 export const sendStreamingMessage = createAsyncThunk(
   'chat/sendStreamingMessage',
   async (
-    { content, model, attachments }: { content: string; model: string; attachments?: Attachment[] },
+    { content, model, attachments, effort }: { content: string; model: string; attachments?: Attachment[]; effort?: ReasoningEffort | null },
     { getState, dispatch }
   ) => {
-    const state = getState() as any;
+    const state = getState() as RootState;
     const provider = getAPIProvider();
     const temperature = state.settings.preferences.temperature;
+    const reasoningEffort = effortForRequest(state, model, effort);
 
     const userMessageId = uuidv4();
     const assistantMessageId = uuidv4();
@@ -475,6 +504,7 @@ export const sendStreamingMessage = createAsyncThunk(
       userContent: content,
       userAttachments: attachments,
       timestamp,
+      effort: reasoningEffort,
     }));
 
     // Get all messages for context (include attachments for prior messages)
@@ -502,6 +532,7 @@ export const sendStreamingMessage = createAsyncThunk(
           model,
           messages,
           temperature: temperature,
+          reasoning_effort: reasoningEffort,
         },
         {
           onChunk: (chunk) => {
@@ -533,13 +564,14 @@ export const sendStreamingMessage = createAsyncThunk(
 export const sendStreamingMessageWithTools = createAsyncThunk(
   'chat/sendStreamingMessageWithTools',
   async (
-    { content, model, attachments, skillPrompt }: { content: string; model: string; attachments?: Attachment[]; skillPrompt?: string },
+    { content, model, attachments, skillPrompt, effort }: { content: string; model: string; attachments?: Attachment[]; skillPrompt?: string; effort?: ReasoningEffort | null },
     { getState, dispatch }
   ) => {
     const MAX_TOOL_ITERATIONS = 5;
     const state = getState() as RootState;
     const provider = getAPIProvider();
     const temperature = state.settings.preferences.temperature;
+    const reasoningEffort = effortForRequest(state, model, effort);
 
     const userMessageId = uuidv4();
     const assistantMessageId = uuidv4();
@@ -552,6 +584,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
       userContent: content,
       userAttachments: attachments,
       timestamp,
+      effort: reasoningEffort,
     }));
 
     // Clear tool state
@@ -644,6 +677,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
               tools: openAITools,
               tool_choice: tool_choice,
               temperature: temperature,
+              reasoning_effort: reasoningEffort,
             },
             {
               onChunk: (chunk) => {

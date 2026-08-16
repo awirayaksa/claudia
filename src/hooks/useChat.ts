@@ -2,6 +2,7 @@ import { useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
 import { sendMessage, sendStreamingMessageWithTools, clearMessages, abortStreaming, deleteMessagesAfter, setEditingMessage } from '../store/slices/chatSlice';
 import { Attachment } from '../types/message.types';
+import { ReasoningEffort } from '../utils/effort-utils';
 
 export function useChat() {
   const dispatch = useAppDispatch();
@@ -31,7 +32,12 @@ export function useChat() {
   const { streamingEnabled } = useAppSelector((state) => state.settings.preferences);
 
   const handleSendMessage = useCallback(
-    async (content: string, attachments?: Attachment[], skillPrompt?: string) => {
+    async (
+      content: string,
+      attachments?: Attachment[],
+      skillPrompt?: string,
+      effort?: ReasoningEffort | null
+    ) => {
       if (!selectedModel) {
         throw new Error('Please select a model in settings');
       }
@@ -40,9 +46,9 @@ export function useChat() {
 
       // Use streaming with tool calling if enabled, otherwise use regular message
       if (streamingEnabled) {
-        await dispatch(sendStreamingMessageWithTools({ content, model: selectedModel, attachments, skillPrompt }));
+        await dispatch(sendStreamingMessageWithTools({ content, model: selectedModel, attachments, skillPrompt, effort }));
       } else {
-        await dispatch(sendMessage({ content, model: selectedModel, attachments }));
+        await dispatch(sendMessage({ content, model: selectedModel, attachments, effort }));
       }
     },
     [dispatch, selectedModel, streamingEnabled]
@@ -98,8 +104,8 @@ export function useChat() {
       // Delete from the user message onwards (including the user message and assistant response)
       dispatch(deleteMessagesAfter(userMessage.id));
 
-      // Re-send the user message
-      await handleSendMessage(userMessage.content, userMessage.attachments);
+      // Re-send the user message with the effort it was originally sent at
+      await handleSendMessage(userMessage.content, userMessage.attachments, undefined, userMessage.effort);
     },
     [messages, isStreaming, dispatch, handleSendMessage]
   );

@@ -14,9 +14,10 @@ import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { Attachment } from '../../types/message.types';
-import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage, setFilesystemDirectory } from '../../store/slices/chatSlice';
+import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage, setFilesystemDirectory, setEffortLevel } from '../../store/slices/chatSlice';
 import { setCurrentConversation } from '../../store/slices/conversationSlice';
 import { resolveSkillCommand } from '../../utils/skill-utils';
+import { parseEffortDirective } from '../../utils/effort-utils';
 import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
 import { getAPIProvider } from '../../services/api/provider.service';
@@ -353,8 +354,18 @@ export function ChatWindow() {
     }
   };
 
-  const handleSend = async (content: string, attachments?: Attachment[]) => {
+  const handleSend = async (rawContent: string, attachments?: Attachment[]) => {
     try {
+      // Pull an effort directive out of the prompt, e.g. "--effort high fix this bug".
+      const { content, effort, directiveOnly } = parseEffortDirective(rawContent);
+
+      // "/effort high" on its own switches the effort for the rest of the session
+      // instead of sending a message.
+      if (directiveOnly && !attachments?.length) {
+        dispatch(setEffortLevel(effort ?? null));
+        return;
+      }
+
       // Create new conversation if none exists
       if (!currentConversationId) {
         const modelToUse = pendingModel || selectedModel;
@@ -375,9 +386,9 @@ export function ChatWindow() {
         if (filesystemDirectory) {
           skillPrompt = `Working directory: ${filesystemDirectory}\n\n${skillPrompt}`;
         }
-        await sendMessage(skillResult.userContent, attachments, skillPrompt);
+        await sendMessage(skillResult.userContent, attachments, skillPrompt, effort);
       } else {
-        await sendMessage(content, attachments);
+        await sendMessage(content, attachments, undefined, effort);
       }
     } catch (error) {
       console.error('Failed to send message:', error);

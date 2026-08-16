@@ -52,6 +52,19 @@ export class OpenRouterProvider implements IAPIProvider {
     return 'openrouter';
   }
 
+  /**
+   * OpenRouter expresses reasoning effort as `reasoning: { effort }` rather than
+   * the OpenAI `reasoning_effort` field, so translate it here.
+   */
+  private buildRequestBody(request: ChatCompletionRequest, extra: Record<string, unknown>) {
+    const { reasoning_effort, ...rest } = request;
+    return {
+      ...rest,
+      ...(reasoning_effort ? { reasoning: { effort: reasoning_effort } } : {}),
+      ...extra,
+    };
+  }
+
   getCapabilities(): ProviderCapabilities {
     return {
       supportsFileUpload: false,  // OpenRouter doesn't support file uploads
@@ -83,10 +96,7 @@ export class OpenRouterProvider implements IAPIProvider {
     try {
       const response = await this.axiosInstance.post<ChatCompletionResponse>(
         '/chat/completions',
-        {
-          ...request,
-          stream: false,
-        }
+        this.buildRequestBody(request, { stream: false })
       );
       return response.data;
     } catch (error) {
@@ -119,11 +129,12 @@ export class OpenRouterProvider implements IAPIProvider {
       const response = await fetch(`${OpenRouterProvider.BASE_URL}/chat/completions`, {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          ...request,
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
+        body: JSON.stringify(
+          this.buildRequestBody(request, {
+            stream: true,
+            stream_options: { include_usage: true },
+          })
+        ),
         signal: abortSignal,
       });
 

@@ -20,6 +20,7 @@ This Electron app connects to Open WebUI and lets you chat with AI models while 
 - 🎨 **Dark mode** - Because your eyes deserve better at 2 AM
 - 🔧 **MCP Server Support** - Give your AI superpowers with 26 custom tools! (May or may not crash)
 - 🤖 **Auto-tool calling** - She'll use tools automatically. It's like giving her a Swiss Army knife, but digital.
+- 🧠 **Reasoning effort** - Tell her how hard to think, right from the prompt: `--effort high fix this bug`. Or `/effort low` on its own to keep it that way for the session.
 
 ## 🛠️ Technology Stack (AKA "Things That Will Break")
 
@@ -211,6 +212,8 @@ MIT - Do whatever you want with this code. Sell it, break it, improve it, blame 
 5. **Read the logs** - They're funnier than you think
 6. **Press Enter to send** - Shift+Enter for new lines (game changer!)
 7. **Auto-focus is your friend** - Type away without clicking!
+8. **Dial the thinking** - `--effort high` (or `minimal`, `low`, `medium`, `xhigh`) anywhere in a message applies to that message only. `/effort high` alone sets it for the whole session, `/effort default` hands it back to the provider. Set your day-to-day default in Settings → Preferences.
+9. **Effort follows the model** - Each model only gets the tiers it actually accepts (Qwen3.8 takes `low`/`medium`/`xhigh`, most others `minimal`/`low`/`medium`/`high`). Ask for a tier a model doesn't have and Claudia picks its nearest one — `--effort max` always means "as hard as this model goes".
 
 ---
 
