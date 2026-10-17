@@ -4,7 +4,7 @@ import { MessageUsage } from './statistics.types';
 import { ReasoningEffort } from '../utils/effort-utils';
 
 // Provider Types
-export type ProviderType = 'openwebui' | 'openrouter' | 'custom' | 'opencode-go';
+export type ProviderType = 'openwebui' | 'openrouter' | 'custom' | 'opencode-go' | 'anthropic' | 'ollama';
 
 export interface ProviderCapabilities {
   supportsFileUpload: boolean;

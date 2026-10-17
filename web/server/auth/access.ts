@@ -50,6 +50,9 @@ const PERMISSION_MESSAGES: Partial<Record<PermissionKey, string>> = {
   'api.keys': 'You are not allowed to use API keys.',
   'workspace.knowledge': 'You are not allowed to create knowledge bases.',
   'features.web_search': 'You are not allowed to search the web.',
+  'features.code': 'You are not allowed to run code.',
+  'features.image_gen': 'You are not allowed to generate images.',
+  'features.voice': 'You are not allowed to use voice input or read-aloud.',
 };
 
 export class AccessService {

@@ -216,7 +216,9 @@
       "openai": "OpenAI-compatible",
       "openrouter": "OpenRouter",
       "openwebui": "Open WebUI",
-      "opencode-go": "opencode Go"
+      "opencode-go": "opencode Go",
+      "anthropic": "Anthropic",
+      "ollama": "Ollama"
     },
     "baseUrl": "Base URL",
     "baseUrlHelp": "Leave empty for the provider's default.",
@@ -408,7 +410,10 @@
       "connections.own": "Add their own LLM connections",
       "api.keys": "Use API keys (OpenAI-compatible API)",
       "workspace.knowledge": "Create knowledge bases",
-      "features.web_search": "Search the web from chats"
+      "features.web_search": "Search the web from chats",
+      "features.code": "Run code (code interpreter)",
+      "features.image_gen": "Generate images",
+      "features.voice": "Use voice input and read-aloud"
     },
     "caps": {
       "tokensPerDay": "Tokens per day",
@@ -610,5 +615,91 @@
     "resultCount": "Results",
     "fetchPages": "Read the result pages (not just the snippets)",
     "savedReindexing": "Saved. Everything is being indexed again."
+  },
+  "tools": {
+    "code": "Code",
+    "codeHelp": "Let the model run Python in your browser (in a sandbox) for calculations and data",
+    "image": "Image",
+    "imageHelp": "Let the model create images"
+  },
+  "artifacts": {
+    "preview": "Preview",
+    "code": "Code",
+    "download": "Download",
+    "noSandbox": "Live previews need a sandbox origin (CLAUDIA_SANDBOX_ORIGIN).",
+    "kind": {
+      "html": "HTML",
+      "svg": "SVG",
+      "react": "React"
+    }
+  },
+  "voice": {
+    "dictate": "Dictate",
+    "stopDictation": "Stop dictating",
+    "micDenied": "The microphone is blocked for this site.",
+    "readAloud": "Read aloud",
+    "stopReading": "Stop"
+  },
+  "media": {
+    "title": "Media",
+    "images": "Image generation",
+    "imagesHelp": "Lets people ask for images in a chat (the image button above the message box). Images are kept as their files.",
+    "imageEngines": {
+      "none": "Off",
+      "openai": "OpenAI-compatible API",
+      "automatic1111": "AUTOMATIC1111 (Stable Diffusion web UI)",
+      "comfyui": "ComfyUI",
+      "gemini": "Google Gemini"
+    },
+    "size": "Size",
+    "steps": "Steps",
+    "workflow": "ComfyUI workflow (API format)",
+    "workflowHelp": "%prompt%, %negative%, %width%, %height%, %steps% and %seed% are filled in.",
+    "testImage": "Generate a test image",
+    "testing": "Generating…",
+    "voice": "Voice",
+    "voiceHelp": "The browser's own speech works without a server and keeps audio away from Claudia; an OpenAI-compatible API (Whisper, TTS) works in every browser.",
+    "stt": "Dictation",
+    "tts": "Read-aloud",
+    "ttsVoice": "Voice",
+    "voiceEngines": {
+      "none": "Off",
+      "browser": "The browser's speech",
+      "openai": "OpenAI-compatible API"
+    }
+  },
+  "plugins": {
+    "title": "Plugins",
+    "help": "Renderer plugins change how messages are shown. They run with full access to the page for everyone, so install only plugins you trust.",
+    "install": "Install or upgrade",
+    "manifest": "Manifest (plugin.json)",
+    "bundle": "Bundle (ES module)",
+    "formatHelp": "The bundle is an ES module whose default export is the plugin object (the desktop plugin API). It may import react, react/jsx-runtime and unified.",
+    "pickBoth": "Choose the manifest and the bundle.",
+    "upload": "Upload",
+    "none": "No plugins installed.",
+    "enabled": "On",
+    "types": {
+      "renderer-extension": "Renderer extension",
+      "renderer-replacement": "Renderer replacement"
+    },
+    "reloadHelp": "People see changes after reloading the page.",
+    "deleteTitle": "Delete plugin?",
+    "deleteBody": "\"{{id}}\" will be removed for everyone."
+  },
+  "openapi": {
+    "title": "OpenAPI tool servers",
+    "help": "Each operation of an OpenAPI 3 spec becomes a tool. Calls go to the API with the header you set.",
+    "add": "Add OpenAPI server",
+    "none": "None yet.",
+    "authWith": "sends {{header}}",
+    "reload": "Reload spec",
+    "operations": "Operations",
+    "specUrl": "Spec URL",
+    "specText": "Or paste the spec (JSON or YAML)",
+    "baseUrl": "Base URL",
+    "baseUrlPlaceholder": "Empty: the spec's server",
+    "authHeader": "Auth header",
+    "authValue": "Auth value"
   }
 }

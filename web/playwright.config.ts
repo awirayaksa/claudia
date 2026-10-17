@@ -43,6 +43,9 @@ export default defineConfig({
         CLAUDIA_SECRET_KEY: 'e2e-secret-key-e2e-secret-key-0123456789',
         CLAUDIA_ADMIN_EMAIL: 'admin@e2e.test',
         CLAUDIA_ADMIN_PASSWORD: 'admin-password-e2e',
+        // A sandbox origin on a second port (code interpreter, artifact previews)
+        CLAUDIA_PUBLIC_URL: `http://127.0.0.1:${PORT}`,
+        CLAUDIA_SANDBOX_PORT: String(PORT + 1),
         LOG_LEVEL: 'warn',
       },
     },

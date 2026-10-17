@@ -11,7 +11,7 @@ import type { Skill } from '@/types/skill.types';
 import type { MessageRef } from '@shared/knowledge';
 import type { ChatSummary } from '@shared/chats';
 import type { KnowledgeView } from '@shared/knowledge';
-import { BookIcon, CloseIcon, GlobeIcon } from '../components/icons';
+import { BookIcon, CloseIcon } from '../components/icons';
 
 const URL_ITEM_ID = 'web-page';
 
@@ -47,35 +47,42 @@ export function urlRefsIn(text: string): { text: string; refs: MessageRef[] } {
 export const sameRef = (a: MessageRef, b: MessageRef) =>
   a.type === b.type && (a.type === 'url' ? a.url === (b as { url: string }).url : a.id === (b as { id: string }).id);
 
+export interface FeatureToggle {
+  id: string;
+  label: string;
+  help: string;
+  on: boolean;
+  icon: React.ReactNode;
+  onChange: (on: boolean) => void;
+}
+
 export function ContextBar({
   refs,
   onRemove,
-  webSearch,
-  onWebSearch,
-  canSearchWeb,
+  toggles,
 }: {
   refs: MessageRef[];
   onRemove: (ref: MessageRef) => void;
-  webSearch: boolean;
-  onWebSearch: (on: boolean) => void;
-  canSearchWeb: boolean;
+  /** Web search, code interpreter, image generation (the available ones). */
+  toggles: FeatureToggle[];
 }) {
   const { t } = useTranslation();
-  if (refs.length === 0 && !canSearchWeb) return null;
+  if (refs.length === 0 && toggles.length === 0) return null;
   return (
     <div className="mb-1.5 flex flex-wrap items-center gap-1.5 text-xs" data-testid="context-bar">
-      {canSearchWeb && (
+      {toggles.map((f) => (
         <button
-          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 ${webSearch ? 'border-accent bg-accent/10 text-accent' : 'border-border text-text-secondary hover:text-accent'}`}
-          aria-pressed={webSearch}
-          onClick={() => onWebSearch(!webSearch)}
-          title={t('refs.webSearchHelp')}
-          data-testid="web-search-toggle"
+          key={f.id}
+          className={`flex items-center gap-1 rounded-full border px-2 py-0.5 ${f.on ? 'border-accent bg-accent/10 text-accent' : 'border-border text-text-secondary hover:text-accent'}`}
+          aria-pressed={f.on}
+          onClick={() => f.onChange(!f.on)}
+          title={f.help}
+          data-testid={`${f.id}-toggle`}
         >
-          <GlobeIcon />
-          {t('refs.webSearch')}
+          {f.icon}
+          {f.label}
         </button>
-      )}
+      ))}
       {refs.map((r) => (
         <span
           key={r.type === 'url' ? r.url : r.id}

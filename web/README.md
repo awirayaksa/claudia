@@ -5,7 +5,34 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 4** (knowledge and search). Phase 4 adds:
+Status: **Phase 5** (advanced tools). Phase 5 adds:
+
+- **Code interpreter** (the Code button above the message box): the model
+  runs Python with Pyodide in your browser, in a hidden frame on the sandbox
+  origin, and gets what it printed. If no tab answers (it was closed), the
+  model is told so after two minutes and the reply carries on.
+- **Artifacts:** HTML pages, SVG images and React components in a reply get
+  a Preview button; they run on the sandbox origin in a script-only frame
+  with no network, cookies, storage or access to the app.
+- **Image generation** (the Image button; Admin → Media): OpenAI-compatible,
+  AUTOMATIC1111, ComfyUI (your workflow) or Gemini. Pictures are kept as the
+  user's files and shown in the reply.
+- **Voice** (Admin → Media): dictation and read-aloud with the browser's own
+  speech (the default) or an OpenAI-compatible Whisper / TTS endpoint.
+- **Anthropic and Ollama connections**, native (tools, thinking, images).
+- **OpenAPI tool servers** (Admin → Tools): each operation of a spec becomes
+  a tool, next to the MCP servers.
+- **Plugins** (Admin → Plugins): renderer plugins as ES modules (the
+  desktop's plugin API), importing `react`, `react/jsx-runtime` and `unified`
+  from the app. They run with the page's privileges, so only admins install
+  them.
+
+The code interpreter and previews need a sandbox origin
+(`CLAUDIA_SANDBOX_ORIGIN`, or `CLAUDIA_SANDBOX_PORT` for single-host trials).
+Pyodide is served from it; packages like numpy load from the Pyodide CDN when
+code imports them.
+
+Phase 4 (knowledge and search):
 
 - **Knowledge bases** (Workspace → Knowledge): PDF, Word, Excel, PowerPoint,
   HTML, Markdown and text files are split into passages (keeping pages,
@@ -130,7 +157,7 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 | Command | What it does |
 |---|---|
 | `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test) and client tests |
-| `npm run test:e2e` | Browser tests of the Phase 1a–4 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
+| `npm run test:e2e` | Browser tests of the Phase 1a–5 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
 | `npm run type-check` | Client and server, including the shared `../src` code |
 | `npm run build` | Client (`dist/client`) and server bundle (`dist/server/index.cjs`) |
 | `npm start` | Run the production build |

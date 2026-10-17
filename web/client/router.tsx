@@ -17,6 +17,8 @@ import { ModelsPage } from './pages/workspace/ModelsPage';
 import { PromptsPage } from './pages/workspace/PromptsPage';
 import { KnowledgePage } from './pages/workspace/KnowledgePage';
 import { RagSettingsPage } from './pages/admin/RagSettingsPage';
+import { MediaSettingsPage } from './pages/admin/MediaSettingsPage';
+import { PluginsPage } from './pages/admin/PluginsPage';
 
 /** Routes. Share links (/s/:token) are outside the sign-in gate. */
 export const routes: RouteObject[] = [
@@ -53,6 +55,8 @@ export const routes: RouteObject[] = [
           { path: 'tools', element: <ToolServersPage /> },
           { path: 'directory', element: <DirectoryPage /> },
           { path: 'knowledge', element: <RagSettingsPage /> },
+          { path: 'media', element: <MediaSettingsPage /> },
+          { path: 'plugins', element: <PluginsPage /> },
           { path: 'settings', element: <AdminSettingsPage /> },
         ],
       },

@@ -36,9 +36,13 @@ import { useResumeActiveRuns, useRunFollower } from '../chat/useRunFollower';
 import { enabledServerIds } from '../chat/useMcpSync';
 import { MessageTurns } from '../chat/MessageTurns';
 import { ChatHeader } from '../chat/ChatHeader';
-import { CloseIcon, PlusIcon } from '../components/icons';
+import { CloseIcon, CodeIcon, GlobeIcon, ImageIcon, PlusIcon } from '../components/icons';
 import { PromptVariablesForm } from '../workspace/PromptForm';
-import { ContextBar, hashMenuItems, refFromItem, sameRef, UrlDialog, urlRefsIn } from '../chat/ContextBar';
+import { ContextBar, hashMenuItems, refFromItem, sameRef, UrlDialog, urlRefsIn, type FeatureToggle } from '../chat/ContextBar';
+import { useBrowserTools } from '../chat/browser-tools';
+import { ArtifactPanel } from '../chat/ArtifactPanel';
+import { MicButton } from '../chat/voice';
+import type { Artifact } from '@/utils/artifacts';
 import type { MessageRef } from '@shared/knowledge';
 
 /** The model last picked by this user (per browser), for new chats. */
@@ -60,7 +64,8 @@ interface Outgoing {
   raw: string;
   attachments: Attachment[];
   refs?: MessageRef[];
-  webSearch?: boolean;
+  /** webSearch, code, imageGen */
+  features?: Record<string, boolean>;
 }
 
 export function ChatPage() {
@@ -85,9 +90,24 @@ export function ChatPage() {
   const permissions = usePermissions();
   /** References and web search for the next message. */
   const [refs, setRefs] = useState<MessageRef[]>([]);
-  const [webSearch, setWebSearch] = useState(false);
+  /** Web search, code interpreter and image generation for the next messages (until switched off). */
+  const [features, setFeatures] = useState<Record<string, boolean>>({});
   const [askUrl, setAskUrl] = useState(false);
-  const canSearchWeb = !!session?.features?.webSearch && !!permissions?.['features.web_search'];
+  const [artifact, setArtifact] = useState<Artifact | null>(null);
+  const toggle = (id: string) => (on: boolean) => setFeatures((f) => ({ ...f, [id]: on }));
+  const toggles: FeatureToggle[] = [
+    ...(session?.features?.webSearch && permissions?.['features.web_search']
+      ? [{ id: 'web-search', label: t('refs.webSearch'), help: t('refs.webSearchHelp'), on: !!features.webSearch, icon: <GlobeIcon />, onChange: toggle('webSearch') }]
+      : []),
+    ...(session?.features?.codeInterpreter && permissions?.['features.code']
+      ? [{ id: 'code', label: t('tools.code'), help: t('tools.codeHelp'), on: !!features.code, icon: <CodeIcon />, onChange: toggle('code') }]
+      : []),
+    ...(session?.features?.imageGen && permissions?.['features.image_gen']
+      ? [{ id: 'image', label: t('tools.image'), help: t('tools.imageHelp'), on: !!features.imageGen, icon: <ImageIcon />, onChange: toggle('imageGen') }]
+      : []),
+  ];
+  const voice = permissions?.['features.voice'] ? session?.features : undefined;
+  useBrowserTools(chatId);
   const addRef = (r: MessageRef) => setRefs((list) => (list.some((x) => sameRef(x, r)) ? list : [...list, r].slice(0, 10)));
   /** A prompt waiting for its {{variables}}, and where its text goes. */
   const [promptForm, setPromptForm] = useState<{ prompt: PromptView; insert: (text: string) => void } | null>(null);
@@ -131,7 +151,8 @@ export function ChatPage() {
     setSendError(null);
     setQueue([]);
     setRefs([]);
-    setWebSearch(false);
+    setFeatures({});
+    setArtifact(null);
     if (!chatId) {
       setCompare([]);
       setTemporary(false);
@@ -211,7 +232,7 @@ export function ChatPage() {
         toolIds: enabledServerIds(mcpData?.servers),
         ...(skill ? { skill } : {}),
         ...(out.refs?.length ? { refs: out.refs } : {}),
-        ...(out.webSearch ? { features: { webSearch: true } } : {}),
+        ...(out.features && Object.values(out.features).some(Boolean) ? { features: out.features } : {}),
       }).unwrap();
       follow(id, res.runId);
       if (!chatId) navigate(`/c/${id}`);
@@ -265,10 +286,9 @@ export function ChatPage() {
       raw: typed.text,
       attachments,
       refs: [...refs, ...typed.refs.filter((r) => !refs.some((x) => sameRef(x, r)))].slice(0, 10),
-      webSearch,
+      features: Object.fromEntries(Object.entries(features).filter(([, on]) => on)),
     };
     setRefs([]);
-    setWebSearch(false);
     if (live || sending.current) {
       // A reply is still being written: send this one after it
       setQueue((q) => [...q, { id: Date.now() + Math.random(), ...out }]);
@@ -315,7 +335,10 @@ export function ChatPage() {
       p.type === 'file' && p.fileId ? [{ id: p.fileId, type: 'file' as const, name: p.name, size: p.size ?? 0, mimeType: p.mime }] : []
     );
     // An edit keeps the turn's references and web search
-    void send({ raw: text, attachments, refs: (node.refs ?? []) as MessageRef[], webSearch: !!node.webSearch }, node.parentId);
+    void send(
+      { raw: text, attachments, refs: (node.refs ?? []) as MessageRef[], features: { ...(node.webSearch ? { webSearch: true } : {}) } },
+      node.parentId
+    );
   };
 
   const fork = async (node: MessageNode) => {
@@ -383,6 +406,8 @@ export function ChatPage() {
               }
               onFollowUp={(q) => handleSend(q)}
               onStop={handleStop}
+              onArtifact={setArtifact}
+              readAloud={voice?.readAloud ?? 'none'}
             />
           )}
           {live?.notices.map((n, i) => (
@@ -425,13 +450,7 @@ export function ChatPage() {
             onChange={setCompareModels}
           />
         )}
-        <ContextBar
-          refs={refs}
-          onRemove={(r) => setRefs((list) => list.filter((x) => !sameRef(x, r)))}
-          webSearch={webSearch}
-          onWebSearch={setWebSearch}
-          canSearchWeb={canSearchWeb}
-        />
+        <ContextBar refs={refs} onRemove={(r) => setRefs((list) => list.filter((x) => !sameRef(x, r)))} toggles={toggles} />
         <ChatInput
           ref={inputRef}
           onSend={handleSend}
@@ -445,6 +464,11 @@ export function ChatPage() {
           modelLabel={(id) => modelName(id) ?? id}
           extraCommands={promptCommands}
           hashCommands={hashItems}
+          toolbarExtras={
+            voice && voice.voiceInput !== 'none' ? (
+              <MicButton mode={voice.voiceInput} disabled={noModels} onText={(text) => inputRef.current?.appendText(text)} />
+            ) : undefined
+          }
           hashEmptyLabel={t('refs.nothing')}
           onHashPick={(item) => {
             const r = refFromItem(item);
@@ -456,6 +480,7 @@ export function ChatPage() {
             if (prompt) openPrompt(prompt, insert);
           }}
         />
+        {artifact && <ArtifactPanel artifact={artifact} onClose={() => setArtifact(null)} />}
         {askUrl && (
           <UrlDialog
             onClose={() => setAskUrl(false)}

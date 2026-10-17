@@ -13,6 +13,7 @@ import {
   useRestartMcpServerMutation,
   useUpdateMcpServerMutation,
 } from '../../api/rtk-api';
+import { OpenApiServers } from './OpenApiServers';
 
 type Transport = McpServerInput['transport'];
 
@@ -95,6 +96,7 @@ export function ToolServersPage() {
         cancelText={t('app.cancel')}
         isDestructive
       />
+      <OpenApiServers />
     </div>
   );
 }

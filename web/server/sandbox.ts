@@ -9,6 +9,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import Fastify, { type FastifyInstance } from 'fastify';
 import type { AppConfig } from './config';
@@ -32,7 +33,40 @@ const TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.zip': 'application/zip',
 };
+
+const requireFrom = createRequire(import.meta.url);
+const pkgDir = (name: string) => path.dirname(requireFrom.resolve(`${name}/package.json`));
+
+/**
+ * Third-party files the sandbox pages load (never the app): Pyodide for the
+ * code interpreter, React and Babel for React previews. A fixed list, so no
+ * other file under node_modules can be reached.
+ */
+let vendorFiles: Map<string, string> | null = null;
+function vendor(): Map<string, string> {
+  if (vendorFiles) return vendorFiles;
+  const out = new Map<string, string>();
+  try {
+    const py = pkgDir('pyodide');
+    for (const f of ['pyodide.js', 'pyodide.mjs', 'pyodide.asm.js', 'pyodide.asm.wasm', 'python_stdlib.zip', 'pyodide-lock.json']) {
+      out.set(`vendor/pyodide/${f}`, path.join(py, f));
+    }
+  } catch {
+    /* the code interpreter stays unavailable */
+  }
+  try {
+    out.set('vendor/react.js', path.join(pkgDir('react'), 'umd', 'react.production.min.js'));
+    out.set('vendor/react-dom.js', path.join(pkgDir('react-dom'), 'umd', 'react-dom.production.min.js'));
+    out.set('vendor/babel.js', path.join(pkgDir('@babel/standalone'), 'babel.min.js'));
+  } catch {
+    /* React previews stay unavailable */
+  }
+  vendorFiles = out;
+  return out;
+}
 
 /** Serve one file from the sandbox folder; false when there is nothing to serve. */
 export function serveSandboxFile(
@@ -44,13 +78,16 @@ export function serveSandboxFile(
   if (req.method !== 'GET' && req.method !== 'HEAD') return false;
   const urlPath = decodeURIComponent(new URL(req.url ?? '/', 'http://x').pathname);
   const rel = urlPath === '/' ? 'index.html' : urlPath.replace(/^\/+/, '');
-  const file = path.resolve(dir, rel);
-  if (!file.startsWith(path.resolve(dir) + path.sep) || !fs.existsSync(file) || !fs.statSync(file).isFile()) {
-    return false;
-  }
+  const vendored = vendor().get(rel);
+  const file = vendored ?? path.resolve(dir, rel);
+  if (!vendored && !file.startsWith(path.resolve(dir) + path.sep)) return false;
+  if (!fs.existsSync(file) || !fs.statSync(file).isFile()) return false;
   res.writeHead(200, {
     'Content-Type': TYPES[path.extname(file).toLowerCase()] ?? 'application/octet-stream',
-    'Cache-Control': 'no-cache',
+    // Vendored packages change only with an upgrade
+    'Cache-Control': vendored ? 'public, max-age=86400' : 'no-cache',
+    // Pyodide's worker and the previews load these cross-origin (from opaque-origin frames)
+    ...(vendored ? { 'Access-Control-Allow-Origin': '*', 'Cross-Origin-Resource-Policy': 'cross-origin' } : {}),
     'X-Content-Type-Options': 'nosniff',
     // Only the app may embed sandbox pages
     'Content-Security-Policy': `frame-ancestors ${appOrigin ?? "'self'"}`,

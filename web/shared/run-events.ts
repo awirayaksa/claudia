@@ -25,6 +25,8 @@ export type RunEvent =
    */
   | { type: 'tool.client_request'; runId: string; messageId: string; callId: string; name: string; args: string }
   | { type: 'message.usage'; messageId: string; usage: MessageUsage }
+  /** A part added to a reply outside text and tools (generated images). */
+  | { type: 'message.part'; messageId: string; part: MessagePart }
   | { type: 'message.citations'; messageId: string; citations: Array<{ index: number; source: CitationSource }> }
   /** Suggested next questions, after the reply is complete. */
   | { type: 'message.followups'; messageId: string; followUps: string[] }

@@ -1,7 +1,7 @@
 import { boolean, index, integer, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { users } from './identity';
 
-export type ConnectionType = 'openai' | 'openrouter' | 'openwebui' | 'opencode-go';
+export type ConnectionType = 'openai' | 'openrouter' | 'openwebui' | 'opencode-go' | 'anthropic' | 'ollama';
 
 /** Provider-specific behaviour switches. */
 export interface ConnectionQuirks {

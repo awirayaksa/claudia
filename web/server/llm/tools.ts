@@ -4,13 +4,15 @@
  */
 import type { OpenAITool } from '../../../src/types/api.types';
 import type { ToolCall } from '../../../src/types/message.types';
-import type { PartOf } from '../../../src/types/turn.types';
+import type { MessagePart, PartOf } from '../../../src/types/turn.types';
 
 export interface ToolExecution {
   /** Where the call ran, stored in the tool_call part. */
   serverId: string;
   tool: string;
   result: PartOf<'tool_result'>;
+  /** Parts shown after the result (e.g. generated images as files). */
+  extraParts?: MessagePart[];
 }
 
 export interface RunToolset {

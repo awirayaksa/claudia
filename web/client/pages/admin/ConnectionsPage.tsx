@@ -19,7 +19,7 @@ import {
   useUpdateMyConnectionMutation,
 } from '../../api/rtk-api';
 
-const TYPES: ConnectionType[] = ['openai', 'openrouter', 'openwebui', 'opencode-go'];
+const TYPES: ConnectionType[] = ['openai', 'anthropic', 'ollama', 'openrouter', 'openwebui', 'opencode-go'];
 
 /** Global connections (admin) or the signed-in user's own ("@prefix/…" models). */
 type Scope = 'global' | 'own';

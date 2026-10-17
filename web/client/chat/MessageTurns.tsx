@@ -13,6 +13,8 @@ import type { MessageNode } from '@/types/turn.types';
 import { nodeText, toDisplayMessage } from './to-display';
 import { leafUnder, modelColumns, siblingsOf, type ModelColumn } from './tree';
 import { VersionSwitcher } from './VersionSwitcher';
+import { findArtifacts, type Artifact } from '@/utils/artifacts';
+import { ReadAloudButton } from './voice';
 
 export interface TurnHandlers {
   /** Show the path through this node (a version switch). */
@@ -24,6 +26,10 @@ export interface TurnHandlers {
   onRate?: (node: MessageNode, rating: 1 | -1 | null, feedback?: { comment?: string; reasons?: string[] }) => void;
   onFollowUp?: (text: string) => void;
   onStop?: () => void;
+  /** Show a reply's HTML/SVG/React code live. */
+  onArtifact?: (artifact: Artifact) => void;
+  /** How replies are read aloud (none: no button). */
+  readAloud?: 'none' | 'browser' | 'server';
 }
 
 interface Props extends TurnHandlers {
@@ -83,6 +89,7 @@ export function MessageTurns(props: Props) {
         return (
           <div key={node.id}>
             {reply}
+            {props.onArtifact && node.status !== 'streaming' && <ArtifactChips node={node} onOpen={props.onArtifact} />}
             {feedbackFor && nodes.find((n) => n.id === feedbackFor)?.parentId === node.parentId && (
               <FeedbackForm
                 onCancel={() => setFeedbackFor(null)}
@@ -188,8 +195,35 @@ function AssistantTurn(
             }
           : undefined
       }
-      actions={<VersionSwitcher index={index} count={versions.length} disabled={running} onChange={(i) => select(versions[i].id)} />}
+      actions={
+        <>
+          <VersionSwitcher index={index} count={versions.length} disabled={running} onChange={(i) => select(versions[i].id)} />
+          {!readOnly && props.readAloud && props.readAloud !== 'none' && <ReadAloudButton mode={props.readAloud} text={nodeText(node)} />}
+        </>
+      }
     />
+  );
+}
+
+/** "Preview" chips for a reply's complete HTML, SVG and React blocks. */
+function ArtifactChips({ node, onOpen }: { node: MessageNode; onOpen: (a: Artifact) => void }) {
+  const { t } = useTranslation();
+  const artifacts = findArtifacts(nodeText(node));
+  if (artifacts.length === 0) return null;
+  return (
+    <div className="-mt-1 mb-4 flex flex-wrap gap-1.5 pl-[30px] text-xs" data-testid="artifacts">
+      {artifacts.map((a, i) => (
+        <button
+          key={i}
+          className="flex items-center gap-1.5 rounded-lg border border-border bg-surface px-2.5 py-1 hover:border-accent"
+          onClick={() => onOpen(a)}
+        >
+          <span className="text-accent">▶</span>
+          <span className="font-medium">{a.title}</span>
+          <span className="text-text-secondary">{t(`artifacts.kind.${a.kind}`)}</span>
+        </button>
+      ))}
+    </div>
   );
 }
 

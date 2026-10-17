@@ -8,6 +8,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { chatFixture, type ChatFixture } from '../test/chat-fixture';
 import { TestClient } from '../test/client';
 import { PERMISSION_KEYS, type PermissionKey } from '../../shared/access';
+import { MEDIA_DEFAULTS } from '../media/config';
 
 let f: ChatFixture;
 let admin: TestClient;
@@ -20,7 +21,8 @@ let teamId: string;
 const NONE = Object.fromEntries(PERMISSION_KEYS.map((k) => [k, false])) as Record<PermissionKey, boolean>;
 
 beforeAll(async () => {
-  f = await chatFixture();
+  // A sandbox origin, so the code interpreter is available
+  f = await chatFixture({ env: { CLAUDIA_PUBLIC_URL: 'http://app.example.test', CLAUDIA_SANDBOX_ORIGIN: 'http://sandbox.example.test' } });
   admin = f.admin;
   member = await f.newUser('member@example.com');
   outsider = await f.newUser('outsider@example.com');
@@ -33,6 +35,15 @@ beforeAll(async () => {
   };
   // A search engine is set up (nothing listens there: searching fails inside the run, not the request)
   expect((await admin.put('/api/admin/rag', { webSearch: { engine: 'searxng', baseUrl: 'http://127.0.0.1:9', cx: '', resultCount: 3, fetchPages: false } })).statusCode).toBe(200);
+  // Image generation and read-aloud through the mock
+  expect(
+    (
+      await admin.put('/api/admin/media', {
+        image: { ...MEDIA_DEFAULTS.image, engine: 'openai', baseUrl: f.mock.url },
+        tts: { ...MEDIA_DEFAULTS.tts, engine: 'openai', baseUrl: f.mock.url },
+      })
+    ).statusCode
+  ).toBe(200);
   const team = await admin.post('/api/admin/groups', { name: 'Team' });
   expect(team.statusCode).toBe(201);
   teamId = team.json().group.id;
@@ -89,7 +100,16 @@ const attempts: Record<PermissionKey, (c: TestClient) => Promise<number>> = {
       })
     ).statusCode;
   },
+  'features.code': async (c) => completion(c, { code: true }),
+  'features.image_gen': async (c) => completion(c, { imageGen: true }),
+  'features.voice': async (c) => (await c.post('/api/audio/speech', { text: 'Hi' })).statusCode,
 };
+
+async function completion(c: TestClient, features: Record<string, boolean>): Promise<number> {
+  const chat = await c.post('/api/chats', {});
+  if (chat.statusCode !== 201) return chat.statusCode;
+  return (await c.post(`/api/chats/${chat.json().chat.id}/completions`, { parentId: null, content: 'x', modelIds: ['mock/gpt-test'], features })).statusCode;
+}
 
 /** What each principal should get: allowed, or refused with 403. */
 const ACTORS = [

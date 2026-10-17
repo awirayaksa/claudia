@@ -54,6 +54,12 @@ import { VectorStore } from './rag/vector-store';
 import { JobQueue } from './jobs/queue';
 import { EventHub, registerWebSocket } from './ws/gateway';
 import { adminRagRoutes, knowledgeRoutes } from './modules/knowledge/routes';
+import { MediaConfig } from './media/config';
+import { adminMediaRoutes, audioRoutes } from './media/routes';
+import { adminToolServerRoutes } from './tools/routes';
+import { adminPluginRoutes, pluginListRoutes, registerPluginBundles } from './modules/plugins/routes';
+import { createHash } from 'node:crypto';
+import { PLUGIN_IMPORT_MAP } from '../shared/plugins';
 import { MAX_UPLOAD_BYTES } from '../shared/files';
 import { eq } from 'drizzle-orm';
 import { knowledgeBases } from './db/schema';
@@ -104,7 +110,8 @@ function cspDirectives(config: AppConfig) {
   const sandbox = sandboxOriginFor(config);
   return {
     defaultSrc: ["'self'"],
-    scriptSrc: ["'self'"],
+    // The plugin import map is the one inline script, allowed by its hash
+    scriptSrc: ["'self'", `'sha256-${createHash('sha256').update(PLUGIN_IMPORT_MAP).digest('base64')}'`],
     // React style props and the code highlighter set inline styles
     styleSrc: ["'self'", "'unsafe-inline'"],
     imgSrc: ["'self'", 'data:', 'blob:', 'https:'],
@@ -142,6 +149,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const files = new FileService({ db: deps.db.db, storage, extract, log: app.log });
   const skills = new SkillService(deps.db.db);
   const rag = new RagConfig({ db: deps.db.db, secrets });
+  const media = new MediaConfig({ db: deps.db.db, secrets });
   const jobQueue = new JobQueue({ db: deps.db.db, log: app.log });
   const events = new EventHub();
   const knowledge = new KnowledgeService({
@@ -197,6 +205,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       sources,
       knowledge,
       rag,
+      sandboxOrigin: sandboxOriginFor(deps.config),
+      media,
       ...deps.orchestrator,
     }),
     storage,
@@ -212,6 +222,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     knowledge,
     jobs: jobQueue,
     events,
+    media,
     log: app.log,
   };
   app.decorate('ctx', ctx);
@@ -286,6 +297,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => directoryRoutes(a, ctx), { prefix: '/directory' });
       await api.register((a) => openaiRoutes(a, ctx), { prefix: '/v1' });
       await api.register((a) => knowledgeRoutes(a, ctx), { prefix: '/knowledge' });
+      await api.register((a) => audioRoutes(a, ctx), { prefix: '/audio' });
+      await api.register((a) => pluginListRoutes(a, ctx), { prefix: '/plugins' });
       await api.register((a) => modelRoutes(a, ctx), { prefix: '/models' });
       await api.register((a) => chatRoutes(a, ctx), { prefix: '/chats' });
       await api.register((a) => folderRoutes(a, ctx), { prefix: '/folders' });
@@ -305,12 +318,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => adminLdapRoutes(a, ctx), { prefix: '/admin/ldap' });
       await api.register((a) => adminGroupRoutes(a, ctx), { prefix: '/admin/groups' });
       await api.register((a) => adminRagRoutes(a, ctx), { prefix: '/admin/rag' });
+      await api.register((a) => adminMediaRoutes(a, ctx), { prefix: '/admin/media' });
+      await api.register((a) => adminToolServerRoutes(a, ctx), { prefix: '/admin/tool-servers' });
+      await api.register((a) => adminPluginRoutes(a, ctx), { prefix: '/admin/plugins' });
       api.setNotFoundHandler((req, reply) => {
         reply.code(404).send({ error: { code: 'not_found', message: `No route for ${req.method} ${req.url}` } });
       });
     },
     { prefix: '/api' }
   );
+
+  registerPluginBundles(app, ctx);
 
   // ─── Client (production build) ────────────────────────────────────────────
   if (deps.clientDir && fs.existsSync(path.join(deps.clientDir, 'index.html'))) {

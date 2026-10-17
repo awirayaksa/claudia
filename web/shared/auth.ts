@@ -27,7 +27,7 @@ export interface SessionResponse {
   /** What the signed-in user may do (all false when signed out or pending). */
   permissions: Permissions | null;
   /** Server features that are set up. */
-  features: { webSearch: boolean };
+  features: { webSearch: boolean; codeInterpreter: boolean; imageGen: boolean; voiceInput: 'none' | 'browser' | 'server'; readAloud: 'none' | 'browser' | 'server' };
 }
 
 const email = z

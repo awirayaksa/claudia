@@ -16,6 +16,9 @@ export const PERMISSION_KEYS = [
   'connections.own',
   'api.keys',
   'features.web_search',
+  'features.code',
+  'features.image_gen',
+  'features.voice',
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 export type Permissions = Record<PermissionKey, boolean>;
@@ -33,6 +36,9 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   'connections.own': false,
   'api.keys': false,
   'features.web_search': true,
+  'features.code': true,
+  'features.image_gen': true,
+  'features.voice': true,
 };
 
 export const PermissionsSchema = z.object(

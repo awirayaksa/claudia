@@ -8,6 +8,8 @@ import { CustomProvider } from '../../../src/services/api/providers/custom.provi
 import { OpenRouterProvider } from '../../../src/services/api/providers/openrouter.provider';
 import { OpenWebUIProvider } from '../../../src/services/api/providers/openwebui.provider';
 import { OpencodeGoProvider } from '../../../src/services/api/providers/opencode-go.provider';
+import { AnthropicProvider } from '../../../src/services/api/providers/anthropic.provider';
+import { OllamaProvider } from '../../../src/services/api/providers/ollama.provider';
 import type { ConnectionQuirks, ConnectionType } from '../db/schema';
 import type { ProviderHttp } from '../../../src/types/api.types';
 
@@ -25,6 +27,8 @@ export const DEFAULT_BASE_URLS: Record<ConnectionType, string> = {
   openrouter: 'https://openrouter.ai/api/v1',
   openwebui: '',
   'opencode-go': 'https://opencode.ai/zen/go',
+  anthropic: 'https://api.anthropic.com',
+  ollama: 'http://localhost:11434',
 };
 
 export function createProvider(spec: ProviderSpec): IAPIProvider {
@@ -49,5 +53,9 @@ export function createProvider(spec: ProviderSpec): IAPIProvider {
         apiCompatibility: spec.quirks.apiCompatibility ?? 'openai',
         http: spec.http,
       });
+    case 'anthropic':
+      return new AnthropicProvider({ baseUrl, apiKey: spec.apiKey, http: spec.http });
+    case 'ollama':
+      return new OllamaProvider({ baseUrl, apiKey: spec.apiKey || undefined, http: spec.http });
   }
 }

@@ -17,6 +17,8 @@ export interface LiveRun {
   leafId: string | null;
   notices: string[];
   title?: string;
+  /** Tools waiting for this browser to run them (code interpreter). */
+  clientRequests: Array<{ callId: string; name: string; args: string; messageId: string }>;
 }
 
 export type RunState = Record<string, LiveRun>;
@@ -34,7 +36,7 @@ const runSlice = createSlice({
     runFollowed(state, action: PayloadAction<{ chatId: string; runId: string }>) {
       const { chatId, runId } = action.payload;
       if (state[chatId]?.runId === runId) return;
-      state[chatId] = { runId, lastSeq: 0, done: false, nodes: {}, leafId: null, notices: [] };
+      state[chatId] = { runId, lastSeq: 0, done: false, nodes: {}, leafId: null, notices: [], clientRequests: [] };
     },
     runEvent(state, action: PayloadAction<{ chatId: string; envelope: RunEventEnvelope }>) {
       const { chatId, envelope } = action.payload;
@@ -61,6 +63,16 @@ const runSlice = createSlice({
         }
         case 'message.tool_call':
         case 'tool.result': {
+          const n = live.nodes[e.messageId];
+          if (n) n.parts.push(e.part);
+          // Answered (by this tab, another one, or the timeout)
+          if (e.type === 'tool.result') live.clientRequests = live.clientRequests.filter((r) => r.callId !== e.part.callId);
+          break;
+        }
+        case 'tool.client_request':
+          live.clientRequests.push({ callId: e.callId, name: e.name, args: e.args, messageId: e.messageId });
+          break;
+        case 'message.part': {
           const n = live.nodes[e.messageId];
           if (n) n.parts.push(e.part);
           break;

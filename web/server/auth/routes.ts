@@ -7,6 +7,7 @@ import { HttpError, conflict, forbidden, tooManyRequests, unauthorized } from '.
 import { normalizeEmail, signupLocalUser, toPublicUser } from '../modules/users/service';
 import { LdapLoginRequest, LoginRequest, SignupRequest, type SessionResponse } from '../../shared/auth';
 import { LocalAuthProvider } from './providers/local';
+import { sandboxOriginFor } from '../sandbox';
 import {
   REFRESH_COOKIE,
   clearAuthCookies,
@@ -53,7 +54,20 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
       if (row) permissions = await ctx.access.permissionsFor(row);
     }
     const webSearch = (await ctx.rag.settings()).webSearch.engine !== 'none';
-    return { user, auth: await authOptions(), permissions, features: { webSearch } };
+    const media = await ctx.media.settings();
+    const mode = (engine: string) => (engine === 'none' ? 'none' : engine === 'browser' ? 'browser' : 'server') as 'none' | 'browser' | 'server';
+    return {
+      user,
+      auth: await authOptions(),
+      permissions,
+      features: {
+        webSearch,
+        codeInterpreter: !!sandboxOriginFor(ctx.config),
+        imageGen: media.image.engine !== 'none',
+        voiceInput: mode(media.stt.engine),
+        readAloud: mode(media.tts.engine),
+      },
+    };
   });
 
   app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {

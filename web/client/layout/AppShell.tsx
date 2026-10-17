@@ -7,6 +7,7 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { Sidebar } from './Sidebar';
 import { MenuIcon } from '../components/icons';
 import { useMcpSync } from '../chat/useMcpSync';
+import { usePlugins } from '../plugins/loader';
 
 /**
  * Sidebar + content. On wide screens the sidebar is a column (collapsible);
@@ -23,6 +24,8 @@ export function AppShell() {
   const { reload } = useLoadSettingsFromStore();
   // Tool servers and skills into the shared slices (composer badges, /skills)
   useMcpSync();
+  // The admin's renderer plugins
+  usePlugins(true);
 
   // The user's appearance and preferences into the shared settings slice
   useEffect(() => {

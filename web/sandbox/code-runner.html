@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Claudia code runner</title>
+  </head>
+  <body>
+    <!--
+      Runs the code interpreter's Python (Pyodide) in a worker on the sandbox
+      origin. The app sends {type: 'claudia-code-run', id, code, timeoutMs};
+      this page answers {type: 'claudia-code-result', id, stdout, stderr,
+      result | error}. A run over its time is stopped by ending the worker.
+    -->
+    <script src="/code-runner.js"></script>
+  </body>
+</html>

@@ -98,3 +98,45 @@ describe('sandbox origin', () => {
     expect((await s.inject({ url: '/missing.html' })).statusCode).toBe(404);
   });
 });
+
+describe('sandbox pages for Phase 5', () => {
+  it('serve the code runner, artifact host and the vendored packages, and nothing else from node_modules', async () => {
+    const a = await app({ CLAUDIA_PUBLIC_URL: 'https://claudia.example.com', CLAUDIA_SANDBOX_ORIGIN: 'https://sandbox.example.net' });
+    const get = (url: string) => a.inject({ url, headers: { host: 'sandbox.example.net' } });
+    for (const page of ['/code-runner.html', '/artifact.html']) {
+      const res = await get(page);
+      expect(res.statusCode, page).toBe(200);
+      expect(res.headers['content-security-policy']).toBe('frame-ancestors https://claudia.example.com');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    }
+    const wasm = await get('/vendor/pyodide/pyodide.asm.wasm');
+    expect(wasm.statusCode).toBe(200);
+    expect(wasm.headers['content-type']).toBe('application/wasm');
+    for (const ok of ['/vendor/react.js', '/vendor/react-dom.js', '/vendor/babel.js', '/vendor/pyodide/pyodide.js']) {
+      expect((await get(ok)).statusCode, ok).toBe(200);
+    }
+    for (const bad of ['/vendor/pyodide/package.json', '/vendor/../package.json', '/vendor/react/package.json', '/node_modules/react/index.js']) {
+      expect((await get(bad)).statusCode, bad).toBe(404);
+    }
+    // Vendored files aren't served on the app origin
+    expect((await a.inject({ url: '/vendor/react.js', headers: { host: 'claudia.example.com' } })).statusCode).toBe(404);
+  });
+
+  it('the code worker loads the installed Pyodide version', async () => {
+    const fs = await import('node:fs');
+    const worker = fs.readFileSync(path.join(SANDBOX_DIR, 'code-worker.js'), 'utf-8');
+    const { createRequire } = await import('node:module');
+    const installed = createRequire(import.meta.url)('pyodide/package.json').version;
+    expect(worker).toContain(`const PYODIDE_VERSION = '${installed}';`);
+  });
+
+  it('the artifact host renders in a script-only frame with no network access', async () => {
+    const fs = await import('node:fs');
+    const html = fs.readFileSync(path.join(SANDBOX_DIR, 'artifact.html'), 'utf-8');
+    const js = fs.readFileSync(path.join(SANDBOX_DIR, 'artifact.js'), 'utf-8');
+    expect(html).toMatch(/<iframe id="frame" sandbox="allow-scripts" /);
+    expect(html).not.toContain('allow-same-origin');
+    expect(js).toContain(`"default-src 'none'"`);
+    expect(js).not.toMatch(/connect-src/);
+  });
+});

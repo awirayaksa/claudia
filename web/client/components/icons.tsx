@@ -103,3 +103,15 @@ export const BookIcon = () => (
     <path d="M4 19a2 2 0 0 1 2-2h13" />
   </svg>
 );
+export const CodeIcon = () => (
+  <svg {...base}>
+    <path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13.5 5l-3 14" />
+  </svg>
+);
+export const ImageIcon = () => (
+  <svg {...base}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <circle cx="9" cy="10" r="1.6" />
+    <path d="M21 16l-5-5-9 9" />
+  </svg>
+);

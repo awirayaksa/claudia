@@ -39,6 +39,10 @@ import type { RagConfig } from '../rag/config';
 import type { KnowledgeService } from '../rag/knowledge';
 import { readableKbIds, sourcesPrompt, type SourceBuilder, type TurnSource } from '../rag/sources';
 import type { MessageRef } from '../../shared/knowledge';
+import { CLIENT_TOOL_NAMES, CODE_TOOL, NO_BROWSER_MESSAGE } from './client-tools';
+import { generateImage, IMAGE_TOOL, IMAGE_TOOL_NAME } from '../media/images';
+import type { MediaConfig } from '../media/config';
+import type { ToolExecution } from './tools';
 import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
 
 /** Streaming replies are written to the database at most this often. */
@@ -65,6 +69,12 @@ export interface OrchestratorDeps {
   sources?: SourceBuilder;
   knowledge?: KnowledgeService;
   rag?: RagConfig;
+  /** Whether a sandbox origin exists (browser tools run there); without it, the code interpreter is off. */
+  sandboxOrigin?: string | null;
+  /** How long a browser tool may take to answer (default 120 s). */
+  clientToolTimeoutMs?: number;
+  /** Image generation (without it, it is off). */
+  media?: MediaConfig;
 }
 
 /** Above this much memory text, only the memories closest to the message are sent (with embeddings). */
@@ -82,6 +92,10 @@ interface RunPlan {
   /** #kb / #url / #chat references and web search of this turn (checked). */
   refs: MessageRef[];
   webSearch: boolean;
+  /** The code interpreter (runs in the browser) is offered. */
+  code: boolean;
+  /** The image generation tool is offered. */
+  imageGen: boolean;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
 }
 
@@ -150,6 +164,10 @@ export class ChatOrchestrator {
     // References and web search: a regeneration uses the turn's own
     const refs: MessageRef[] = existing ? (existing.meta?.refs ?? []) : req.refs;
     const webSearch = existing ? !!existing.meta?.webSearch : req.features.webSearch === true;
+    const code = existing ? !!existing.meta?.code : req.features.code === true;
+    if (code) await this.checkCode(user);
+    const imageGen = existing ? !!existing.meta?.imageGen : req.features.imageGen === true;
+    if (imageGen) await this.checkImageGen(user);
     await this.checkRefs(user, refs, webSearch);
 
     const run = runs.start({
@@ -172,6 +190,8 @@ export class ChatOrchestrator {
           ...(req.skill ? { skill: req.skill } : {}),
           ...(refs.length ? { refs } : {}),
           ...(webSearch ? { webSearch: true } : {}),
+          ...(code ? { code: true } : {}),
+          ...(imageGen ? { imageGen: true } : {}),
         };
         userNode = {
           id: uuidv7(),
@@ -246,7 +266,7 @@ export class ChatOrchestrator {
         existing && req.params.effort === undefined && userNode.effort
           ? { ...req, params: { ...req.params, effort: userNode.effort } }
           : req;
-      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets, refs, webSearch };
+      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets, refs, webSearch, code, imageGen };
       void this.execute(plan).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
         runs.finish(run, 'error');
@@ -425,7 +445,9 @@ export class ChatOrchestrator {
     const ticker = setInterval(() => void persist().catch(() => {}), PERSIST_INTERVAL_MS);
 
     try {
-      const tools = opts.toolset.definitions;
+      const tools = [...opts.toolset.definitions, ...(plan.code ? [CODE_TOOL] : []), ...(plan.imageGen ? [IMAGE_TOOL] : [])];
+      const onServer = (name: string) => plan.imageGen && name === IMAGE_TOOL_NAME;
+      const inBrowser = (name: string) => plan.code && CLIENT_TOOL_NAMES.has(name);
       const firstTurnOnly = opts.toolset.firstTurnOnly || !!target.connection.quirks.toolsFirstTurnOnly;
       for (let iteration = 0; ; iteration++) {
         const offerTools = tools.length > 0 && (iteration === 0 || !firstTurnOnly);
@@ -477,7 +499,11 @@ export class ChatOrchestrator {
         }
 
         for (const call of toolCalls) {
-          const where = opts.toolset.locate(call.function.name);
+          const where = inBrowser(call.function.name)
+            ? { serverId: 'browser', tool: call.function.name }
+            : onServer(call.function.name)
+              ? { serverId: 'claudia', tool: call.function.name }
+              : opts.toolset.locate(call.function.name);
           const part = {
             type: 'tool_call' as const,
             callId: call.id,
@@ -492,9 +518,17 @@ export class ChatOrchestrator {
         for (const call of toolCalls) {
           if (signal.aborted) break;
           runs.emit(run, { type: 'tool.started', messageId: assistantId, callId: call.id });
-          const exec = await opts.toolset.execute(call, signal);
+          const exec = inBrowser(call.function.name)
+            ? await this.runInBrowser(plan, assistantId, call, signal)
+            : onServer(call.function.name)
+              ? await this.makeImage(plan, call, signal)
+              : await opts.toolset.execute(call, signal);
           builder.add(exec.result);
           runs.emit(run, { type: 'tool.result', messageId: assistantId, part: exec.result });
+          for (const part of exec.extraParts ?? []) {
+            builder.add(part);
+            runs.emit(run, { type: 'message.part', messageId: assistantId, part });
+          }
         }
         if (signal.aborted) {
           status = 'stopped';
@@ -553,6 +587,90 @@ export class ChatOrchestrator {
       if (view) resolved.set(row.id, view);
     }
     return { resolveFile: (part) => resolved.get(part.fileId) ?? null };
+  }
+
+  private async checkImageGen(user: AuthUser): Promise<void> {
+    const engine = (await this.deps.media?.settings())?.image.engine ?? 'none';
+    if (engine === 'none' || !this.deps.files) throw badRequest('Image generation is not set up on this server.', 'image_gen_off');
+    if (this.deps.access) await this.deps.access.require(user, 'features.image_gen');
+  }
+
+  /** Generate images, keep them as the user's files and show them under the result. */
+  private async makeImage(plan: RunPlan, call: ToolCall, signal: AbortSignal): Promise<ToolExecution> {
+    const fail = (message: string): ToolExecution => ({
+      serverId: 'claudia',
+      tool: IMAGE_TOOL_NAME,
+      result: { type: 'tool_result', callId: call.id, content: JSON.stringify({ error: message }), isError: true },
+    });
+    let args: { prompt?: unknown; size?: unknown };
+    try {
+      args = JSON.parse(call.function.arguments || '{}');
+    } catch {
+      return fail('Invalid arguments: expected JSON with a "prompt".');
+    }
+    if (typeof args.prompt !== 'string' || !args.prompt.trim()) return fail('Give a "prompt" describing the image.');
+    try {
+      const media = this.deps.media!;
+      const images = await generateImage((await media.settings()).image, await media.secret('imageKey'), args.prompt.slice(0, 4000), {
+        size: typeof args.size === 'string' ? args.size : undefined,
+        signal,
+      });
+      if (images.length === 0) return fail('The image service returned no image.');
+      const parts: MessagePart[] = [];
+      for (const [i, img] of images.entries()) {
+        const ext = img.mime.split('/')[1]?.replace('jpeg', 'jpg') || 'png';
+        const row = await this.deps.files!.ingest(plan.user.id, { name: `image-${Date.now()}${i ? `-${i}` : ''}.${ext}`, mime: img.mime, data: img.data });
+        parts.push({ type: 'file', fileId: row.id, name: row.name, mime: row.mime, size: row.size });
+      }
+      return {
+        serverId: 'claudia',
+        tool: IMAGE_TOOL_NAME,
+        result: {
+          type: 'tool_result',
+          callId: call.id,
+          content: `Generated ${parts.length} image${parts.length === 1 ? '' : 's'} and showed ${parts.length === 1 ? 'it' : 'them'} to the user. Don't describe ${parts.length === 1 ? 'it' : 'them'} unless asked.`,
+        },
+        extraParts: parts,
+      };
+    } catch (err) {
+      return fail(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  private async checkCode(user: AuthUser): Promise<void> {
+    if (!this.deps.sandboxOrigin) throw badRequest('The code interpreter needs a sandbox origin (CLAUDIA_SANDBOX_ORIGIN).', 'code_unavailable');
+    if (this.deps.access) await this.deps.access.require(user, 'features.code');
+  }
+
+  /**
+   * Ask the browser following the run to run a tool, and wait for its answer
+   * (or the timeout, or the run being stopped).
+   */
+  private async runInBrowser(plan: RunPlan, messageId: string, call: ToolCall, signal: AbortSignal): Promise<ToolExecution> {
+    const { runs } = this.deps;
+    runs.emit(plan.run, {
+      type: 'tool.client_request',
+      runId: plan.run.id,
+      messageId,
+      callId: call.id,
+      name: call.function.name,
+      args: call.function.arguments,
+    });
+    const stopped = new Promise<{ content: string; isError: boolean }>((resolve) =>
+      signal.addEventListener('abort', () => resolve({ content: JSON.stringify({ error: 'Stopped.' }), isError: true }), { once: true })
+    );
+    const answer = await Promise.race([runs.awaitClientTool(plan.run, call.id, this.deps.clientToolTimeoutMs), stopped]);
+    const timedOut = answer.isError && answer.content.includes('No browser answered');
+    return {
+      serverId: 'browser',
+      tool: call.function.name,
+      result: {
+        type: 'tool_result',
+        callId: call.id,
+        content: timedOut ? JSON.stringify({ error: NO_BROWSER_MESSAGE }) : answer.content,
+        ...(answer.isError ? { isError: true } : {}),
+      },
+    };
   }
 
   /** Refuse references the user can't use (before the run starts). */

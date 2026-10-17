@@ -46,12 +46,16 @@ interface ChatInputProps {
   hashCommands?: import('../../types/skill.types').Skill[];
   onHashPick?: (item: import('../../types/skill.types').Skill, insert: (text: string) => void) => void;
   hashEmptyLabel?: string;
+  /** More buttons next to "attach" (the web app's microphone). */
+  toolbarExtras?: React.ReactNode;
 }
 
 export interface ChatInputRef {
   focus: () => void;
   addFiles: (files: File[]) => void;
   setMessage: (text: string) => void;
+  /** Add text at the end (with a space), e.g. dictated words. */
+  appendText: (text: string) => void;
 }
 
 function expandFileMentions(message: string, baseDir: string): string {
@@ -82,6 +86,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   hashCommands,
   onHashPick,
   hashEmptyLabel,
+  toolbarExtras,
 }, ref) => {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -179,6 +184,15 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
         }
         textareaRef.current?.focus();
+      });
+    },
+    appendText: (text: string) => {
+      setMessage((m) => (m && !/\s$/.test(m) ? `${m} ${text}` : `${m}${text}`));
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
       });
     },
   }));
@@ -604,6 +618,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
         {/* Bottom toolbar: attach left · model selector + send right */}
         <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center gap-1">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || uploading}
@@ -614,6 +629,8 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
             </svg>
           </button>
+          {toolbarExtras}
+          </div>
 
           <div className="flex items-center gap-2">
             {/* Reasoning effort selector */}

@@ -21,6 +21,7 @@ import type { RagConfig } from './rag/config';
 import type { KnowledgeService } from './rag/knowledge';
 import type { JobQueue } from './jobs/queue';
 import type { EventHub } from './ws/gateway';
+import type { MediaConfig } from './media/config';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -47,5 +48,6 @@ export interface ServerContext {
   knowledge: KnowledgeService;
   jobs: JobQueue;
   events: EventHub;
+  media: MediaConfig;
   log: FastifyBaseLogger;
 }

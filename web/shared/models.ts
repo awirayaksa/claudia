@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const ConnectionType = z.enum(['openai', 'openrouter', 'openwebui', 'opencode-go']);
+export const ConnectionType = z.enum(['openai', 'openrouter', 'openwebui', 'opencode-go', 'anthropic', 'ollama']);
 export type ConnectionType = z.infer<typeof ConnectionType>;
 
 /** A model users can pick: `<connection prefix>/<model id at the provider>`. */

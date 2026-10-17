@@ -7,6 +7,9 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { hashDims, hashEmbed } from './hash-embed';
 
+const TINY_PNG_B64 =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+
 export interface MockTurn {
   text?: string[];
   reasoning?: string[];
@@ -28,6 +31,10 @@ export interface MockOpenAI {
   completions: Array<{ content: string }>;
   /** Bodies of POST /embeddings (answered with hashEmbed vectors; "hash-<n>" models give n dimensions). */
   embeddingCalls: any[];
+  /** Bodies of POST /images/generations (answered with a 1×1 PNG). */
+  imageCalls: any[];
+  /** POST /audio/speech and /audio/transcriptions. */
+  audioCalls: any[];
   push(...turns: MockTurn[]): void;
   close(): Promise<void>;
 }
@@ -41,6 +48,8 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
   const headers: http.IncomingHttpHeaders[] = [];
   const completions: Array<{ content: string }> = [];
   const embeddingCalls: any[] = [];
+  const imageCalls: any[] = [];
+  const audioCalls: any[] = [];
 
   const server = http.createServer(async (req, res) => {
     headers.push(req.headers);
@@ -53,6 +62,22 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
     if (req.method === 'GET' && req.url?.endsWith('/models')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ data: models.map((id) => ({ id, name: id, created: 0, owned_by: 'mock' })) }));
+    }
+    if (req.method === 'POST' && req.url?.endsWith('/images/generations')) {
+      const json = JSON.parse(body);
+      imageCalls.push(json);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ created: 0, data: [{ b64_json: TINY_PNG_B64 }] }));
+    }
+    if (req.method === 'POST' && req.url?.endsWith('/audio/speech')) {
+      audioCalls.push({ kind: 'speech', body: JSON.parse(body) });
+      res.writeHead(200, { 'Content-Type': 'audio/mpeg' });
+      return res.end(Buffer.from('ID3fake-mp3'));
+    }
+    if (req.method === 'POST' && req.url?.endsWith('/audio/transcriptions')) {
+      audioCalls.push({ kind: 'transcription', contentType: req.headers['content-type'], size: body.length });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ text: 'Hello from the microphone' }));
     }
     if (req.method === 'POST' && req.url?.endsWith('/embeddings')) {
       const json = JSON.parse(body);
@@ -132,6 +157,8 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
     headers,
     completions,
     embeddingCalls,
+    imageCalls,
+    audioCalls,
     push: (...turns) => queue.push(...turns),
     close: () =>
       new Promise((r) => {

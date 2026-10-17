@@ -61,6 +61,10 @@ export interface MessageMeta {
   /** User nodes: #kb, #url and #chat references, and whether the web was searched. */
   refs?: MessageRef[];
   webSearch?: boolean;
+  /** User nodes: the code interpreter was offered. */
+  code?: boolean;
+  /** User nodes: image generation was offered. */
+  imageGen?: boolean;
 }
 
 export interface MessageFeedback {

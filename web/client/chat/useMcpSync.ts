@@ -16,7 +16,8 @@ export function toServerConfig(s: McpServerView): MCPServerConfig {
   return {
     id: s.id,
     name: s.name,
-    transport: s.transport,
+    // An OpenAPI server is an HTTP tool server as far as the composer's badges go
+    transport: s.transport === 'openapi' ? 'streamable-http' : s.transport,
     // Offered to this user; whether it's switched on shows as running/stopped
     enabled: true,
     builtin: s.scope === 'builtin',

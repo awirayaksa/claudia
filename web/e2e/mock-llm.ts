@@ -9,6 +9,11 @@
  *   message contains "compare"), prefixed with "[skill] " when a system
  *   prompt contains SKILL-MARKER and "[<name>] " when one contains
  *   PERSONA:<name> (custom models).
+ * - contains "run python" and run_python is offered: runs code, then reports
+ *   "Python said: <result>";
+ * - contains "draw" and generate_image is offered: makes an image;
+ * - contains "make a page" / "make a counter": an HTML page that probes its
+ *   sandbox / a React component.
  * When sources come with the message (knowledge, pages), the reply ends
  * with " [1]". Non-streaming calls answer "E2E Chat Title", or two
  * follow-up questions when asked for them. POST /embeddings answers with
@@ -36,6 +41,11 @@ http
       const input: string[] = Array.isArray(json.input) ? json.input : [json.input];
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ data: input.map((t, index) => ({ index, embedding: hashEmbed(String(t), hashDims(json.model ?? '')) })) }));
+    }
+    if (req.method === 'POST' && req.url?.endsWith('/images/generations')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      // A 1×1 PNG
+      return res.end(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' }] }));
     }
     if (req.method === 'GET' && req.url === '/page/tides') {
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -78,6 +88,42 @@ http
       res.write(`data: ${JSON.stringify({ id: 'c', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
       res.write('data: [DONE]\n\n');
       return res.end();
+    }
+    const offered = (name: string) => (json.tools ?? []).some((t: any) => t.function?.name === name);
+    const toolCall = (name: string, args: object) => {
+      res.write(chunk({ tool_calls: [{ index: 0, id: `call_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }));
+      res.write(`data: ${JSON.stringify({ id: 'c', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    };
+    const say = (text: string) => {
+      res.write(chunk({ content: text }));
+      res.write(`data: ${JSON.stringify({ id: 'c', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+    };
+    if (final?.role === 'user' && prompt.includes('run python') && offered('run_python')) {
+      return toolCall('run_python', { code: 'import math\nprint(6 * 7)\nmath.factorial(10)' });
+    }
+    if (final?.role === 'tool' && final.tool_call_id === 'call_run_python') return say(`Python said: ${final.content}`);
+    if (final?.role === 'user' && prompt.includes('draw') && offered('generate_image')) return toolCall('generate_image', { prompt: 'a red square' });
+    if (final?.role === 'tool' && final.tool_call_id === 'call_generate_image') return say('Here is your picture.');
+    if (prompt.includes('make a page')) {
+      return say(
+        'Here is the page:\n\n```html\n<!doctype html><html><head><title>Sandbox probe</title></head><body><h1>Probe</h1><ul id="out"></ul><script>\n' +
+          'const out = (k, v) => { const li = document.createElement("li"); li.id = k; li.textContent = k + ": " + v; document.getElementById("out").appendChild(li); };\n' +
+          'out("script", "ran");\n' +
+          'try { out("parent", parent.document.title ? "READ" : "empty"); } catch (e) { out("parent", "blocked"); }\n' +
+          'try { out("cookie", document.cookie ? "READ" : "none"); } catch (e) { out("cookie", "blocked"); }\n' +
+          'try { localStorage.setItem("x", "1"); out("storage", "WRITTEN"); } catch (e) { out("storage", "blocked"); }\n' +
+          'fetch("http://127.0.0.1:18090/api/me", { credentials: "include" }).then(() => out("fetch", "READ")).catch(() => out("fetch", "blocked"));\n' +
+          '</script></body></html>\n```\n'
+      );
+    }
+    if (prompt.includes('make a counter')) {
+      return say(
+        'A counter:\n\n```jsx\nimport { useState } from "react";\nexport default function ClickCounter() {\n  const [n, setN] = useState(0);\n  return <button id="counter" onClick={() => setN(n + 1)}>Clicked {n} times</button>;\n}\n```\n'
+      );
     }
     if (final?.role === 'tool') {
       res.write(chunk({ content: `Saved: ${String(final.content).slice(0, 200)}` }));

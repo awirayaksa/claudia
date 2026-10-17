@@ -17,7 +17,8 @@ import { aliasesToOpenAI, buildToolAliases, normalizeToolResult, resolveToolAlia
 import { uiResourceConfirmation } from '../../../src/services/chat/message-builder';
 import type { MCPServerConfig, MCPServerStatus, MCPTool } from '../../../src/types/mcp.types';
 import type { Database } from '../db/client';
-import { mcpServers, users, type McpTransport, type UserSettings } from '../db/schema';
+import { mcpServers, toolServers, users, type McpTransport, type UserSettings } from '../db/schema';
+import { callOperation } from '../tools/openapi';
 import type { SecretBox } from '../crypto/secrets';
 import type { AppSettings } from '../modules/settings/app-settings';
 import type { RunToolset, ToolExecution } from '../llm/tools';
@@ -45,7 +46,7 @@ export interface ServerView {
   name: string;
   description: string | null;
   scope: 'global' | 'builtin' | 'user';
-  transport: McpTransport | 'builtin';
+  transport: McpTransport | 'builtin' | 'openapi';
   /** The server's own status (global) or this user's instance (built-in). */
   status: MCPServerStatus;
   /** Whether this user has the server switched on. */
@@ -249,6 +250,20 @@ export class McpPools {
         tools: pool?.manager.getServerTools(b.id) ?? [],
       });
     }
+    // OpenAPI tool servers (admin), on by default like shared MCP servers
+    for (const row of await this.openApiRows()) {
+      views.push({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        scope: 'global',
+        transport: 'openapi',
+        status: 'ready',
+        enabled: this.isOn(prefs, row.id, 'global'),
+        error: null,
+        tools: row.operations.map((op) => ({ name: op.name, description: op.description, inputSchema: op.inputSchema as MCPTool['inputSchema'] })),
+      });
+    }
     for (const row of await this.ownRows(userId)) {
       if (!row.enabled) continue;
       views.push({
@@ -305,8 +320,20 @@ export class McpPools {
     return this.global;
   }
 
+  async openApiRows(): Promise<Array<typeof toolServers.$inferSelect>> {
+    return this.deps.db.select().from(toolServers).where(eq(toolServers.enabled, true));
+  }
+
   /** Call a tool on a server this user may use. */
   async callTool(userId: string, serverId: string, tool: string, args: Record<string, unknown>) {
+    const api = (await this.openApiRows()).find((r) => r.id === serverId);
+    if (api) {
+      const op = api.operations.find((o) => o.name === tool);
+      if (!op) throw notFound('Tool');
+      const auth = api.authCipher ? (JSON.parse(this.deps.secrets.decrypt(api.authCipher)) as { header: string; value: string }) : null;
+      const r = await callOperation(op, api.baseUrl, args, auth);
+      return { content: [{ type: 'text', text: r.content }], ...(r.isError ? { isError: true } : {}) };
+    }
     const manager = await this.managerFor(userId, serverId);
     const result = await manager.callTool(serverId, tool, args);
     return isBuiltinId(serverId) ? redactWorkspacePath(result, userWorkspace(this.deps.dataDir, userId)) : result;
@@ -314,6 +341,8 @@ export class McpPools {
 
   /** Tool definitions of a server for this user (for UI-action checks). */
   async toolsOf(userId: string, serverId: string): Promise<MCPTool[]> {
+    const api = (await this.openApiRows()).find((r) => r.id === serverId);
+    if (api) return api.operations.map((op) => ({ name: op.name, description: op.description, inputSchema: op.inputSchema as MCPTool['inputSchema'] }));
     const manager = await this.managerFor(userId, serverId);
     return manager.getServerTools(serverId);
   }

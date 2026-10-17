@@ -24,6 +24,8 @@ import type { LdapLookupResult, LdapSettingsResponse, LdapSettingsUpdate, LdapTe
 import type { FileView } from '@shared/files';
 import type { AppSettingsResponse, UserSettingsInput } from '@shared/settings';
 import type { PublicConfig } from '@shared/api';
+import type { MediaSettingsResponse, MediaSettingsUpdate } from '@shared/media';
+import type { PluginView } from '@shared/plugins';
 import type { KnowledgeDetail, KnowledgeInput, KnowledgeView, RagSettingsResponse, RagSettingsUpdate, SearchHit } from '@shared/knowledge';
 import type {
   GrantInput,
@@ -109,6 +111,9 @@ export const api = createApi({
     'MyGroups',
     'Knowledge',
     'Rag',
+    'Media',
+    'ToolServers',
+    'Plugins',
   ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
@@ -375,6 +380,36 @@ export const api = createApi({
     }),
     testEmbeddings: b.mutation<{ ok: boolean; error: string | null; dims: number | null }, void>({
       query: () => ({ url: '/admin/rag/test-embeddings', method: 'POST' }),
+    }),
+    mediaSettings: b.query<MediaSettingsResponse, void>({ query: () => '/admin/media', providesTags: ['Media'] }),
+    updateMediaSettings: b.mutation<MediaSettingsResponse, MediaSettingsUpdate>({
+      query: (body) => ({ url: '/admin/media', method: 'PUT', body }),
+      invalidatesTags: ['Media', 'Session'],
+    }),
+    testImage: b.mutation<{ ok: boolean; error: string | null; image: string | null }, void>({
+      query: () => ({ url: '/admin/media/test-image', method: 'POST' }),
+    }),
+    toolServers: b.query<{ servers: ToolServerView[] }, void>({ query: () => '/admin/tool-servers', providesTags: ['ToolServers'] }),
+    createToolServer: b.mutation<{ server: ToolServerView }, Record<string, unknown>>({
+      query: (body) => ({ url: '/admin/tool-servers', method: 'POST', body }),
+      invalidatesTags: ['ToolServers', 'McpServers'],
+    }),
+    updateToolServer: b.mutation<{ server: ToolServerView }, { id: string } & Record<string, unknown>>({
+      query: ({ id, ...body }) => ({ url: `/admin/tool-servers/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['ToolServers', 'McpServers'],
+    }),
+    deleteToolServer: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/admin/tool-servers/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['ToolServers', 'McpServers'],
+    }),
+    adminPlugins: b.query<{ plugins: PluginView[] }, void>({ query: () => '/admin/plugins', providesTags: ['Plugins'] }),
+    updatePlugin: b.mutation<{ plugin: PluginView }, { id: string; enabled?: boolean; settings?: Record<string, unknown> }>({
+      query: ({ id, ...body }) => ({ url: `/admin/plugins/${encodeURIComponent(id)}`, method: 'PATCH', body }),
+      invalidatesTags: ['Plugins'],
+    }),
+    deletePlugin: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/admin/plugins/${encodeURIComponent(id)}`, method: 'DELETE' }),
+      invalidatesTags: ['Plugins'],
     }),
 
     // ─── Memory, API keys, usage, own tool servers ──────────────────────────
@@ -670,7 +705,29 @@ export const {
   useRagSettingsQuery,
   useUpdateRagSettingsMutation,
   useTestEmbeddingsMutation,
+  useMediaSettingsQuery,
+  useUpdateMediaSettingsMutation,
+  useTestImageMutation,
+  useToolServersQuery,
+  useCreateToolServerMutation,
+  useUpdateToolServerMutation,
+  useDeleteToolServerMutation,
+  useAdminPluginsQuery,
+  useUpdatePluginMutation,
+  useDeletePluginMutation,
 } = api;
+
+export interface ToolServerView {
+  id: string;
+  name: string;
+  description: string | null;
+  specUrl: string | null;
+  baseUrl: string;
+  enabled: boolean;
+  hasAuth: boolean;
+  authHeader: string | null;
+  operations: Array<{ name: string; method: string; path: string; description: string }>;
+}
 
 /** The signed-in user's permissions (all false until known). */
 export function usePermissions(): Permissions | null {
