@@ -5,7 +5,8 @@ export interface McpServerView {
   id: string;
   name: string;
   description: string | null;
-  scope: 'global' | 'builtin';
+  /** user: the user's own remote server. */
+  scope: 'global' | 'builtin' | 'user';
   transport: 'stdio' | 'streamable-http' | 'sse' | 'builtin';
   status: MCPServerStatus;
   enabled: boolean;

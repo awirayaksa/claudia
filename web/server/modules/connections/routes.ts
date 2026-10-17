@@ -7,6 +7,7 @@ import { badRequest, conflict, forbidden, notFound } from '../../lib/errors';
 import { uuidv7 } from '../../lib/ids';
 import { currentUser, requireAdmin, requireUser } from '../../auth/rbac';
 import { maskSecret } from '../../crypto/secrets';
+import { parsePatch } from '../../lib/validation';
 import {
   ConnectionInput,
   type ConnectionView,
@@ -96,7 +97,7 @@ export async function adminConnectionRoutes(app: FastifyInstance, ctx: ServerCon
 
   app.patch('/:id', async (req) => {
     const { id } = IdParams.parse(req.params);
-    const body = ConnectionInput.partial().parse(req.body);
+    const body = parsePatch(ConnectionInput, req.body);
     const [existing] = await ctx.db
       .select()
       .from(providerConnections)
@@ -166,8 +167,8 @@ function userQuirks(q: ConnectionInput['quirks']): ConnectionInput['quirks'] {
 export async function userConnectionRoutes(app: FastifyInstance, ctx: ServerContext): Promise<void> {
   app.addHook('preHandler', requireUser);
 
-  const ensureAllowed = async () => {
-    if (!(await ctx.settings.get('connections.user')).enabled) {
+  const ensureAllowed = async (me: ReturnType<typeof currentUser>) => {
+    if (!(await ctx.access.can(me, 'connections.own'))) {
       throw forbidden('Your administrator does not allow personal connections.', 'user_connections_disabled');
     }
   };
@@ -203,14 +204,14 @@ export async function userConnectionRoutes(app: FastifyInstance, ctx: ServerCont
 
   app.get('/', async (req): Promise<UserConnectionsResponse> => {
     const me = currentUser(req);
-    const { enabled } = await ctx.settings.get('connections.user');
+    const enabled = await ctx.access.can(me, 'connections.own');
     const rows = await ctx.models.ownConnections(me.id);
     return { enabled, connections: rows.map((r) => connectionView(ctx, r)) };
   });
 
   app.post('/', async (req, reply) => {
-    await ensureAllowed();
     const me = currentUser(req);
+    await ensureAllowed(me);
     const body = ConnectionInput.parse(req.body);
     checkBaseUrl(body.type, body.baseUrl);
     const existing = await ctx.models.ownConnections(me.id);
@@ -236,17 +237,17 @@ export async function userConnectionRoutes(app: FastifyInstance, ctx: ServerCont
         position: existing.length,
       })
       .returning();
-    await ctx.models.own(me.id, { refresh: true });
+    await ctx.models.own(me, { refresh: true });
     reply.code(201);
     return { connection: connectionView(ctx, row) };
   });
 
   app.patch('/:id', async (req) => {
-    await ensureAllowed();
     const me = currentUser(req);
+    await ensureAllowed(me);
     const { id } = IdParams.parse(req.params);
     const existing = await getOwned(me.id, id);
-    const body = ConnectionInput.partial().parse(req.body);
+    const body = parsePatch(ConnectionInput, req.body);
     checkBaseUrl(body.type ?? existing.type, body.baseUrl ?? existing.baseUrl);
     if (body.prefix && (await prefixTaken(me.id, body.prefix, id))) {
       throw conflict(`You already use the prefix "${body.prefix}".`, 'prefix_taken');
@@ -267,7 +268,7 @@ export async function userConnectionRoutes(app: FastifyInstance, ctx: ServerCont
       .where(eq(providerConnections.id, id))
       .returning();
     ctx.models.invalidate(id);
-    await ctx.models.own(me.id, { refresh: true });
+    await ctx.models.own(me, { refresh: true });
     return { connection: connectionView(ctx, row) };
   });
 
@@ -282,12 +283,12 @@ export async function userConnectionRoutes(app: FastifyInstance, ctx: ServerCont
   });
 
   app.post('/:id/test', async (req) => {
-    await ensureAllowed();
     const me = currentUser(req);
+    await ensureAllowed(me);
     const { id } = IdParams.parse(req.params);
     await getOwned(me.id, id);
     ctx.models.invalidate(id);
-    const models = (await ctx.models.own(me.id, { refresh: true })).filter((m) => m.connectionId === id);
+    const models = (await ctx.models.own(me, { refresh: true })).filter((m) => m.connectionId === id);
     const { error } = ctx.models.status(id);
     return { ok: !error, error, models: models.map((m) => m.id) };
   });

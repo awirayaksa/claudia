@@ -46,11 +46,13 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   app.get('/session', async (req, reply): Promise<SessionResponse> => {
     ensureCsrfCookie(ctx, req, reply);
     let user = null;
+    let permissions = null;
     if (req.user) {
       const [row] = await ctx.db.select().from(users).where(eq(users.id, req.user.id));
       user = row ? toPublicUser(row) : null;
+      if (row) permissions = await ctx.access.permissionsFor(row);
     }
-    return { user, auth: await authOptions() };
+    return { user, auth: await authOptions(), permissions };
   });
 
   app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {

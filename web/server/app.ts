@@ -39,6 +39,14 @@ import { shareRoutes, sharedRoutes } from './modules/shares/routes';
 import { ChatRepo, TEMPORARY_CHAT_TTL_MS } from './modules/chats/repo';
 import { adminLdapRoutes } from './auth/ldap-routes';
 import { adminMcpRoutes, mcpUserRoutes, toolRoutes } from './mcp/routes';
+import { AccessService } from './auth/access';
+import { apiKeyRoutes } from './auth/api-keys';
+import { UsageService } from './modules/usage/service';
+import { workspaceModelRoutes } from './modules/workspace/models';
+import { workspacePromptRoutes } from './modules/workspace/prompts';
+import { memoryRoutes } from './modules/memories/routes';
+import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
+import { openaiRoutes } from './modules/openai/routes';
 import { MAX_UPLOAD_BYTES } from '../shared/files';
 import type { HealthResponse, PublicConfig, ReadyResponse } from '../shared/api';
 
@@ -113,7 +121,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const secrets = new SecretBox(keyring);
   const settings = new AppSettings(deps.db.db);
   const runs = new RunHub();
-  const models = new ModelRegistry({ db: deps.db.db, secrets, settings, log: app.log });
+  const access = new AccessService({ db: deps.db.db, settings });
+  const usage = new UsageService({ db: deps.db.db, access });
+  const models = new ModelRegistry({ db: deps.db.db, secrets, settings, access, log: app.log });
   const storage = new LocalStorage(path.join(deps.config.dataDir, 'storage'));
   const extract = new ExtractPool();
   const files = new FileService({ db: deps.db.db, storage, extract, log: app.log });
@@ -127,6 +137,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     dataDir: deps.config.dataDir,
     extract,
     netPolicy: () => ({ allow: settings.peek('net.allowlist').hosts }),
+    access,
   });
   const ctx: ServerContext = {
     config: deps.config,
@@ -146,7 +157,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       log: app.log,
       files,
       skills,
-      toolsFor: (user, toolIds) => mcp.toolset(user.id, toolIds),
+      toolsFor: (user, toolIds, alwaysOn) => mcp.toolset(user.id, toolIds, alwaysOn),
+      usage,
       ...deps.orchestrator,
     }),
     storage,
@@ -156,6 +168,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     mcp,
     ldap: new LdapService({ db: deps.db.db, secrets, config: deps.config, log: app.log }),
     shares: new ShareService(deps.db.db),
+    access,
+    usage,
     log: app.log,
   };
   app.decorate('ctx', ctx);
@@ -217,6 +231,12 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       }));
       await api.register((a) => authRoutes(a, ctx), { prefix: '/auth' });
       await api.register((a) => meRoutes(a, ctx), { prefix: '/me' });
+      await api.register((a) => memoryRoutes(a, ctx), { prefix: '/me/memories' });
+      await api.register((a) => apiKeyRoutes(a, ctx), { prefix: '/me/api-keys' });
+      await api.register((a) => workspaceModelRoutes(a, ctx), { prefix: '/workspace/models' });
+      await api.register((a) => workspacePromptRoutes(a, ctx), { prefix: '/workspace/prompts' });
+      await api.register((a) => directoryRoutes(a, ctx), { prefix: '/directory' });
+      await api.register((a) => openaiRoutes(a, ctx), { prefix: '/v1' });
       await api.register((a) => modelRoutes(a, ctx), { prefix: '/models' });
       await api.register((a) => chatRoutes(a, ctx), { prefix: '/chats' });
       await api.register((a) => folderRoutes(a, ctx), { prefix: '/folders' });
@@ -234,6 +254,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => adminConnectionRoutes(a, ctx), { prefix: '/admin/connections' });
       await api.register((a) => adminSettingsRoutes(a, ctx), { prefix: '/admin/settings' });
       await api.register((a) => adminLdapRoutes(a, ctx), { prefix: '/admin/ldap' });
+      await api.register((a) => adminGroupRoutes(a, ctx), { prefix: '/admin/groups' });
       api.setNotFoundHandler((req, reply) => {
         reply.code(404).send({ error: { code: 'not_found', message: `No route for ${req.method} ${req.url}` } });
       });

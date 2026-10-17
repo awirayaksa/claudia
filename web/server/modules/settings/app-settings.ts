@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '../../db/client';
 import { appConfig } from '../../db/schema';
+import { DEFAULT_PERMISSIONS, DefaultCapsSchema, PermissionsSchema } from '../../../shared/access';
 
 export const AppSettingsSchema = {
   'auth.signup': z.object({
@@ -40,8 +41,10 @@ export const AppSettingsSchema = {
    * reach although they are private (e.g. an internal wiki for the fetch tool).
    */
   'net.allowlist': z.object({ hosts: z.array(z.string().trim().min(1).max(253)) }),
-  /** Users may add their own LLM connections (requests go through the SSRF guard). */
-  'connections.user': z.object({ enabled: z.boolean() }),
+  /** What every approved user may do; groups add to it, admins have everything. */
+  'permissions.default': PermissionsSchema,
+  /** Token and cost caps for everyone (null = no limit); groups can raise them. */
+  'caps.default': DefaultCapsSchema,
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -57,7 +60,8 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
     enabled: ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'],
   },
   'net.allowlist': { hosts: [] },
-  'connections.user': { enabled: false },
+  'permissions.default': DEFAULT_PERMISSIONS,
+  'caps.default': { tokensPerDay: null, tokensPerMonth: null, costPerDay: null, costPerMonth: null },
 };
 
 export class AppSettings {

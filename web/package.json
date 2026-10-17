@@ -90,6 +90,7 @@
     "drizzle-kit": "^0.31.11",
     "i18next": "^26.4.7",
     "ldapjs": "^3.0.7",
+    "openai": "^6.49.0",
     "pino-pretty": "^13.2.0",
     "postcss": "^8.4.32",
     "react": "^18.2.0",

@@ -30,6 +30,15 @@ interface ChatInputProps {
   variant?: 'centered' | 'default';
   /** Called after the user starts or stops an MCP server from the badges above the input. */
   onMCPServerToggled?: (serverId: string, running: boolean) => void;
+  /** More slash commands, listed after the skills (the web app's prompt library). */
+  extraCommands?: import('../../types/skill.types').Skill[];
+  /**
+   * One of `extraCommands` was picked: its "/command" text is removed and the
+   * host may put text in its place with `insert`.
+   */
+  onCommandPick?: (command: import('../../types/skill.types').Skill, insert: (text: string) => void) => void;
+  /** Display name of a model id (defaults to the id). */
+  modelLabel?: (model: string) => string;
 }
 
 export interface ChatInputRef {
@@ -60,6 +69,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   initialAttachments,
   onCancelEdit,
   onMCPServerToggled,
+  extraCommands,
+  onCommandPick,
+  modelLabel,
 }, ref) => {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -98,7 +110,40 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
   // Skills mention feature
   const skills = useAppSelector((state) => state.skills.skills);
-  const skillMention = useSkillMention(skills);
+  const commands = useMemo(() => (extraCommands?.length ? [...skills, ...extraCommands] : skills), [skills, extraCommands]);
+  const skillMention = useSkillMention(commands);
+
+  /**
+   * Show a picked command. Skills stay as "/id " text; an extra command's
+   * text is taken out again and handed to the host, which inserts its own.
+   */
+  const applyCommand = useCallback(
+    (picked: import('../../types/skill.types').Skill | undefined, newValue: string, newCursorPos: number) => {
+      const extra = picked && extraCommands?.includes(picked) && onCommandPick;
+      if (!extra) {
+        setMessage(newValue);
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus();
+          textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+        });
+        return;
+      }
+      const start = newCursorPos - `/${picked.id} `.length;
+      setMessage(newValue.slice(0, start) + newValue.slice(newCursorPos));
+      onCommandPick(picked, (text) => {
+        setMessage((m) => m.slice(0, start) + text + m.slice(start));
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.style.height = 'auto';
+          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+          el.focus();
+          el.setSelectionRange(start + text.length, start + text.length);
+        });
+      });
+    },
+    [extraCommands, onCommandPick]
+  );
 
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
@@ -158,15 +203,11 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Intercept keyboard events for the skill mention dropdown first
     if (skillMention.isOpen) {
+      const picked = skillMention.filteredSkills[skillMention.activeIndex];
       const result = skillMention.handleKeyDown(e);
       if (result.consumed) {
         e.preventDefault();
-        if (result.newValue !== undefined) {
-          setMessage(result.newValue);
-          requestAnimationFrame(() => {
-            textareaRef.current?.setSelectionRange(result.newCursorPos!, result.newCursorPos!);
-          });
-        }
+        if (result.newValue !== undefined) applyCommand(picked, result.newValue, result.newCursorPos!);
         return;
       }
     }
@@ -310,13 +351,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     (skill: import('../../types/skill.types').Skill) => {
       const cursorPos = textareaRef.current?.selectionStart ?? message.length;
       const { newValue, newCursorPos } = skillMention.selectSkill(skill, message, cursorPos);
-      setMessage(newValue);
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-        textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
-      });
+      applyCommand(skill, newValue, newCursorPos);
     },
-    [message, skillMention]
+    [message, skillMention, applyCommand]
   );
 
   const handleMentionSelect = useCallback(
@@ -558,6 +595,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
                 models={availableModels}
                 onChange={onModelChange}
                 disabled={disabled || isGenerating}
+                label={modelLabel}
               />
             )}
 

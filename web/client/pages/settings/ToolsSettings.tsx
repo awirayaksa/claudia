@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { errorMessage, useMcpServersQuery, useSetMcpServerEnabledMutation } from '../../api/rtk-api';
+import { OwnToolServers } from './OwnToolServers';
 
 /** Switch tool servers on or off for yourself. The model can use those that are on. */
 export function ToolsSettings() {
@@ -28,7 +29,7 @@ export function ToolsSettings() {
               <div className="text-sm font-medium">
                 {s.name}{' '}
                 <span className="text-xs font-normal text-text-secondary">
-                  {s.scope === 'builtin' ? t('settings.builtinTool') : t('settings.sharedTool')}
+                  {s.scope === 'builtin' ? t('settings.builtinTool') : s.scope === 'user' ? t('ownTools.yours') : t('settings.sharedTool')}
                   {s.enabled && ` · ${t(`mcp.status.${s.status}`, { defaultValue: s.status })}`}
                   {s.enabled && s.tools.length > 0 && ` · ${t('admin.toolCount', { count: s.tools.length })}`}
                 </span>
@@ -40,6 +41,7 @@ export function ToolsSettings() {
         ))}
       </ul>
       {state.error && <p className="text-sm text-error">{errorMessage(state.error)}</p>}
+      <OwnToolServers />
     </div>
   );
 }

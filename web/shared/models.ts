@@ -12,6 +12,11 @@ export const ModelInfo = z.object({
   contextLength: z.number().nullable(),
   /** From one of the user's own connections (id starts with "@"). */
   own: z.boolean().optional(),
+  /** A custom model from the workspace (id "custom/<uuid>"). */
+  custom: z.boolean().optional(),
+  description: z.string().optional(),
+  /** Starter prompts of a custom model. */
+  suggestions: z.array(z.string()).optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfo>;
 
@@ -35,7 +40,8 @@ const prefix = z
   .trim()
   .min(1)
   .max(40)
-  .regex(/^[a-z0-9][a-z0-9_-]*$/, 'Use lowercase letters, digits, - and _');
+  .regex(/^[a-z0-9][a-z0-9_-]*$/, 'Use lowercase letters, digits, - and _')
+  .refine((p) => p !== 'custom', '"custom" is reserved for custom models');
 
 export const ConnectionInput = z.object({
   name: z.string().trim().min(1).max(100),

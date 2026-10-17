@@ -11,11 +11,12 @@ import { ToolServersPage } from './pages/admin/ToolServersPage';
 import { DirectoryPage } from './pages/admin/DirectoryPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { SharePage } from './pages/SharePage';
+import { GroupsPage } from './pages/admin/GroupsPage';
+import { WorkspaceLayout } from './pages/workspace/WorkspaceLayout';
+import { ModelsPage } from './pages/workspace/ModelsPage';
+import { PromptsPage } from './pages/workspace/PromptsPage';
 
-/**
- * Routes. Share links (/s/:token) are outside the sign-in gate; Phase 3
- * adds /workspace/*.
- */
+/** Routes. Share links (/s/:token) are outside the sign-in gate. */
 export const routes: RouteObject[] = [
   { path: '/s/:token', element: <SharePage /> },
   {
@@ -29,11 +30,21 @@ export const routes: RouteObject[] = [
       { path: '/c/:id', element: <ChatPage /> },
       { path: '/settings', element: <SettingsPage /> },
       {
+        path: '/workspace',
+        element: <WorkspaceLayout />,
+        children: [
+          { index: true, element: <Navigate to="/workspace/models" replace /> },
+          { path: 'models', element: <ModelsPage /> },
+          { path: 'prompts', element: <PromptsPage /> },
+        ],
+      },
+      {
         path: '/admin',
         element: <AdminLayout />,
         children: [
           { index: true, element: <Navigate to="/admin/users" replace /> },
           { path: 'users', element: <UsersPage /> },
+          { path: 'groups', element: <GroupsPage /> },
           { path: 'connections', element: <ConnectionsPage /> },
           { path: 'tools', element: <ToolServersPage /> },
           { path: 'directory', element: <DirectoryPage /> },

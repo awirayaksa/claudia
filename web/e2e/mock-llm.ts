@@ -7,7 +7,8 @@
  * - contains "render math": a formula and a Mermaid diagram;
  * - otherwise: "Echo: <message>" in a few chunks ("Echo (<model>): " when the
  *   message contains "compare"), prefixed with "[skill] " when a system
- *   prompt contains SKILL-MARKER.
+ *   prompt contains SKILL-MARKER and "[<name>] " when one contains
+ *   PERSONA:<name> (custom models).
  * Non-streaming calls answer "E2E Chat Title", or two follow-up questions
  * when asked for them.
  */
@@ -38,6 +39,10 @@ http
     const final = json.messages[json.messages.length - 1];
     const skill = json.messages.some((m: any) => m.role === 'system' && String(m.content).includes('SKILL-MARKER'));
     const writeTool = (json.tools ?? []).find((t: any) => t.function?.name === 'write_file');
+    const persona = json.messages
+      .filter((m: any) => m.role === 'system')
+      .map((m: any) => /PERSONA:(\w+)/.exec(String(m.content))?.[1])
+      .find(Boolean);
 
     if (!json.stream) {
       const followUps = String(json.messages[0]?.content ?? '').includes('follow-up');
@@ -73,7 +78,7 @@ http
       ? Array.from({ length: 80 }, (_, i) => `word${i} `)
       : prompt.includes('render math')
         ? ['Einstein: $E=mc^2$\n\n', '```mermaid\ngraph TD\n  A[Start] --> B[End]\n```\n']
-        : [skill ? `[skill] ${echo}` : echo, ...prompt.split(/(\s+)/)];
+        : [`${persona ? `[${persona}] ` : ''}${skill ? '[skill] ' : ''}${echo}`, ...prompt.split(/(\s+)/)];
     const delay = prompt.includes('slow') ? 120 : 15;
     for (const w of words) {
       if (closed) return;

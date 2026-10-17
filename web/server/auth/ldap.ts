@@ -13,13 +13,13 @@
  *     email; an email that already belongs to another account is refused.
  */
 import fs from 'node:fs';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull, ne, notInArray, sql } from 'drizzle-orm';
 import { Client, InvalidCredentialsError, escapeFilter, type Entry } from 'ldapts';
 import type { ConnectionOptions } from 'node:tls';
 import type { FastifyBaseLogger } from 'fastify';
 import type { AppConfig } from '../config';
 import type { Database } from '../db/client';
-import { appConfig, authIdentities, users } from '../db/schema';
+import { appConfig, authIdentities, groupMembers, groups, users } from '../db/schema';
 import type { SecretBox } from '../crypto/secrets';
 import { uuidv7 } from '../lib/ids';
 import {
@@ -48,6 +48,11 @@ export const LDAP_DEFAULTS: LdapSettings = {
   defaultRole: 'user',
   timeoutMs: 10_000,
   verifyIntervalMinutes: 60,
+  groupSync: false,
+  groupMode: 'memberOf',
+  groupSearchBase: '',
+  groupFilter: '(member={{dn}})',
+  adminGroupDn: null,
 };
 
 interface Stored {
@@ -77,6 +82,20 @@ export function buildUserFilter(template: string, username: string): string {
   return escapeFilter(strings, ...parts.slice(1).map(() => username));
 }
 
+/** A DN in the form groups are compared by: lower case, no spaces around , and =. */
+export function normalizeDn(dn: string): string {
+  return dn.trim().toLowerCase().replace(/\s*([,=+])\s*/g, '$1');
+}
+
+/** RFC 4515-escaped group filter: {{dn}} is the user's DN, {{username}} the sign-in name. */
+export function buildGroupFilter(template: string, dn: string, username: string): string {
+  const pieces = template.split(/(\{\{dn\}\}|\{\{username\}\})/);
+  const strings = pieces.filter((_, i) => i % 2 === 0);
+  const values = pieces.filter((_, i) => i % 2 === 1).map((p) => (p === '{{dn}}' ? dn : username));
+  const raw = Object.assign([...strings], { raw: [...strings] }) as unknown as TemplateStringsArray;
+  return escapeFilter(raw, ...values);
+}
+
 /** trim, NFKC, case-fold; DOMAIN\user and user@domain → user when stripping. Null if unusable. */
 export function normalizeUsername(raw: string, stripDomain: boolean): string | null {
   let u = raw.normalize('NFKC').trim();
@@ -98,6 +117,13 @@ function firstValue(entry: Entry, attribute: string): string | null {
   const first = Array.isArray(v) ? v[0] : v;
   if (first === undefined || first === null) return null;
   return Buffer.isBuffer(first) ? first.toString('utf-8') : String(first);
+}
+
+function allValues(entry: Entry, attribute: string): string[] {
+  const key = Object.keys(entry).find((k) => k.toLowerCase() === attribute.toLowerCase());
+  const v = key ? entry[key] : undefined;
+  const list = Array.isArray(v) ? v : v === undefined || v === null ? [] : [v];
+  return list.map((x) => (Buffer.isBuffer(x) ? x.toString('utf-8') : String(x)));
 }
 
 function bufferValue(entry: Entry, attribute: string): Buffer | null {
@@ -246,7 +272,7 @@ export class LdapService {
   }
 
   private attributes(s: EffectiveLdap): string[] {
-    return [s.emailAttribute, s.nameAttribute, 'entryUUID', 'objectGUID', 'userAccountControl'];
+    return [s.emailAttribute, s.nameAttribute, 'entryUUID', 'objectGUID', 'userAccountControl', 'memberOf'];
   }
 
   /** Entries matching the user filter (max 2: we only care whether it's exactly one). */
@@ -351,7 +377,79 @@ export class LdapService {
     }
 
     // 5.
-    return this.linkOrCreate(s, entry, username);
+    const result = await this.linkOrCreate(s, entry, username);
+    if (result.ok && s.groupSync) await this.syncGroups(s, entry, username, result.userId);
+    return result;
+  }
+
+  // ─── Group sync ────────────────────────────────────────────────────────────
+
+  /** The user's directory groups (normalized DNs), or null when the directory couldn't say. */
+  private async directoryGroups(s: EffectiveLdap, entry: Entry, username: string): Promise<Set<string> | null> {
+    if (s.groupMode === 'memberOf') return new Set(allValues(entry, 'memberOf').map(normalizeDn));
+    if (!s.groupSearchBase) return null;
+    let client: Client | null = null;
+    try {
+      client = await this.serviceClient(s);
+      const { searchEntries } = await client.search(s.groupSearchBase, {
+        scope: 'sub',
+        filter: buildGroupFilter(s.groupFilter, entry.dn, username),
+        attributes: ['dn'],
+        paged: { pageSize: 200 },
+        sizeLimit: 2000,
+      });
+      return new Set(searchEntries.map((e) => normalizeDn(e.dn)));
+    } catch (err) {
+      this.deps.log.warn({ err: err instanceof Error ? err.message : String(err) }, 'LDAP group search failed; memberships kept');
+      return null;
+    } finally {
+      await client?.unbind().catch(() => {});
+    }
+  }
+
+  /**
+   * Make the user's directory-sourced memberships match their directory
+   * groups (manual memberships stay), and — when an admin group is set —
+   * their admin role too. The last admin is never demoted.
+   */
+  async syncGroups(s: EffectiveLdap, entry: Entry, username: string, userId: string): Promise<void> {
+    const dns = await this.directoryGroups(s, entry, username);
+    if (!dns) return;
+    const linked = await this.deps.db
+      .select({ id: groups.id, ldapDn: groups.ldapDn })
+      .from(groups)
+      .where(isNotNull(groups.ldapDn));
+    const wanted = linked.filter((g) => dns.has(g.ldapDn!)).map((g) => g.id);
+    await this.deps.db.transaction(async (tx) => {
+      await tx
+        .delete(groupMembers)
+        .where(
+          and(
+            eq(groupMembers.userId, userId),
+            eq(groupMembers.source, 'ldap'),
+            wanted.length ? notInArray(groupMembers.groupId, wanted) : undefined
+          )
+        );
+      if (wanted.length > 0) {
+        await tx
+          .insert(groupMembers)
+          .values(wanted.map((groupId) => ({ groupId, userId, source: 'ldap' as const })))
+          .onConflictDoNothing();
+      }
+      if (!s.adminGroupDn) return;
+      const isAdmin = dns.has(normalizeDn(s.adminGroupDn));
+      const [user] = await tx.select({ role: users.role }).from(users).where(eq(users.id, userId));
+      if (isAdmin && user?.role !== 'admin') {
+        await tx.update(users).set({ role: 'admin', updatedAt: new Date() }).where(eq(users.id, userId));
+      } else if (!isAdmin && user?.role === 'admin') {
+        const [{ n }] = await tx
+          .select({ n: sql<number>`count(*)::int` })
+          .from(users)
+          .where(and(eq(users.role, 'admin'), ne(users.id, userId)));
+        if (Number(n) > 0) await tx.update(users).set({ role: 'user', updatedAt: new Date() }).where(eq(users.id, userId));
+      }
+    });
+    this.deps.log.info({ userId, groups: wanted.length }, 'LDAP groups synced');
   }
 
   private async linkOrCreate(s: EffectiveLdap, entry: Entry, username: string): Promise<LdapLoginResult> {

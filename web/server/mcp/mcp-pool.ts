@@ -2,7 +2,9 @@
  * MCP clients on the server.
  * - global: one manager for the admin's servers, shared by everyone;
  * - user:<id>: one manager per user for the built-ins (sandboxed to the
- *   user's workspace), started on demand and stopped after 10 idle minutes.
+ *   user's workspace) and the user's own remote servers (HTTP / SSE through
+ *   the SSRF guard, with the mcp.user_servers permission), started on demand
+ *   and stopped after 10 idle minutes.
  *
  * stdio servers get only the SDK's safe environment plus their configured
  * variables (never DATABASE_URL or the secret key), and exist only when
@@ -21,6 +23,8 @@ import type { AppSettings } from '../modules/settings/app-settings';
 import type { RunToolset, ToolExecution } from '../llm/tools';
 import { builtinConfigFor, builtinServers, isBuiltinId, redactWorkspacePath, userWorkspace, type BuiltinDeps } from './builtin';
 import { forbidden, notFound } from '../lib/errors';
+import { guardedTransport, type GuardedTransport } from '../net/safe-fetch';
+import type { AccessService } from '../auth/access';
 
 const USER_IDLE_MS = 10 * 60_000;
 const TOOL_TIMEOUT_MS = 120_000;
@@ -40,7 +44,7 @@ export interface ServerView {
   id: string;
   name: string;
   description: string | null;
-  scope: 'global' | 'builtin';
+  scope: 'global' | 'builtin' | 'user';
   transport: McpTransport | 'builtin';
   /** The server's own status (global) or this user's instance (built-in). */
   status: MCPServerStatus;
@@ -61,16 +65,21 @@ export interface McpPoolDeps extends BuiltinDeps {
   settings: AppSettings;
   allowStdio: boolean;
   log: FastifyBaseLogger;
+  /** Without it, nobody has their own servers. */
+  access?: AccessService;
 }
 
 export class McpPools {
   readonly global = new MCPClientManager({ inheritEnv: false });
   private readonly users = new Map<string, UserPool>();
   private readonly reaper: NodeJS.Timeout;
+  /** HTTP for user-owned servers: the SSRF guard (admin allowlist applies). */
+  private readonly guarded: GuardedTransport;
 
   constructor(private readonly deps: McpPoolDeps) {
     this.reaper = setInterval(() => void this.reapIdle(), 60_000);
     this.reaper.unref();
+    this.guarded = guardedTransport(deps.netPolicy);
   }
 
   // ─── Global servers ────────────────────────────────────────────────────────
@@ -152,6 +161,34 @@ export class McpPools {
     await pool.manager.startServer(serverConfig, { builtinContext });
   }
 
+  // ─── User-owned remote servers ─────────────────────────────────────────────
+
+  /** The user's own servers, if they still have the permission. */
+  async ownRows(userId: string): Promise<McpServerRow[]> {
+    if (!this.deps.access) return [];
+    const [user] = await this.deps.db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, userId));
+    if (!user || !(await this.deps.access.can(user, 'mcp.user_servers'))) return [];
+    return this.deps.db.select().from(mcpServers).where(eq(mcpServers.ownerId, userId));
+  }
+
+  /** Start one of the user's own servers if it isn't running. */
+  async ensureOwn(userId: string, row: McpServerRow): Promise<void> {
+    if (!row.enabled || row.transport === 'stdio') return;
+    const pool = this.userPool(userId);
+    const status = pool.manager.getServerStatus(row.id);
+    if (status === 'ready' || status === 'starting' || status === 'initializing') return;
+    const stored = this.decrypt(row);
+    await pool.manager.startServer(this.toConfig(row, stored), {
+      fetch: this.guarded.fetch,
+      ...(stored.headers ? { headers: stored.headers } : {}),
+    });
+  }
+
+  /** Forget a running instance of the user's own server (after it changes or goes). */
+  async stopOwn(userId: string, serverId: string): Promise<void> {
+    await this.users.get(userId)?.manager.stopServer(serverId).catch(() => {});
+  }
+
   async stopUser(userId: string): Promise<void> {
     const pool = this.users.get(userId);
     if (pool) {
@@ -174,9 +211,9 @@ export class McpPools {
     return ((row?.settings as UserSettings | undefined)?.mcp?.enabled ?? {}) as Record<string, boolean>;
   }
 
-  /** Global servers are on by default; built-ins are off until the user turns them on. */
-  private isOn(prefs: Record<string, boolean>, id: string, scope: 'global' | 'builtin'): boolean {
-    return prefs[id] ?? scope === 'global';
+  /** Global and own servers are on by default; built-ins are off until the user turns them on. */
+  private isOn(prefs: Record<string, boolean>, id: string, scope: ServerView['scope']): boolean {
+    return prefs[id] ?? scope !== 'builtin';
   }
 
   async serversFor(userId: string): Promise<ServerView[]> {
@@ -212,6 +249,20 @@ export class McpPools {
         tools: pool?.manager.getServerTools(b.id) ?? [],
       });
     }
+    for (const row of await this.ownRows(userId)) {
+      if (!row.enabled) continue;
+      views.push({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        scope: 'user',
+        transport: row.transport,
+        status: pool?.manager.getServerStatus(row.id) ?? 'stopped',
+        enabled: this.isOn(prefs, row.id, 'user'),
+        error: pool?.manager.getServerError(row.id) ?? null,
+        tools: pool?.manager.getServerTools(row.id) ?? [],
+      });
+    }
     return views;
   }
 
@@ -226,6 +277,10 @@ export class McpPools {
     if (view.scope === 'builtin') {
       if (enabled) await this.ensureBuiltin(userId, serverId).catch(() => {});
       else await this.users.get(userId)?.manager.stopServer(serverId);
+    } else if (view.scope === 'user') {
+      const row = (await this.ownRows(userId)).find((r) => r.id === serverId);
+      if (enabled && row) await this.ensureOwn(userId, row).catch(() => {});
+      else await this.stopOwn(userId, serverId);
     }
     return (await this.serversFor(userId)).find((s) => s.id === serverId)!;
   }
@@ -234,6 +289,12 @@ export class McpPools {
   private async managerFor(userId: string, serverId: string): Promise<MCPClientManager> {
     if (isBuiltinId(serverId)) {
       await this.ensureBuiltin(userId, serverId);
+      return this.userPool(userId).manager;
+    }
+    const own = (await this.ownRows(userId)).find((r) => r.id === serverId);
+    if (own) {
+      if (!own.enabled) throw notFound('Tool server');
+      await this.ensureOwn(userId, own);
       return this.userPool(userId).manager;
     }
     const [row] = await this.deps.db
@@ -258,16 +319,22 @@ export class McpPools {
   }
 
   /**
-   * The tools of a run: the requested servers this user has switched on and
-   * that are ready, named by alias so same-named tools on two servers both work.
+   * The tools of a run: the requested servers this user has switched on (or
+   * that a custom model always uses) and that are ready, named by alias so
+   * same-named tools on two servers both work.
    */
-  async toolset(userId: string, serverIds: string[], firstTurnOnly = false): Promise<RunToolset> {
+  async toolset(userId: string, serverIds: string[], alwaysOn: string[] = [], firstTurnOnly = false): Promise<RunToolset> {
     const wanted = new Set(serverIds);
-    const views = (await this.serversFor(userId)).filter((s) => wanted.has(s.id) && s.enabled);
+    const forced = new Set(alwaysOn);
+    const usable = (s: ServerView) => wanted.has(s.id) && (s.enabled || forced.has(s.id));
+    const views = (await this.serversFor(userId)).filter(usable);
+    const own = views.some((v) => v.scope === 'user') ? await this.ownRows(userId) : [];
     for (const v of views) {
       if (v.scope === 'builtin') await this.ensureBuiltin(userId, v.id).catch(() => {});
+      const row = v.scope === 'user' ? own.find((r) => r.id === v.id) : undefined;
+      if (row) await this.ensureOwn(userId, row).catch(() => {});
     }
-    const ready = (await this.serversFor(userId)).filter((s) => wanted.has(s.id) && s.enabled && s.status === 'ready');
+    const ready = (await this.serversFor(userId)).filter((s) => usable(s) && s.status === 'ready');
     const sources: ToolSource[] = ready.map((s) => ({ id: s.id, name: s.name, tools: s.tools }));
     const aliases = buildToolAliases(sources);
 

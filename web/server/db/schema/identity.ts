@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import { index, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import type { UserCaps } from '../../../shared/access';
 
 export type UserRole = 'admin' | 'user' | 'pending';
 
@@ -11,6 +12,8 @@ export interface UserSettings {
   defaultModel?: string;
   /** Tool servers this user switched on or off (default: global on, built-ins off). */
   mcp?: { enabled: Record<string, boolean> };
+  /** Saved memories are added to every chat (default on). */
+  memory?: { enabled: boolean };
 }
 
 export const users = pgTable(
@@ -27,6 +30,8 @@ export const users = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
     lastActiveAt: timestamp('last_active_at', { withTimezone: true }),
+    /** Admin override of the usage caps; null = defaults and groups. */
+    caps: jsonb('caps').$type<UserCaps>(),
   },
   (t) => [uniqueIndex('users_email_unique').on(t.email), index('users_role_idx').on(t.role)]
 );

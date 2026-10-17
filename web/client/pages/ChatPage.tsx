@@ -8,7 +8,10 @@ import { setEffortLevel } from '@/store/slices/composerSlice';
 import { parseEffortDirective } from '@/utils/effort-utils';
 import type { MessageNode } from '@/types/turn.types';
 import type { Attachment } from '@/types/message.types';
+import type { Skill } from '@/types/skill.types';
 import { resolveSkillCommand } from '@/utils/skill-utils';
+import type { PromptView } from '@shared/workspace';
+import { fillTemplate, templateVariables } from '@shared/prompts';
 import {
   errorMessage,
   useChatQuery,
@@ -16,6 +19,7 @@ import {
   useForkChatMutation,
   useMcpServersQuery,
   useModelsQuery,
+  usePromptsQuery,
   useRateMessageMutation,
   useSendCompletionMutation,
   useSessionQuery,
@@ -30,6 +34,7 @@ import { enabledServerIds } from '../chat/useMcpSync';
 import { MessageTurns } from '../chat/MessageTurns';
 import { ChatHeader } from '../chat/ChatHeader';
 import { CloseIcon, PlusIcon } from '../components/icons';
+import { PromptVariablesForm } from '../workspace/PromptForm';
 
 /** The model last picked by this user (per browser), for new chats. */
 const LAST_MODEL_KEY = 'claudia.lastModel';
@@ -67,6 +72,9 @@ export function ChatPage() {
   const sessionEffort = useAppSelector((s) => s.composer.effortLevel);
   const skills = useAppSelector((s) => s.skills.skills);
   const { data: mcpData } = useMcpServersQuery();
+  const { data: promptData } = usePromptsQuery({ scope: 'usable' });
+  /** A prompt waiting for its {{variables}}, and where its text goes. */
+  const [promptForm, setPromptForm] = useState<{ prompt: PromptView; insert: (text: string) => void } | null>(null);
 
   const [createChat] = useCreateChatMutation();
   const [sendCompletion] = useSendCompletionMutation();
@@ -95,6 +103,7 @@ export function ChatPage() {
     const candidates = [chat?.modelIds[0], pendingModel, readLastModel(), modelsData?.defaultModel];
     return candidates.find((m): m is string => !!m && modelIds.includes(m)) ?? modelIds[0] ?? '';
   }, [chat?.modelIds, pendingModel, modelsData?.defaultModel, modelIds]);
+  const selectedInfo = models.find((m) => m.id === selectedModel);
   const sendModels = useMemo(
     () => [selectedModel, ...compare.filter((m) => m !== selectedModel && modelIds.includes(m))].filter(Boolean).slice(0, MAX_MODELS),
     [selectedModel, compare, modelIds]
@@ -193,7 +202,33 @@ export function ChatPage() {
     }
   };
 
+  // The prompt library in the "/" menu, after the skills
+  const prompts = useMemo(() => promptData?.prompts ?? [], [promptData]);
+  const promptCommands = useMemo<Skill[]>(
+    () =>
+      prompts.map((p) => ({
+        id: p.command,
+        name: p.title,
+        description: p.description ? `${p.title} — ${p.description}` : p.title,
+        body: p.body,
+        builtin: false,
+        filePath: null,
+      })),
+    [prompts]
+  );
+  const openPrompt = (prompt: PromptView, insert: (text: string) => void) => {
+    if (templateVariables(prompt.body).length > 0) setPromptForm({ prompt, insert });
+    else insert(fillTemplate(prompt.body, {}, { userName: session?.user?.name, language: navigator.language }));
+  };
+
   const handleSend = (raw: string, attachments: Attachment[] = []) => {
+    // "/command" alone that names a prompt (and no skill) opens the prompt instead of sending
+    const command = /^\/([a-z0-9][a-z0-9-]*)$/.exec(raw.trim())?.[1];
+    const prompt = command && !skills.some((sk) => sk.id === command) ? prompts.find((p) => p.command === command) : undefined;
+    if (prompt && attachments.length === 0) {
+      openPrompt(prompt, (text) => inputRef.current?.setMessage(text));
+      return;
+    }
     if (live || sending.current) {
       // A reply is still being written: send this one after it
       setQueue((q) => [...q, { id: Date.now() + Math.random(), raw, attachments }]);
@@ -268,11 +303,25 @@ export function ChatPage() {
             <div className="flex flex-col items-center pt-[10vh] text-center">
               <h1 className="mb-6 text-2xl font-semibold">{temporary ? t('chat.temporaryTitle') : t('chat.emptyTitle')}</h1>
               {temporary && <p className="mb-6 max-w-md text-sm text-text-secondary">{t('chat.temporaryHelp')}</p>}
+              {selectedInfo?.description && <p className="mb-4 max-w-md text-sm text-text-secondary">{selectedInfo.description}</p>}
               {noModels ? (
                 <p className="max-w-md text-text-secondary">
                   {t('chat.noModels')}{' '}
                   {session?.user?.role === 'admin' ? t('chat.noModelsAdmin') : t('chat.noModelsUser')}
                 </p>
+              ) : selectedInfo?.suggestions?.length ? (
+                // A custom model's own starters
+                <div className="grid w-full max-w-2xl gap-2 sm:grid-cols-2" data-testid="model-suggestions">
+                  {selectedInfo.suggestions.map((q) => (
+                    <button
+                      key={q}
+                      className="rounded-lg border border-border px-3 py-2 text-left text-sm hover:border-accent hover:bg-surface"
+                      onClick={() => inputRef.current?.setMessage(q)}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
               ) : (
                 selectedModel &&
                 !temporary && <SuggestedPrompts model={selectedModel} onSelect={(prompt) => inputRef.current?.setMessage(prompt)} />
@@ -345,7 +394,24 @@ export function ChatPage() {
           selectedModel={selectedModel}
           availableModels={modelIds}
           onModelChange={handleModelChange}
+          modelLabel={(id) => modelName(id) ?? id}
+          extraCommands={promptCommands}
+          onCommandPick={(cmd, insert) => {
+            const prompt = prompts.find((p) => p.command === cmd.id);
+            if (prompt) openPrompt(prompt, insert);
+          }}
         />
+        {promptForm && (
+          <PromptVariablesForm
+            prompt={promptForm.prompt}
+            userName={session?.user?.name ?? ''}
+            onClose={() => setPromptForm(null)}
+            onInsert={(text) => {
+              promptForm.insert(text);
+              setPromptForm(null);
+            }}
+          />
+        )}
       </div>
     </div>
   );

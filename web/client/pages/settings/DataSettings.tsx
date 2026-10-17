@@ -8,7 +8,7 @@ import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { batchChats, convertImportFiles, type ConvertedImport } from '@shared/import';
-import { errorMessage, useImportChatsMutation, useMySharesQuery, useRevokeShareMutation } from '../../api/rtk-api';
+import { errorMessage, useImportChatsMutation, useMySharesQuery, useRevokeShareMutation, usePermissions } from '../../api/rtk-api';
 import { downloadFrom } from '../../chat/download';
 
 interface Progress {
@@ -27,6 +27,7 @@ export function DataSettings() {
   const [error, setError] = useState<string | null>(null);
   const { data: shareData } = useMySharesQuery();
   const [revoke] = useRevokeShareMutation();
+  const permissions = usePermissions();
 
   const runImport = async (list: FileList | null) => {
     if (!list || list.length === 0) return;
@@ -64,16 +65,18 @@ export function DataSettings() {
 
   return (
     <div className="space-y-8 p-5 text-sm">
-      <section>
-        <h3 className="mb-1 font-semibold">{t('settings.exportTitle')}</h3>
-        <p className="mb-3 text-text-secondary">{t('settings.exportHelp')}</p>
-        <Button
-          size="sm"
-          onClick={() => void downloadFrom('/api/chats/export', 'claudia-chats.json').catch((e) => setError(errorMessage(e)))}
-        >
-          {t('settings.exportAll')}
-        </Button>
-      </section>
+      {permissions?.['chat.export'] && (
+        <section>
+          <h3 className="mb-1 font-semibold">{t('settings.exportTitle')}</h3>
+          <p className="mb-3 text-text-secondary">{t('settings.exportHelp')}</p>
+          <Button
+            size="sm"
+            onClick={() => void downloadFrom('/api/chats/export', 'claudia-chats.json').catch((e) => setError(errorMessage(e)))}
+          >
+            {t('settings.exportAll')}
+          </Button>
+        </section>
+      )}
 
       <section>
         <h3 className="mb-1 font-semibold">{t('settings.importTitle')}</h3>

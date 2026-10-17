@@ -9,9 +9,13 @@ import { currentUser, requireAdmin, requireUser } from '../auth/rbac';
 import { normalizeToolResult } from '../../../src/services/mcp/tool-format';
 import type { MessagePart, PartOf } from '../../../src/types/turn.types';
 import { McpServerInput, UIActionRequest, type AdminMcpServerView, type UIActionResponse } from '../../shared/mcp';
+import { UserMcpServerInput, type UserMcpServerView } from '../../shared/workspace';
 import type { McpServerRow, StoredMcpConfig } from './mcp-pool';
 
 const IdParams = z.object({ id: z.uuid() });
+
+/** Tool servers one user may add. */
+const MAX_USER_SERVERS = 10;
 
 /** /api/mcp — the tool servers the signed-in user can use. */
 export async function mcpUserRoutes(app: FastifyInstance, ctx: ServerContext): Promise<void> {
@@ -27,6 +31,97 @@ export async function mcpUserRoutes(app: FastifyInstance, ctx: ServerContext): P
   app.post('/servers/:id/disable', async (req) => {
     const { id } = z.object({ id: z.string().min(1).max(100) }).parse(req.params);
     return { server: await ctx.mcp.setEnabled(currentUser(req).id, id, false) };
+  });
+
+  // ─── The user's own remote servers (/api/mcp/own) ─────────────────────────
+
+  const ownView = (row: McpServerRow): UserMcpServerView => {
+    const stored = ctx.mcp.decrypt(row);
+    return {
+      id: row.id,
+      name: row.name,
+      description: row.description,
+      transport: row.transport as UserMcpServerView['transport'],
+      url: stored.url ?? '',
+      headerNames: Object.keys(stored.headers ?? {}),
+      enabled: row.enabled,
+    };
+  };
+  const getOwn = async (userId: string, id: string) => {
+    const [row] = await ctx.db.select().from(mcpServers).where(and(eq(mcpServers.id, id), eq(mcpServers.ownerId, userId)));
+    if (!row) throw notFound('Tool server');
+    return row;
+  };
+
+  app.get('/own', async (req) => {
+    const me = currentUser(req);
+    const rows = await ctx.db.select().from(mcpServers).where(eq(mcpServers.ownerId, me.id));
+    return { servers: rows.map(ownView), allowed: await ctx.access.can(me, 'mcp.user_servers') };
+  });
+
+  app.post('/own', async (req, reply) => {
+    const me = currentUser(req);
+    await ctx.access.require(me, 'mcp.user_servers');
+    const body = UserMcpServerInput.parse(req.body);
+    const [{ n }] = await ctx.db.select({ n: sql<number>`count(*)::int` }).from(mcpServers).where(eq(mcpServers.ownerId, me.id));
+    if (Number(n) >= MAX_USER_SERVERS) throw badRequest(`You can add at most ${MAX_USER_SERVERS} tool servers.`, 'too_many_servers');
+    const stored: StoredMcpConfig = { url: body.url, headers: body.headers };
+    const [row] = await ctx.db
+      .insert(mcpServers)
+      .values({
+        id: uuidv7(),
+        ownerId: me.id,
+        name: body.name,
+        description: body.description,
+        transport: body.transport,
+        configCipher: ctx.secrets.encrypt(JSON.stringify(stored)),
+        enabled: body.enabled,
+      })
+      .returning();
+    reply.code(201);
+    return { server: ownView(row) };
+  });
+
+  app.patch('/own/:id', async (req) => {
+    const me = currentUser(req);
+    await ctx.access.require(me, 'mcp.user_servers');
+    const { id } = IdParams.parse(req.params);
+    const row = await getOwn(me.id, id);
+    const old = ctx.mcp.decrypt(row);
+    // Merge over the stored values, so headers can stay unchanged
+    const merged = UserMcpServerInput.parse({
+      name: row.name,
+      description: row.description,
+      transport: row.transport,
+      enabled: row.enabled,
+      url: old.url,
+      headers: old.headers,
+      ...(req.body as object),
+    });
+    const [updated] = await ctx.db
+      .update(mcpServers)
+      .set({
+        name: merged.name,
+        description: merged.description,
+        transport: merged.transport,
+        enabled: merged.enabled,
+        configCipher: ctx.secrets.encrypt(JSON.stringify({ url: merged.url, headers: merged.headers } satisfies StoredMcpConfig)),
+        updatedAt: new Date(),
+      })
+      .where(eq(mcpServers.id, id))
+      .returning();
+    await ctx.mcp.stopOwn(me.id, id);
+    return { server: ownView(updated) };
+  });
+
+  // Always allowed, so servers (and their tokens) can be removed after the permission is gone
+  app.delete('/own/:id', async (req) => {
+    const me = currentUser(req);
+    const { id } = IdParams.parse(req.params);
+    await getOwn(me.id, id);
+    await ctx.mcp.stopOwn(me.id, id);
+    await ctx.db.delete(mcpServers).where(eq(mcpServers.id, id));
+    return { ok: true };
   });
 }
 

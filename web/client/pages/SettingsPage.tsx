@@ -9,6 +9,8 @@ import {
   errorMessage,
   useChangePasswordMutation,
   useMySessionsQuery,
+  useMyUsageQuery,
+  usePermissions,
   useRevokeSessionMutation,
   useSessionQuery,
   useUpdateMeMutation,
@@ -18,12 +20,27 @@ import { ToolsSettings } from './settings/ToolsSettings';
 import { FilesSettings } from './settings/FilesSettings';
 import { DataSettings } from './settings/DataSettings';
 import { ConnectionsManager } from './admin/ConnectionsPage';
+import { MemorySettings } from './settings/MemorySettings';
+import { ApiKeysSettings } from './settings/ApiKeysSettings';
+import { CAP_KEYS } from '@shared/access';
+import { formatUsage } from '../components/AccessFields';
 
-type Tab = 'appearance' | 'preferences' | 'tools' | 'skills' | 'files' | 'data' | 'connections' | 'account';
+type Tab =
+  | 'appearance'
+  | 'preferences'
+  | 'memory'
+  | 'tools'
+  | 'skills'
+  | 'files'
+  | 'data'
+  | 'connections'
+  | 'api'
+  | 'account';
 
 export function SettingsPage() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('appearance');
+  const permissions = usePermissions();
   return (
     <PageFrame title={t('settings.title')}>
       <Tabs<Tab>
@@ -32,17 +49,20 @@ export function SettingsPage() {
         tabs={[
           { id: 'appearance', label: t('settings.appearance') },
           { id: 'preferences', label: t('settings.preferences') },
+          { id: 'memory', label: t('settings.memory') },
           { id: 'tools', label: t('settings.tools') },
           { id: 'skills', label: t('settings.skills') },
           { id: 'files', label: t('settings.files') },
           { id: 'data', label: t('settings.data') },
           { id: 'connections', label: t('settings.connections') },
+          ...(permissions?.['api.keys'] ? [{ id: 'api' as const, label: t('settings.apiKeys') }] : []),
           { id: 'account', label: t('settings.account') },
         ]}
       />
       <div className="mt-4 rounded-lg border border-border bg-surface">
         {tab === 'appearance' && <ThemeSettings />}
         {tab === 'preferences' && <PreferencesSettings />}
+        {tab === 'memory' && <MemorySettings />}
         {tab === 'tools' && <ToolsSettings />}
         {tab === 'skills' && <SkillSettings />}
         {tab === 'files' && <FilesSettings />}
@@ -52,6 +72,7 @@ export function SettingsPage() {
             <ConnectionsManager scope="own" />
           </div>
         )}
+        {tab === 'api' && <ApiKeysSettings />}
         {tab === 'account' && <AccountSettings />}
       </div>
     </PageFrame>
@@ -128,6 +149,8 @@ function AccountSettings() {
         )}
       </section>
 
+      <UsageSection />
+
       <section>
         <h3 className="mb-3 font-semibold">{t('settings.sessions')}</h3>
         <ul className="divide-y divide-border rounded border border-border">
@@ -151,5 +174,34 @@ function AccountSettings() {
         </ul>
       </section>
     </div>
+  );
+}
+
+/** Tokens and cost so far, against the caps (if any). */
+function UsageSection() {
+  const { t } = useTranslation();
+  const { data } = useMyUsageQuery(undefined, { refetchOnMountOrArgChange: true });
+  if (!data) return null;
+  const { usage } = data;
+  return (
+    <section className="max-w-md">
+      <h3 className="mb-3 font-semibold">{t('access.usage')}</h3>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm" data-testid="my-usage">
+        {CAP_KEYS.map((k) => (
+          <div key={k} className="contents">
+            <dt className="text-text-secondary">{t(`access.caps.${k}`)}</dt>
+            <dd>
+              {formatUsage(
+                k,
+                usage[k.endsWith('Day') ? 'day' : 'month'][k.startsWith('cost') ? 'cost' : 'tokens'],
+                usage.caps[k],
+                t('access.noLimit')
+              )}
+            </dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mt-2 text-xs text-text-secondary">{t('access.usageHelp')}</p>
+    </section>
   );
 }

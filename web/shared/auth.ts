@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { UserCapsSchema, type Permissions } from './access';
 
 export const UserRole = z.enum(['admin', 'user', 'pending']);
 export type UserRole = z.infer<typeof UserRole>;
@@ -20,11 +21,12 @@ export const AuthOptions = z.object({
 });
 export type AuthOptions = z.infer<typeof AuthOptions>;
 
-export const SessionResponse = z.object({
-  user: PublicUser.nullable(),
-  auth: AuthOptions,
-});
-export type SessionResponse = z.infer<typeof SessionResponse>;
+export interface SessionResponse {
+  user: PublicUser | null;
+  auth: AuthOptions;
+  /** What the signed-in user may do (all false when signed out or pending). */
+  permissions: Permissions | null;
+}
 
 const email = z
   .string()
@@ -69,6 +71,8 @@ export const AdminUpdateUserRequest = z.object({
   name: z.string().trim().min(1).max(100).optional(),
   role: UserRole.optional(),
   password: password.optional(),
+  /** Usage cap override; null = back to defaults and groups. */
+  caps: UserCapsSchema.nullable().optional(),
 });
 
 export const AdminUser = PublicUser.extend({

@@ -64,7 +64,8 @@ export function Modal({
       <div
         className={clsx(
           'relative z-10 w-full rounded-lg bg-surface shadow-xl',
-          'flex flex-col',
+          // Tall content scrolls inside the dialog instead of running off screen
+          'flex max-h-[calc(100dvh-2rem)] flex-col',
           'mx-4',
           sizeStyles[size]
         )}
@@ -74,6 +75,7 @@ export function Modal({
           <h2 className="text-xl font-semibold text-text-primary">{title}</h2>
           <button
             onClick={onClose}
+            aria-label="Close"
             className="rounded p-1 text-text-secondary hover:bg-background hover:text-text-primary"
           >
             <svg
@@ -93,7 +95,7 @@ export function Modal({
         </div>
 
         {/* Content */}
-        <div className="flex-1 overflow-y-auto pl-6 pr-4 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto pl-6 pr-4 py-4">{children}</div>
 
         {/* Footer */}
         {footer && (

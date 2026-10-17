@@ -53,10 +53,12 @@ export function DirectoryPage() {
       placeholder={placeholder}
       value={(draft[key] as string | null) ?? ''}
       disabled={locked.has(key)}
-      onChange={(e) => set(key, (e.target.value || (key === 'allowedGroupDn' || key === 'caCert' ? null : '')) as never)}
+      onChange={(e) =>
+        set(key, (e.target.value || (key === 'allowedGroupDn' || key === 'caCert' || key === 'adminGroupDn' ? null : '')) as never)
+      }
     />
   );
-  const check = (key: 'enabled' | 'startTls' | 'tlsVerify' | 'stripDomain', label: string) => (
+  const check = (key: 'enabled' | 'startTls' | 'tlsVerify' | 'stripDomain' | 'groupSync', label: string) => (
     <label className="flex items-center gap-2 text-sm">
       <input type="checkbox" checked={draft[key]} disabled={locked.has(key)} onChange={(e) => set(key, e.target.checked)} />
       {label}
@@ -134,6 +136,35 @@ export function DirectoryPage() {
               onChange={(e) => set('verifyIntervalMinutes', Math.min(1440, Math.max(1, Number(e.target.value) || 1)))}
             />
           </label>
+        </div>
+      </Card>
+
+      <Card title={t('access.groupSync')}>
+        <div className="space-y-3">
+          <p className="text-sm text-text-secondary">{t('access.groupSyncHelp')}</p>
+          {check('groupSync', t('access.groupSyncEnabled'))}
+          {draft.groupSync && (
+            <>
+              <label className="flex items-center gap-2 text-sm">
+                {t('access.groupMode')}
+                <select
+                  className="rounded border border-border bg-background px-2 py-1"
+                  value={draft.groupMode}
+                  onChange={(e) => set('groupMode', e.target.value as LdapSettings['groupMode'])}
+                >
+                  <option value="memberOf">{t('access.groupModeMemberOf')}</option>
+                  <option value="search">{t('access.groupModeSearch')}</option>
+                </select>
+              </label>
+              {draft.groupMode === 'search' && (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {text('groupSearchBase', t('access.groupSearchBase'), undefined, 'ou=groups,dc=example,dc=com')}
+                  {text('groupFilter', t('access.groupFilter'), t('access.groupFilterHelp'))}
+                </div>
+              )}
+              {text('adminGroupDn', t('access.adminGroupDn'), t('access.adminGroupDnHelp'))}
+            </>
+          )}
         </div>
       </Card>
 

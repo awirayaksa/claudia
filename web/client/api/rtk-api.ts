@@ -24,6 +24,28 @@ import type { LdapLookupResult, LdapSettingsResponse, LdapSettingsUpdate, LdapTe
 import type { FileView } from '@shared/files';
 import type { AppSettingsResponse, UserSettingsInput } from '@shared/settings';
 import type { PublicConfig } from '@shared/api';
+import type {
+  GrantInput,
+  GrantView,
+  GroupInput,
+  GroupMemberView,
+  GroupRef,
+  GroupView,
+  Permissions,
+  UsageSummary,
+  UserCaps,
+} from '@shared/access';
+import type {
+  ApiKeyView,
+  CreatedApiKey,
+  CustomModelInput,
+  CustomModelView,
+  MemoryView,
+  PromptInput,
+  PromptView,
+  UserMcpServerInput,
+  UserMcpServerView,
+} from '@shared/workspace';
 
 export interface ApiErrorShape {
   status: number;
@@ -73,6 +95,17 @@ export const api = createApi({
     'Files',
     'Tags',
     'Shares',
+    'WorkspaceModels',
+    'Prompts',
+    'Grants',
+    'Memories',
+    'ApiKeys',
+    'Usage',
+    'OwnMcp',
+    'AdminGroups',
+    'GroupMembers',
+    'UserAccess',
+    'MyGroups',
   ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
@@ -249,6 +282,97 @@ export const api = createApi({
       invalidatesTags: ['MyConnections', 'Models'],
     }),
 
+    // ─── Workspace ──────────────────────────────────────────────────────────
+    workspaceModels: b.query<{ models: CustomModelView[] }, void>({
+      query: () => '/workspace/models',
+      providesTags: ['WorkspaceModels'],
+    }),
+    createWorkspaceModel: b.mutation<{ model: CustomModelView }, Partial<CustomModelInput>>({
+      query: (body) => ({ url: '/workspace/models', method: 'POST', body }),
+      invalidatesTags: ['WorkspaceModels', 'Models'],
+    }),
+    updateWorkspaceModel: b.mutation<{ model: CustomModelView }, { id: string } & Partial<CustomModelInput>>({
+      query: ({ id, ...body }) => ({ url: `/workspace/models/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['WorkspaceModels', 'Models'],
+    }),
+    deleteWorkspaceModel: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/workspace/models/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['WorkspaceModels', 'Models'],
+    }),
+    prompts: b.query<{ prompts: PromptView[] }, { scope: 'usable' | 'all' }>({
+      query: ({ scope }) => `/workspace/prompts?scope=${scope}`,
+      providesTags: ['Prompts'],
+    }),
+    createPrompt: b.mutation<{ prompt: PromptView }, Partial<PromptInput>>({
+      query: (body) => ({ url: '/workspace/prompts', method: 'POST', body }),
+      invalidatesTags: ['Prompts'],
+    }),
+    updatePrompt: b.mutation<{ prompt: PromptView }, { id: string } & Partial<PromptInput>>({
+      query: ({ id, ...body }) => ({ url: `/workspace/prompts/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Prompts'],
+    }),
+    deletePrompt: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/workspace/prompts/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Prompts'],
+    }),
+    grants: b.query<{ grants: GrantView[] }, { kind: 'models' | 'prompts'; id: string }>({
+      query: ({ kind, id }) => `/workspace/${kind}/${id}/access`,
+      providesTags: (_r, _e, { id }) => [{ type: 'Grants', id }],
+    }),
+    setGrants: b.mutation<{ grants: GrantView[] }, { kind: 'models' | 'prompts'; id: string; grants: GrantInput[] }>({
+      query: ({ kind, id, grants }) => ({ url: `/workspace/${kind}/${id}/access`, method: 'PUT', body: { grants } }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Grants', id }, 'Models'],
+    }),
+    myGroups: b.query<{ groups: GroupRef[] }, void>({ query: () => '/directory/groups', providesTags: ['MyGroups'] }),
+    findUsers: b.query<{ users: Array<{ id: string; name: string; email: string }> }, string>({
+      query: (q) => `/directory/users?q=${encodeURIComponent(q)}`,
+    }),
+
+    // ─── Memory, API keys, usage, own tool servers ──────────────────────────
+    memories: b.query<{ memories: MemoryView[] }, void>({ query: () => '/me/memories', providesTags: ['Memories'] }),
+    addMemory: b.mutation<{ memory: MemoryView }, string>({
+      query: (content) => ({ url: '/me/memories', method: 'POST', body: { content } }),
+      invalidatesTags: ['Memories'],
+    }),
+    updateMemory: b.mutation<{ memory: MemoryView }, { id: string; content: string }>({
+      query: ({ id, content }) => ({ url: `/me/memories/${id}`, method: 'PATCH', body: { content } }),
+      invalidatesTags: ['Memories'],
+    }),
+    deleteMemory: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/me/memories/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Memories'],
+    }),
+    clearMemories: b.mutation<{ ok: true }, void>({
+      query: () => ({ url: '/me/memories', method: 'DELETE' }),
+      invalidatesTags: ['Memories'],
+    }),
+    apiKeys: b.query<{ keys: ApiKeyView[]; allowed: boolean }, void>({ query: () => '/me/api-keys', providesTags: ['ApiKeys'] }),
+    createApiKey: b.mutation<CreatedApiKey, { name: string; expiresInDays: number | null }>({
+      query: (body) => ({ url: '/me/api-keys', method: 'POST', body }),
+      invalidatesTags: ['ApiKeys'],
+    }),
+    deleteApiKey: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/me/api-keys/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['ApiKeys'],
+    }),
+    myUsage: b.query<{ usage: UsageSummary }, void>({ query: () => '/me/usage', providesTags: ['Usage'] }),
+    ownMcpServers: b.query<{ servers: UserMcpServerView[]; allowed: boolean }, void>({
+      query: () => '/mcp/own',
+      providesTags: ['OwnMcp'],
+    }),
+    createOwnMcpServer: b.mutation<{ server: UserMcpServerView }, Partial<UserMcpServerInput>>({
+      query: (body) => ({ url: '/mcp/own', method: 'POST', body }),
+      invalidatesTags: ['OwnMcp', 'McpServers'],
+    }),
+    updateOwnMcpServer: b.mutation<{ server: UserMcpServerView }, { id: string } & Partial<UserMcpServerInput>>({
+      query: ({ id, ...body }) => ({ url: `/mcp/own/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['OwnMcp', 'McpServers'],
+    }),
+    deleteOwnMcpServer: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/mcp/own/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['OwnMcp', 'McpServers'],
+    }),
+
     // ─── Folders ────────────────────────────────────────────────────────────
     folders: b.query<{ folders: Folder[] }, void>({ query: () => '/folders', providesTags: ['Folders'] }),
     createFolder: b.mutation<{ folder: Folder }, { name: string; parentId?: string | null }>({
@@ -276,9 +400,53 @@ export const api = createApi({
       query: (body) => ({ url: '/admin/users', method: 'POST', body }),
       invalidatesTags: ['AdminUsers'],
     }),
-    adminUpdateUser: b.mutation<{ user: AdminUser }, { id: string; role?: AdminUser['role']; name?: string; password?: string }>({
+    adminUpdateUser: b.mutation<
+      { user: AdminUser },
+      { id: string; role?: AdminUser['role']; name?: string; password?: string; caps?: UserCaps | null }
+    >({
       query: ({ id, ...body }) => ({ url: `/admin/users/${id}`, method: 'PATCH', body }),
-      invalidatesTags: ['AdminUsers'],
+      invalidatesTags: ['AdminUsers', 'UserAccess'],
+    }),
+    adminUserAccess: b.query<
+      {
+        groups: Array<GroupRef & { source: 'manual' | 'ldap' }>;
+        caps: UserCaps | null;
+        permissions: Permissions;
+        usage: UsageSummary;
+      },
+      string
+    >({
+      query: (id) => `/admin/users/${id}/access`,
+      providesTags: (_r, _e, id) => [{ type: 'UserAccess', id }],
+    }),
+    adminSetUserGroups: b.mutation<{ ok: true }, { id: string; groupIds: string[] }>({
+      query: ({ id, groupIds }) => ({ url: `/admin/users/${id}/groups`, method: 'PUT', body: { groupIds } }),
+      invalidatesTags: ['UserAccess', 'AdminGroups', 'GroupMembers'],
+    }),
+    adminGroups: b.query<{ groups: GroupView[] }, void>({ query: () => '/admin/groups', providesTags: ['AdminGroups'] }),
+    createGroup: b.mutation<{ group: GroupView }, Partial<GroupInput>>({
+      query: (body) => ({ url: '/admin/groups', method: 'POST', body }),
+      invalidatesTags: ['AdminGroups', 'MyGroups'],
+    }),
+    updateGroup: b.mutation<{ group: GroupView }, { id: string } & Partial<GroupInput>>({
+      query: ({ id, ...body }) => ({ url: `/admin/groups/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['AdminGroups', 'MyGroups', 'UserAccess', 'Session', 'Models'],
+    }),
+    deleteGroup: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/admin/groups/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['AdminGroups', 'MyGroups', 'UserAccess', 'Session', 'Models'],
+    }),
+    groupMembers: b.query<{ members: GroupMemberView[] }, string>({
+      query: (id) => `/admin/groups/${id}/members`,
+      providesTags: (_r, _e, id) => [{ type: 'GroupMembers', id }],
+    }),
+    addGroupMember: b.mutation<{ ok: true }, { id: string; userId: string }>({
+      query: ({ id, userId }) => ({ url: `/admin/groups/${id}/members`, method: 'POST', body: { userId } }),
+      invalidatesTags: ['GroupMembers', 'AdminGroups', 'UserAccess'],
+    }),
+    removeGroupMember: b.mutation<{ ok: true }, { id: string; userId: string }>({
+      query: ({ id, userId }) => ({ url: `/admin/groups/${id}/members/${userId}`, method: 'DELETE' }),
+      invalidatesTags: ['GroupMembers', 'AdminGroups', 'UserAccess'],
     }),
     adminDeleteUser: b.mutation<{ ok: true }, string>({
       query: (id) => ({ url: `/admin/users/${id}`, method: 'DELETE' }),
@@ -339,7 +507,7 @@ export const api = createApi({
     }),
     updateAppSetting: b.mutation<unknown, { key: keyof AppSettingsResponse; value: unknown }>({
       query: ({ key, value }) => ({ url: `/admin/settings/${key}`, method: 'PATCH', body: value }),
-      invalidatesTags: ['AppSettings', 'Models', 'Session', 'McpServers', 'MyConnections'],
+      invalidatesTags: ['AppSettings', 'Models', 'Session', 'McpServers', 'MyConnections', 'Usage', 'ApiKeys', 'OwnMcp'],
     }),
   }),
 });
@@ -356,6 +524,7 @@ export const {
   useMySessionsQuery,
   useRevokeSessionMutation,
   useUpdateMySettingsMutation,
+  useMySettingsQuery,
   useModelsQuery,
   useChatsQuery,
   useChatQuery,
@@ -406,7 +575,47 @@ export const {
   useLookupLdapUserMutation,
   useAppSettingsQuery,
   useUpdateAppSettingMutation,
+  useWorkspaceModelsQuery,
+  useCreateWorkspaceModelMutation,
+  useUpdateWorkspaceModelMutation,
+  useDeleteWorkspaceModelMutation,
+  usePromptsQuery,
+  useCreatePromptMutation,
+  useUpdatePromptMutation,
+  useDeletePromptMutation,
+  useGrantsQuery,
+  useSetGrantsMutation,
+  useMyGroupsQuery,
+  useFindUsersQuery,
+  useMemoriesQuery,
+  useAddMemoryMutation,
+  useUpdateMemoryMutation,
+  useDeleteMemoryMutation,
+  useClearMemoriesMutation,
+  useApiKeysQuery,
+  useCreateApiKeyMutation,
+  useDeleteApiKeyMutation,
+  useMyUsageQuery,
+  useOwnMcpServersQuery,
+  useCreateOwnMcpServerMutation,
+  useUpdateOwnMcpServerMutation,
+  useDeleteOwnMcpServerMutation,
+  useAdminUserAccessQuery,
+  useAdminSetUserGroupsMutation,
+  useAdminGroupsQuery,
+  useCreateGroupMutation,
+  useUpdateGroupMutation,
+  useDeleteGroupMutation,
+  useGroupMembersQuery,
+  useAddGroupMemberMutation,
+  useRemoveGroupMemberMutation,
 } = api;
+
+/** The signed-in user's permissions (all false until known). */
+export function usePermissions(): Permissions | null {
+  const { data } = api.useSessionQuery();
+  return data?.permissions ?? null;
+}
 
 /** A human message for an RTK Query error. */
 export function errorMessage(error: unknown): string | null {

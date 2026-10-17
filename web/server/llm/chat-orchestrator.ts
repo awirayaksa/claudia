@@ -32,6 +32,9 @@ import { NO_TOOLS, type RunToolset } from './tools';
 import { fallbackTitle, generateFollowUps, generateTitle } from './tasks';
 import type { FileService } from '../modules/files/service';
 import type { SkillService } from '../modules/skills/service';
+import type { UsageService } from '../modules/usage/service';
+import { memoryPrompt } from '../modules/memories/routes';
+import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
 
 /** Streaming replies are written to the database at most this often. */
 const PERSIST_INTERVAL_MS = 500;
@@ -44,8 +47,10 @@ export interface OrchestratorDeps {
   runs: RunHub;
   settings: AppSettings;
   log: FastifyBaseLogger;
-  /** Tools from the user's MCP pools. */
-  toolsFor?: (user: AuthUser, toolIds: string[]) => Promise<RunToolset>;
+  /** Tools from the user's MCP pools (`alwaysOn`: a custom model's, used even if the user switched them off). */
+  toolsFor?: (user: AuthUser, toolIds: string[], alwaysOn: string[]) => Promise<RunToolset>;
+  /** Token and cost caps (without it, nothing is capped). */
+  usage?: UsageService;
   /** Attachments (without it, fileIds are rejected). */
   files?: FileService;
   /** `/skill` invocations (without it, a skill in the request is rejected). */
@@ -89,6 +94,7 @@ export class ChatOrchestrator {
     }
 
     const chat = await this.repo.getOwned(user.id, chatId);
+    await this.deps.usage?.check(user);
     const targetsResolved = await Promise.all(req.modelIds.map((id) => models.resolve(id, user.role, user.id)));
     const limits = await settings.get('limits');
 
@@ -233,29 +239,48 @@ export class ChatOrchestrator {
   private async execute(plan: RunPlan): Promise<void> {
     const { run, user, chat, req } = plan;
     const [userRow] = await this.deps.db.select({ settings: users.settings }).from(users).where(eq(users.id, user.id));
-    const prefs = (userRow?.settings as UserSettings | undefined)?.preferences ?? {};
+    const userSettings = (userRow?.settings as UserSettings | undefined) ?? {};
+    const prefs = userSettings.preferences ?? {};
+    const vars: SystemValues = { userName: user.name };
+    const sys = (content: string): ChatMessage => ({ role: 'system', content: fillSystemVariables(content, vars) });
 
-    // System prompts, most general first: the user's, each folder's, the chat's
-    const system: ChatMessage[] = [];
-    if (typeof prefs.systemPrompt === 'string' && prefs.systemPrompt.trim()) {
-      system.push({ role: 'system', content: prefs.systemPrompt });
+    // System prompts, most general first: the user's, the custom model's,
+    // memories, the skill, each folder's, the chat's
+    const before: ChatMessage[] = [];
+    if (typeof prefs.systemPrompt === 'string' && prefs.systemPrompt.trim()) before.push(sys(prefs.systemPrompt));
+    const after: ChatMessage[] = [];
+    if (userSettings.memory?.enabled !== false) {
+      const memory = await memoryPrompt(this.deps.db, user.id);
+      if (memory) after.push({ role: 'system', content: memory });
     }
     // Like the desktop: the skill follows the global prompt
-    if (plan.skillPrompt) system.push({ role: 'system', content: plan.skillPrompt });
+    if (plan.skillPrompt) after.push({ role: 'system', content: plan.skillPrompt });
     for (const f of await this.repo.folderChain(user.id, chat.folderId)) {
-      if (f.systemPrompt?.trim()) system.push({ role: 'system', content: f.systemPrompt });
+      if (f.systemPrompt?.trim()) after.push(sys(f.systemPrompt));
     }
-    if (chat.params.systemPrompt?.trim()) system.push({ role: 'system', content: chat.params.systemPrompt });
+    if (chat.params.systemPrompt?.trim()) after.push(sys(chat.params.systemPrompt));
 
-    const toolset = this.deps.toolsFor ? await this.deps.toolsFor(user, req.toolIds) : NO_TOOLS;
+    // A custom model's tools are on whenever it answers
+    const toolsets = new Map<string, Promise<RunToolset>>();
+    const toolsetFor = (target: ResolvedModel) => {
+      const alwaysOn = target.custom?.toolIds ?? [];
+      const key = alwaysOn.join('\n');
+      if (!toolsets.has(key)) {
+        toolsets.set(
+          key,
+          this.deps.toolsFor ? this.deps.toolsFor(user, [...new Set([...req.toolIds, ...alwaysOn])], alwaysOn) : Promise.resolve(NO_TOOLS)
+        );
+      }
+      return toolsets.get(key)!;
+    };
     const fileOpts = await this.fileOptions(user, [...plan.history, plan.userNode]);
 
     const results = await Promise.all(
-      plan.targets.map((t, i) =>
+      plan.targets.map(async (t, i) =>
         this.runModel(plan, t.assistantId, t.model, {
-          system,
+          system: [...before, ...(t.model.custom?.systemPrompt.trim() ? [sys(t.model.custom.systemPrompt)] : []), ...after],
           prefs,
-          toolset,
+          toolset: await toolsetFor(t.model),
           fileOpts,
           reportTrim: i === 0,
         })
@@ -306,12 +331,18 @@ export class ChatOrchestrator {
     let status: RunStatus = 'completed';
     let error: string | undefined;
 
+    // Request, then chat, then custom model, then the user's preferences
+    const model = target.custom?.params ?? {};
     const effort: ReasoningEffort | undefined = coerceEffort(
-      resolveEffort(req.params.effort ?? null, null, opts.prefs.reasoningEffort ?? null),
+      resolveEffort(req.params.effort ?? null, model.effort ?? null, opts.prefs.reasoningEffort ?? null),
       target.providerModelId
     );
-    const temperature: number | undefined = req.params.temperature ?? chat.params.temperature ?? opts.prefs.temperature;
-    const maxTokens = chat.params.maxTokens;
+    const temperature: number | undefined =
+      req.params.temperature ?? chat.params.temperature ?? model.temperature ?? opts.prefs.temperature;
+    const maxTokens = chat.params.maxTokens ?? model.maxTokens;
+    const topP = chat.params.topP ?? model.topP;
+    const frequencyPenalty = chat.params.frequencyPenalty ?? model.frequencyPenalty;
+    const presencePenalty = chat.params.presencePenalty ?? model.presencePenalty;
 
     const budget = fitToContext({
       model: target.providerModelId,
@@ -366,9 +397,9 @@ export class ChatOrchestrator {
           messages: [...budget.messages, ...turnSoFar],
           ...(temperature !== undefined ? { temperature } : {}),
           ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
-          ...(chat.params.topP !== undefined ? { top_p: chat.params.topP } : {}),
-          ...(chat.params.frequencyPenalty !== undefined ? { frequency_penalty: chat.params.frequencyPenalty } : {}),
-          ...(chat.params.presencePenalty !== undefined ? { presence_penalty: chat.params.presencePenalty } : {}),
+          ...(topP !== undefined ? { top_p: topP } : {}),
+          ...(frequencyPenalty !== undefined ? { frequency_penalty: frequencyPenalty } : {}),
+          ...(presencePenalty !== undefined ? { presence_penalty: presencePenalty } : {}),
           ...(effort ? { reasoning_effort: effort } : {}),
           ...(offerTools ? { tools, tool_choice: 'auto' as const } : tools.length > 0 ? { tool_choice: 'none' as const } : {}),
         };

@@ -1,8 +1,8 @@
 import type { FastifyInstance } from 'fastify';
-import { and, asc, desc, eq, ilike, isNull, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ServerContext } from '../../context';
-import { sessions, users, type UserSettings } from '../../db/schema';
+import { groupMembers, groups, sessions, users, type UserSettings } from '../../db/schema';
 import { badRequest, conflict, notFound, unauthorized } from '../../lib/errors';
 import { currentUser, requireAdmin, requireSignedIn } from '../../auth/rbac';
 import { hashPassword, verifyPassword } from '../../auth/passwords';
@@ -78,6 +78,9 @@ export async function meRoutes(app: FastifyInstance, ctx: ServerContext): Promis
     await ctx.db.update(users).set({ settings: merged, updatedAt: new Date() }).where(eq(users.id, me.id));
     return { settings: merged };
   });
+
+  // Tokens and cost so far today and this month, against the caps
+  app.get('/usage', async (req) => ({ usage: await ctx.usage.summary(currentUser(req)) }));
 
   app.get('/sessions', async (req): Promise<{ sessions: SessionInfo[] }> => {
     const me = currentUser(req);
@@ -162,6 +165,7 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
         ...(body.name ? { name: body.name } : {}),
         ...(body.role ? { role: body.role } : {}),
         ...(body.password ? { passwordHash: await hashPassword(body.password) } : {}),
+        ...(body.caps !== undefined ? { caps: body.caps } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, id))
@@ -178,8 +182,53 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
     if (existing.role === 'admin' && (await countAdmins(ctx, id)) === 0) {
       throw conflict('This is the only admin.', 'last_admin');
     }
-    // Sessions, chats, folders and connections cascade
+    // Sessions, chats, folders, connections, models and memberships cascade
     await ctx.db.delete(users).where(eq(users.id, id));
+    await ctx.access.removePrincipal('user', id);
+    return { ok: true };
+  });
+
+  // Groups, caps, permissions and usage of one user
+  app.get('/:id/access', async (req) => {
+    const { id } = z.object({ id: z.uuid() }).parse(req.params);
+    const [row] = await ctx.db.select().from(users).where(eq(users.id, id));
+    if (!row) throw notFound('User');
+    const memberships = await ctx.db
+      .select({ id: groups.id, name: groups.name, source: groupMembers.source })
+      .from(groupMembers)
+      .innerJoin(groups, eq(groups.id, groupMembers.groupId))
+      .where(eq(groupMembers.userId, id))
+      .orderBy(asc(groups.name));
+    return {
+      groups: memberships,
+      caps: row.caps ?? null,
+      permissions: await ctx.access.permissionsFor(row),
+      usage: await ctx.usage.summary(row),
+    };
+  });
+
+  // The groups an admin put the user in (directory-synced memberships stay)
+  app.put('/:id/groups', async (req) => {
+    const { id } = z.object({ id: z.uuid() }).parse(req.params);
+    const { groupIds } = z.object({ groupIds: z.array(z.uuid()).max(500) }).parse(req.body);
+    const [row] = await ctx.db.select({ id: users.id }).from(users).where(eq(users.id, id));
+    if (!row) throw notFound('User');
+    const wanted = [...new Set(groupIds)];
+    if (wanted.length > 0) {
+      const found = await ctx.db.select({ id: groups.id }).from(groups).where(inArray(groups.id, wanted));
+      if (found.length !== wanted.length) throw notFound('Group');
+    }
+    await ctx.db.transaction(async (tx) => {
+      await tx
+        .delete(groupMembers)
+        .where(and(eq(groupMembers.userId, id), eq(groupMembers.source, 'manual'), wanted.length ? notInArray(groupMembers.groupId, wanted) : undefined));
+      if (wanted.length > 0) {
+        await tx
+          .insert(groupMembers)
+          .values(wanted.map((groupId) => ({ groupId, userId: id, source: 'manual' as const })))
+          .onConflictDoNothing();
+      }
+    });
     return { ok: true };
   });
 }

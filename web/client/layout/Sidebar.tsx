@@ -262,6 +262,7 @@ export function Sidebar() {
           trigger={<DotsIcon />}
           placement="above"
           items={[
+            { label: t('nav.workspace'), onSelect: () => navigate('/workspace/models') },
             { label: t('nav.settings'), onSelect: () => navigate('/settings') },
             ...(session?.user?.role === 'admin' ? [{ label: t('nav.admin'), onSelect: () => navigate('/admin/users') }] : []),
             'separator',

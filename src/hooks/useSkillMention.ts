@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import type { Skill } from '../types/skill.types';
 
 export interface SkillMentionResult {
@@ -21,15 +21,19 @@ export interface SkillMentionResult {
 export function useSkillMention(skills: Skill[]): SkillMentionResult {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [filteredSkills, setFilteredSkills] = useState<Skill[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Derived, so commands that arrive while the menu is open show up too
+  const filteredSkills = useMemo(() => {
+    if (!isOpen) return [];
+    const q = query.toLowerCase();
+    return q ? skills.filter((s) => s.id.startsWith(q) || s.name.toLowerCase().includes(q)) : skills;
+  }, [isOpen, query, skills]);
   const triggerIndexRef = useRef<number | null>(null);
 
   const close = useCallback(() => {
     setIsOpen(false);
     setQuery('');
     setActiveIndex(0);
-    setFilteredSkills([]);
     triggerIndexRef.current = null;
   }, []);
 
@@ -62,20 +66,12 @@ export function useSkillMention(skills: Skill[]): SkillMentionResult {
         return;
       }
 
-      const q = rawQuery.toLowerCase();
-      const filtered = q
-        ? skills.filter(
-            (s) => s.id.startsWith(q) || s.name.toLowerCase().includes(q)
-          )
-        : skills;
-
       setQuery(rawQuery);
-      setFilteredSkills(filtered);
       setActiveIndex(0);
       setIsOpen(true);
       triggerIndexRef.current = slashIdx;
     },
-    [skills, isOpen, close]
+    [isOpen, close]
   );
 
   const buildReplacement = useCallback(

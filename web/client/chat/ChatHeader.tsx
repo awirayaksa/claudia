@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { Modal } from '@/components/common/Modal';
 import { useAppSelector } from '@/store';
 import type { ChatDetail, ChatParams } from '@shared/chats';
-import { errorMessage, useShareChatMutation, useUnshareChatMutation, useUpdateChatMutation } from '../api/rtk-api';
+import { errorMessage, usePermissions, useShareChatMutation, useUnshareChatMutation, useUpdateChatMutation } from '../api/rtk-api';
 import { Menu } from '../components/Menu';
 import { DotsIcon, GhostIcon, ShareIcon, SlidersIcon } from '../components/icons';
 import { downloadFrom } from './download';
@@ -29,6 +29,7 @@ export function ChatHeader({
   const [updateChat] = useUpdateChatMutation();
   const [dialog, setDialog] = useState<'settings' | 'share' | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const permissions = usePermissions();
 
   const iconBtn = 'rounded p-2 text-text-secondary hover:bg-surface hover:text-text-primary';
   const isTemporary = chat ? chat.temporary : temporary;
@@ -63,7 +64,7 @@ export function ChatHeader({
         )}
       </div>
 
-      {!chat && (
+      {!chat && permissions?.['chat.temporary'] && (
         <button
           className={`${iconBtn} ${temporary ? 'bg-surface text-accent' : ''}`}
           aria-pressed={temporary}
@@ -80,7 +81,7 @@ export function ChatHeader({
           <button className={iconBtn} aria-label={t('chat.settings')} title={t('chat.settings')} onClick={() => setDialog('settings')}>
             <SlidersIcon />
           </button>
-          {!chat.temporary && (
+          {!chat.temporary && permissions?.['chat.share'] && (
             <button className={iconBtn} aria-label={t('chat.share')} title={t('chat.share')} onClick={() => setDialog('share')}>
               <ShareIcon />
             </button>
@@ -89,11 +90,15 @@ export function ChatHeader({
             label={t('chat.actions')}
             trigger={<DotsIcon />}
             items={[
-              {
-                label: t('chat.export'),
-                onSelect: () =>
-                  void downloadFrom(`/api/chats/${chat.id}/export`, 'claudia-chat.json').catch((e) => setError(errorMessage(e))),
-              },
+              ...(permissions?.['chat.export']
+                ? [
+                    {
+                      label: t('chat.export'),
+                      onSelect: () =>
+                        void downloadFrom(`/api/chats/${chat.id}/export`, 'claudia-chat.json').catch((e) => setError(errorMessage(e))),
+                    },
+                  ]
+                : []),
               {
                 label: chat.archived ? t('chat.unarchive') : t('chat.archive'),
                 onSelect: async () => {

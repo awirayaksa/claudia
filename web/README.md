@@ -5,7 +5,36 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 2** (rich chat UX). Phase 2 adds:
+Status: **Phase 3** (workspace). Phase 3 adds:
+
+- **Groups and permissions** (Admin → Groups, Admin → Settings): every user
+  gets the default permissions (sharing chats, exporting, temporary chats,
+  creating models and prompts, own tool servers, own LLM connections, API
+  keys); groups add permissions, extra models and higher usage caps. Groups
+  can be linked to directory groups and synced at each LDAP sign-in, and an
+  LDAP admin group can make admins.
+- **Model builder** (Workspace → Models): a custom model is a base model with
+  its own system prompt (`{{USER_NAME}}`, `{{CURRENT_DATE}}` …), parameters,
+  tools and starter prompts. It is private until shared with groups, people or
+  everyone, and runs with its owner's model access, so a group can get an
+  assistant without the raw model.
+- **Prompt library** (Workspace → Prompts): `/command` texts with
+  `{{variables}}` (and `{{name:default}}`) that the composer asks for before
+  putting the text in the message box. Shared the same way as models.
+- **Memory** (Settings → Memory): things every chat should know about you,
+  sent with each message (can be switched off).
+- **Your own tool servers** (Settings → Tools): remote MCP servers (HTTP or
+  SSE) through the SSRF guard, with the `mcp.user_servers` permission.
+- **API keys and an OpenAI-compatible API** (Settings → API keys): `ck-…`
+  keys for `https://<host>/api/v1` (`/models`, `/chat/completions`, streaming
+  and tool calls). The OpenAI SDKs and Claudia desktop (as a custom OpenAI
+  provider) work against it. Keys work only there, only while their owner
+  has the permission, and count against the caps.
+- **Usage caps** (Admin → Settings, groups, and per user under Admin → Users
+  → Access): tokens and known cost per UTC day and month. A request is refused
+  once a cap is reached; admins are not capped.
+
+Phase 2 (rich chat UX):
 
 - **Math and diagrams:** LaTeX (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`, with prices
   like "$5" left alone) and Mermaid diagrams (loaded on first use, strict
@@ -53,8 +82,9 @@ settings, rate limits, a responsive UI) and Phase 1b:
   images.
 - **Skills** stored in the database (built-ins plus each user's own;
   `/skill args` in the composer).
-- **Personal connections** (off by default; Admin → Settings): users add their
-  own API keys, and every request they cause goes through the SSRF guard.
+- **Personal connections** (the `connections.own` permission, off by
+  default): users add their own API keys, and every request they cause goes
+  through the SSRF guard.
 
 The first account to sign up becomes the admin (or set
 `CLAUDIA_ADMIN_EMAIL` / `CLAUDIA_ADMIN_PASSWORD`). Add a connection under
@@ -74,7 +104,7 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 | Command | What it does |
 |---|---|
 | `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test) and client tests |
-| `npm run test:e2e` | Browser tests of the Phase 1a, 1b and 2 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
+| `npm run test:e2e` | Browser tests of the Phase 1a–3 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
 | `npm run type-check` | Client and server, including the shared `../src` code |
 | `npm run build` | Client (`dist/client`) and server bundle (`dist/server/index.cjs`) |
 | `npm start` | Run the production build |
@@ -140,6 +170,23 @@ headers and environment variables, the LDAP bind password) with the new key.
 
 On a managed PostgreSQL where the app's role can't create extensions, run
 `CREATE EXTENSION vector;` once as an administrator before the first start.
+
+## OpenAI-compatible API
+
+Create a key under Settings → API keys (needs the `api.keys` permission,
+off by default), then:
+
+```bash
+curl https://claudia.example.com/api/v1/chat/completions \
+  -H "Authorization: Bearer ck-…" -H "Content-Type: application/json" \
+  -d '{"model": "openai/gpt-4o", "messages": [{"role": "user", "content": "Hi"}]}'
+```
+
+Model ids are the ones in `GET /api/v1/models` (`<connection prefix>/<model>`,
+`custom/<id>` for custom models). Tools in the request go to the model and
+its tool calls come back to you; the server's own tools (MCP) are for chats in
+the app only. Claudia desktop can use it as an OpenAI-compatible custom
+provider with the base URL `https://claudia.example.com/api/v1`.
 
 ## Note for Windows developers
 

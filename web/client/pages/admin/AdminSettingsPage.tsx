@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import type { AppSettingsResponse } from '@shared/settings';
 import { errorMessage, useAppSettingsQuery, useModelsQuery, useUpdateAppSettingMutation } from '../../api/rtk-api';
+import { CapsFields, PermissionChecks } from '../../components/AccessFields';
 
 /** The built-in tool servers (each user gets their own, confined to their workspace). */
 const BUILTIN_IDS = ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'] as const;
@@ -24,7 +25,8 @@ export function AdminSettingsPage() {
   }, [data]);
 
   if (!draft) return <p className="text-sm text-text-secondary">{t('app.loading')}</p>;
-  const allModels = models?.models ?? [];
+  // Allowlists and defaults are about connection models, not custom ones
+  const allModels = (models?.models ?? []).filter((m) => !m.custom && !m.own);
   const allowlist = draft['models.allowlist'].user;
 
   const set = <K extends keyof AppSettingsResponse>(key: K, value: AppSettingsResponse[K]) => {
@@ -195,14 +197,23 @@ export function AdminSettingsPage() {
           />
           <span className="mt-1 block text-xs text-text-secondary">{t('admin.netAllowlistHelp')}</span>
         </label>
-        <label className="mt-3 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={draft['connections.user'].enabled}
-            onChange={(e) => set('connections.user', { enabled: e.target.checked })}
-          />
-          {t('admin.userConnections')}
-        </label>
+      </Card>
+
+      <Card title={t('access.defaultPermissions')}>
+        <p className="mb-3 text-sm text-text-secondary">{t('access.defaultPermissionsHelp')}</p>
+        <PermissionChecks
+          value={draft['permissions.default']}
+          onChange={(p) => set('permissions.default', { ...draft['permissions.default'], ...p })}
+        />
+      </Card>
+
+      <Card title={t('access.defaultCaps')}>
+        <p className="mb-3 text-sm text-text-secondary">{t('access.defaultCapsHelp')}</p>
+        <CapsFields
+          value={draft['caps.default']}
+          onChange={(c) => set('caps.default', { ...draft['caps.default'], ...c })}
+          emptyLabel={t('access.noLimit')}
+        />
       </Card>
 
       <div className="flex items-center gap-3">

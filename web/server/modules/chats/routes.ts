@@ -54,6 +54,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   app.post('/', async (req, reply) => {
     const me = currentUser(req);
     const body = CreateChatRequest.parse(req.body ?? {});
+    if (body.temporary) await ctx.access.require(me, 'chat.temporary');
     if (body.folderId) await repo.folderOwned(me.id, body.folderId);
     const [row] = await ctx.db
       .insert(chats)
@@ -72,6 +73,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
 
   // Every (non-temporary) chat of the user, as Claudia JSON
   app.get('/export', async (req, reply) => {
+    await ctx.access.require(currentUser(req), 'chat.export');
     const data = await transfer.exportChats(currentUser(req).id);
     reply.header('Content-Disposition', `attachment; filename="claudia-chats-${new Date().toISOString().slice(0, 10)}.json"`);
     return data;
@@ -189,6 +191,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
 
   app.get('/:id/export', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
+    await ctx.access.require(currentUser(req), 'chat.export');
     const data = await transfer.exportChats(currentUser(req).id, [id]);
     reply.header('Content-Disposition', 'attachment; filename="claudia-chat.json"');
     return data;
@@ -198,6 +201,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   app.post('/:id/share', async (req, reply) => {
     const me = currentUser(req);
     const { id } = IdParams.parse(req.params);
+    await ctx.access.require(me, 'chat.share');
     const chat = await repo.getOwned(me.id, id);
     if (chat.temporary) throw badRequest('Keep the chat before sharing it.', 'chat_temporary');
     const share = await ctx.shares.upsert(me.id, chat);
@@ -337,6 +341,7 @@ export async function llmRoutes(app: FastifyInstance, ctx: ServerContext): Promi
   app.post('/complete', { config: completionRateLimit(ctx) }, async (req) => {
     const me = currentUser(req);
     const body = LlmCompleteRequest.parse(req.body);
+    await ctx.usage.check(me);
     const target = await ctx.models.resolve(body.model, me.role, me.id);
     const response = await target.provider.chatCompletion({
       model: target.providerModelId,

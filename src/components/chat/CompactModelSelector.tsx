@@ -7,6 +7,8 @@ interface CompactModelSelectorProps {
   models: string[];
   onChange: (model: string) => void;
   disabled?: boolean;
+  /** Display name of a model id (defaults to the id). */
+  label?: (model: string) => string;
 }
 
 export function CompactModelSelector({
@@ -14,6 +16,7 @@ export function CompactModelSelector({
   models,
   onChange,
   disabled = false,
+  label = (model) => model,
 }: CompactModelSelectorProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -80,12 +83,12 @@ export function CompactModelSelector({
   };
 
   const isModelAvailable = models.includes(value);
-  const truncatedName = truncateModelName(value, 20);
+  const truncatedName = truncateModelName(label(value), 20);
 
-  // Sort models alphabetically (ensure all models are strings)
+  // Sort models alphabetically by what is shown (ensure all models are strings)
   const sortedModels = [...models]
     .map((m) => (typeof m === 'string' ? m : String(m)))
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => label(a).localeCompare(label(b)));
 
   return (
     <div className="relative" onKeyDown={handleKeyDown}>
@@ -97,7 +100,7 @@ export function CompactModelSelector({
         className={`flex items-center gap-1.5 rounded border border-border bg-background px-3 py-2 text-sm text-text-primary transition-colors hover:border-accent focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${!isModelAvailable ? 'border-warning text-warning' : ''
           }`}
         style={{ minWidth: '140px', maxWidth: '180px' }}
-        title={isModelAvailable ? value : `${value} (unavailable)`}
+        title={isModelAvailable ? label(value) : `${label(value)} (unavailable)`}
         aria-label="Select model"
         aria-haspopup="listbox"
         aria-expanded={isOpen}
@@ -144,7 +147,7 @@ export function CompactModelSelector({
                     aria-selected={isSelected}
                   >
                     <span className="flex-1 truncate" title={model}>
-                      {model}
+                      {label(model)}
                     </span>
                     {isSelected && (
                       <svg

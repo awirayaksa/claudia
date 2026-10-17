@@ -4,6 +4,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { chatFixture, type ChatFixture } from '../../test/chat-fixture';
+import { DEFAULT_PERMISSIONS } from '../../../shared/access';
 
 let f: ChatFixture | undefined;
 afterEach(async () => {
@@ -31,7 +32,7 @@ describe('user connections', () => {
 
   it("can't reach private addresses unless the admin lists them", async () => {
     f = await chatFixture();
-    await f.admin.patch('/api/admin/settings/connections.user', { enabled: true });
+    await f.admin.patch('/api/admin/settings/permissions.default', { ...DEFAULT_PERMISSIONS, 'connections.own': true });
     const bob = await f.newUser('bob@example.com');
 
     // The mock endpoint is on 127.0.0.1: blocked for users (the admin's own connection to it still works)
@@ -62,7 +63,7 @@ describe('user connections', () => {
 
   it('serve only their owner', async () => {
     f = await chatFixture();
-    await f.admin.patch('/api/admin/settings/connections.user', { enabled: true });
+    await f.admin.patch('/api/admin/settings/permissions.default', { ...DEFAULT_PERMISSIONS, 'connections.own': true });
     await f.admin.patch('/api/admin/settings/net.allowlist', { hosts: ['127.0.0.1'] });
     const bob = await f.newUser('bob@example.com');
     const carol = await f.newUser('carol@example.com');
@@ -97,14 +98,14 @@ describe('user connections', () => {
     expect((await f.admin.patch(`/api/admin/connections/${conn.id}`, { name: 'x' })).statusCode).toBe(404);
 
     // Switching the feature off hides the models but lets Bob delete his key
-    await f.admin.patch('/api/admin/settings/connections.user', { enabled: false });
+    await f.admin.patch('/api/admin/settings/permissions.default', DEFAULT_PERMISSIONS);
     expect((await bob.get('/api/models')).json().models.some((m: any) => m.own)).toBe(false);
     expect((await bob.delete(`/api/connections/${conn.id}`)).statusCode).toBe(200);
   });
 
   it('validate the endpoint URL', async () => {
     f = await chatFixture();
-    await f.admin.patch('/api/admin/settings/connections.user', { enabled: true });
+    await f.admin.patch('/api/admin/settings/permissions.default', { ...DEFAULT_PERMISSIONS, 'connections.own': true });
     for (const baseUrl of ['', 'file:///etc/passwd', 'http://user:pw@example.com/v1']) {
       const res = await f.admin.post('/api/connections', { ...input(f), baseUrl });
       expect(res.statusCode, baseUrl).toBe(400);

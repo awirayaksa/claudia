@@ -36,6 +36,23 @@ export const LdapSettings = z.object({
   timeoutMs: z.number().int().min(1000).max(60_000),
   /** How often a signed-in directory user is re-checked (on token refresh). */
   verifyIntervalMinutes: z.number().int().min(1).max(1440),
+  /** Sync memberships of groups linked to directory groups at each sign-in. */
+  groupSync: z.boolean(),
+  /** memberOf: read the user's memberOf attribute (AD, OpenLDAP memberof overlay); search: run groupFilter. */
+  groupMode: z.enum(['memberOf', 'search']),
+  groupSearchBase: z.string().trim().max(500),
+  /**
+   * With {{dn}} (the user's DN) or {{username}}, e.g. (member={{dn}}); AD
+   * nested groups: (member:1.2.840.113556.1.4.1941:={{dn}}).
+   */
+  groupFilter: z
+    .string()
+    .trim()
+    .max(1000)
+    .refine((v) => v.includes('{{dn}}') || v.includes('{{username}}'), 'The filter must contain {{dn}} or {{username}}')
+    .refine((v) => v.startsWith('(') && v.endsWith(')'), 'The filter must be wrapped in parentheses'),
+  /** Members of this directory group are admins here; others lose admin at sign-in. */
+  adminGroupDn: z.string().trim().max(500).nullable(),
 });
 export type LdapSettings = z.infer<typeof LdapSettings>;
 

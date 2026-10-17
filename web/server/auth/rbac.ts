@@ -9,6 +9,10 @@ import { sessions, users } from '../db/schema';
 import { forbidden, unauthorized } from '../lib/errors';
 import { ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER, type AuthUser } from './sessions';
 import { safeEqualHex, verifyAccessToken } from './tokens';
+import { authenticateApiKey } from './api-keys';
+
+/** The OpenAI-compatible API: Bearer API keys only, never cookies (so no CSRF check). */
+export const API_V1_PREFIX = '/api/v1/';
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -32,6 +36,14 @@ export function registerAuthHooks(app: FastifyInstance, ctx: ServerContext): voi
   app.addHook('onRequest', async (req) => {
     req.user = null;
     req.authError = 'none';
+    if (req.url.startsWith(API_V1_PREFIX)) {
+      const header = req.headers.authorization;
+      const bearer = typeof header === 'string' && /^Bearer\s+/i.test(header) ? header.replace(/^Bearer\s+/i, '').trim() : '';
+      if (!bearer) return;
+      req.user = await authenticateApiKey(ctx, bearer);
+      if (!req.user) req.authError = 'invalid';
+      return;
+    }
     const token = req.cookies[ACCESS_COOKIE];
     if (!token) return;
 
@@ -84,7 +96,7 @@ export function registerAuthHooks(app: FastifyInstance, ctx: ServerContext): voi
   // Double-submit CSRF check on every state-changing API call. The sandbox
   // origin can neither read the cookie nor set the header.
   app.addHook('preHandler', async (req) => {
-    if (SAFE_METHODS.has(req.method) || !req.url.startsWith('/api/')) return;
+    if (SAFE_METHODS.has(req.method) || !req.url.startsWith('/api/') || req.url.startsWith(API_V1_PREFIX)) return;
     const cookie = req.cookies[CSRF_COOKIE];
     const header = req.headers[CSRF_HEADER];
     if (!cookie || typeof header !== 'string' || !safeEqualHex(cookie, header)) {

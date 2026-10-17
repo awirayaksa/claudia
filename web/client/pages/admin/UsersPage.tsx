@@ -13,6 +13,7 @@ import {
   useAdminUsersQuery,
   useSessionQuery,
 } from '../../api/rtk-api';
+import { UserAccessModal } from './UserAccessModal';
 
 const ROLES: UserRole[] = ['admin', 'user', 'pending'];
 
@@ -25,6 +26,7 @@ export function UsersPage() {
   const [deleteUser, deleteState] = useAdminDeleteUserMutation();
   const [creating, setCreating] = useState(false);
   const [toDelete, setToDelete] = useState<AdminUser | null>(null);
+  const [accessOf, setAccessOf] = useState<AdminUser | null>(null);
   const error = errorMessage(updateState.error ?? deleteState.error);
 
   return (
@@ -80,6 +82,11 @@ export function UsersPage() {
                   </option>
                 ))}
               </select>
+              {u.role === 'user' && (
+                <Button size="sm" variant="secondary" onClick={() => setAccessOf(u)}>
+                  {t('access.access')}
+                </Button>
+              )}
               {!self && (
                 <Button size="sm" variant="ghost" className="text-error" onClick={() => setToDelete(u)}>
                   {t('app.delete')}
@@ -91,6 +98,7 @@ export function UsersPage() {
       </ul>
 
       <CreateUserModal open={creating} onClose={() => setCreating(false)} />
+      {accessOf && <UserAccessModal user={accessOf} onClose={() => setAccessOf(null)} />}
       <ConfirmDialog
         isOpen={!!toDelete}
         onClose={() => setToDelete(null)}

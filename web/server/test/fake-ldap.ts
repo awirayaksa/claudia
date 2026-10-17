@@ -10,7 +10,14 @@ export const BASE_DN = 'dc=example,dc=com';
 export const PEOPLE_DN = `ou=people,${BASE_DN}`;
 export const SERVICE_DN = `cn=svc,${BASE_DN}`;
 export const SERVICE_PASSWORD = 'svc-secret';
-export const STAFF_GROUP_DN = `cn=staff,ou=groups,${BASE_DN}`;
+export const GROUPS_DN = `ou=groups,${BASE_DN}`;
+export const STAFF_GROUP_DN = `cn=staff,${GROUPS_DN}`;
+
+/** A groupOfNames entry under ou=groups; members by uid. */
+export interface FakeGroup {
+  cn: string;
+  members: string[];
+}
 
 export interface FakeUser {
   uid: string;
@@ -34,7 +41,7 @@ export interface FakeLdap {
 
 const dnOf = (uid: string) => `uid=${uid},${PEOPLE_DN}`;
 
-export async function startFakeLdap(initial: FakeUser[]): Promise<FakeLdap> {
+export async function startFakeLdap(initial: FakeUser[], groups: FakeGroup[] = []): Promise<FakeLdap> {
   const users = new Map(initial.map((u) => [u.uid, u]));
   const binds: FakeLdap['binds'] = [];
   const filters: string[] = [];
@@ -78,6 +85,17 @@ export async function startFakeLdap(initial: FakeUser[]): Promise<FakeLdap> {
         ...(u.memberOf ? { memberOf: u.memberOf } : {}),
         ...(u.userAccountControl !== undefined ? { userAccountControl: String(u.userAccountControl) } : {}),
       };
+      if (req.filter.matches(attributes, false)) res.send({ dn, attributes });
+    }
+    res.end();
+  });
+
+  server.search(GROUPS_DN, (req: any, res: any, next: any) => {
+    if (!sameDn(req.connection.boundDn ?? '', SERVICE_DN)) return next(new ldap.InsufficientAccessRightsError());
+    filters.push(req.filter.toString());
+    for (const g of groups) {
+      const dn = `cn=${g.cn},${GROUPS_DN}`;
+      const attributes = { objectClass: ['groupOfNames'], cn: g.cn, member: g.members.map((uid) => dnOf(uid)) };
       if (req.filter.matches(attributes, false)) res.send({ dn, attributes });
     }
     res.end();
