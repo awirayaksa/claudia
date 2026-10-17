@@ -35,6 +35,16 @@ const EnvSchema = z.object({
   CLAUDIA_SANDBOX_ORIGIN: z.url().optional(),
   /** Root secret; HKDF derives the JWT and encryption keys from it. */
   CLAUDIA_SECRET_KEY: z.string().min(32, 'CLAUDIA_SECRET_KEY must be at least 32 characters').optional(),
+  /** Earlier root secrets, comma-separated, still accepted for decryption while rotating. */
+  CLAUDIA_SECRET_KEY_PREVIOUS: z.string().optional(),
+  /** Local email + password login. Off for directory-only installs. */
+  ENABLE_PASSWORD_AUTH: bool.default(true),
+  /**
+   * Single-host trials: serve the sandbox pages on this port of the same host
+   * (a different port is a different origin). Ignored when
+   * CLAUDIA_SANDBOX_ORIGIN points elsewhere.
+   */
+  CLAUDIA_SANDBOX_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   /** stdio MCP servers run commands on the host; admins only, and only when this is on. */
   CLAUDIA_ALLOW_STDIO_MCP: bool.default(false),
   CLAUDIA_ADMIN_EMAIL: z.email().optional(),
@@ -49,6 +59,9 @@ export interface AppConfig extends Env {
   isProduction: boolean;
   /** DATA_DIR as an absolute path. */
   dataDir: string;
+  /** Session cookies get `Secure` (served over HTTPS). */
+  secureCookies: boolean;
+  previousSecretKeys: string[];
 }
 
 export class ConfigError extends Error {
@@ -70,5 +83,10 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     ...cfg,
     isProduction: cfg.NODE_ENV === 'production',
     dataDir: path.resolve(cfg.DATA_DIR),
+    secureCookies: cfg.CLAUDIA_PUBLIC_URL?.startsWith('https://') ?? false,
+    previousSecretKeys: (cfg.CLAUDIA_SECRET_KEY_PREVIOUS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
   };
 }

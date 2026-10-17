@@ -6,14 +6,14 @@ import { describe, it, expect } from 'vitest';
 import { sql } from 'drizzle-orm';
 import { openDatabase } from './client';
 import { appConfig } from './schema';
-import { MIGRATIONS_DIR } from '../test/helpers';
+import { MIGRATIONS_DIR, openTestDatabase } from '../test/helpers';
 
 const engines: Array<{ name: string; url?: string }> = [{ name: 'pglite' }];
 if (process.env.TEST_DATABASE_URL) engines.push({ name: 'postgres', url: process.env.TEST_DATABASE_URL });
 
 describe.each(engines)('migrations on $name', ({ url }) => {
   it('apply cleanly, are idempotent, and give a working schema with pgvector', async () => {
-    const db = await openDatabase({ url });
+    const db = url ? await openTestDatabase(url) : await openDatabase({});
     try {
       const first = await db.migrate(MIGRATIONS_DIR);
       expect(first.pending).toBe(0);

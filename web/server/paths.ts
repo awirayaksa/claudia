@@ -23,3 +23,8 @@ export function defaultMigrationsDir(): string {
 export function defaultClientDir(): string | undefined {
   return firstExisting([path.join(here, '..', 'client'), path.join(here, '..', 'dist', 'client')]);
 }
+
+/** Static sandbox pages: dist/sandbox in the bundle, web/sandbox in development. */
+export function defaultSandboxDir(): string | undefined {
+  return firstExisting([path.join(here, '..', 'sandbox')]);
+}

@@ -111,9 +111,22 @@ export function createWebPlatform(opts: WebPlatformOptions = {}): ClaudiaPlatfor
       profiles: false,
     },
     config: {
-      // Per-user settings live on the server (Phase 1a)
-      get: async () => ({}),
-      set: async () => {},
+      // Per-user appearance and preferences, stored on the server
+      get: async () => {
+        try {
+          return (await apiFetch<{ settings: Record<string, unknown> }>('/api/me/settings')).settings;
+        } catch {
+          return {};
+        }
+      },
+      set: async (config: { appearance?: unknown; preferences?: unknown }) => {
+        const patch: Record<string, unknown> = {};
+        if (config.appearance) patch.appearance = config.appearance;
+        if (config.preferences) patch.preferences = config.preferences;
+        if (Object.keys(patch).length > 0) {
+          await apiFetch('/api/me/settings', { method: 'PATCH', json: patch });
+        }
+      },
     },
     mcp,
     plugins,

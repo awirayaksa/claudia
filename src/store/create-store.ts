@@ -1,4 +1,4 @@
-import { combineSlices, configureStore, type Reducer } from '@reduxjs/toolkit';
+import { combineSlices, configureStore, type Middleware, type Reducer } from '@reduxjs/toolkit';
 import settingsReducer from './slices/settingsSlice';
 import uiReducer from './slices/uiSlice';
 import mcpReducer from './slices/mcpSlice';
@@ -26,7 +26,7 @@ export type SharedRootState = {
  */
 export function createAppStore<Extra extends Record<string, Reducer>>(
   extraReducers: Extra,
-  options: { ignoredActions?: string[]; ignoredPaths?: string[] } = {}
+  options: { ignoredActions?: string[]; ignoredPaths?: string[]; extraMiddleware?: Middleware[] } = {}
 ) {
   const reducer = combineSlices(sharedReducers, extraReducers);
   return configureStore({
@@ -37,6 +37,6 @@ export function createAppStore<Extra extends Record<string, Reducer>>(
           ignoredActions: options.ignoredActions ?? [],
           ignoredPaths: options.ignoredPaths ?? [],
         },
-      }),
+      }).concat(options.extraMiddleware ?? []),
   });
 }

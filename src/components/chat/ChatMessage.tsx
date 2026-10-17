@@ -77,14 +77,17 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
             >
               {copied ? '✓' : 'Copy'}
             </button>
-            <button
-              onClick={() => onEdit?.(message.id, message.content, message.attachments)}
-              disabled={disabled}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-              title="Edit message"
-            >
-              Edit
-            </button>
+            {/* Actions show only where the host supports them */}
+            {onEdit && (
+              <button
+                onClick={() => onEdit(message.id, message.content, message.attachments)}
+                disabled={disabled}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                title="Edit message"
+              >
+                Edit
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -169,20 +172,24 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
             >
               {copied ? '✓ Copied' : '⎘ Copy'}
             </button>
-            <button
-              onClick={() => onRetry?.(message.id)}
-              disabled={disabled}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              ↻ Retry
-            </button>
-            <button
-              onClick={() => onBranch?.(message.id)}
-              disabled={disabled}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              ↗ Branch
-            </button>
+            {onRetry && (
+              <button
+                onClick={() => onRetry(message.id)}
+                disabled={disabled}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                ↻ Retry
+              </button>
+            )}
+            {onBranch && (
+              <button
+                onClick={() => onBranch(message.id)}
+                disabled={disabled}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                ↗ Branch
+              </button>
+            )}
             <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👍</button>
             <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👎</button>
           </div>

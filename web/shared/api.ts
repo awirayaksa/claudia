@@ -18,6 +18,14 @@ export const ReadyResponse = z.object({
 });
 export type ReadyResponse = z.infer<typeof ReadyResponse>;
 
+/** Unauthenticated: what the client needs before anything else. */
+export const PublicConfig = z.object({
+  version: z.string(),
+  /** Origin of the sandbox pages (MCP-UI proxy, artifacts, previews); null when not configured. */
+  sandboxOrigin: z.string().nullable(),
+});
+export type PublicConfig = z.infer<typeof PublicConfig>;
+
 /** Every error response has this shape. */
 export const ApiError = z.object({
   error: z.object({
