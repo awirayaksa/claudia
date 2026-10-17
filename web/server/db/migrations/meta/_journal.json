@@ -22,6 +22,13 @@
       "when": 1792234030805,
       "tag": "0002_files_tools",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1792250394521,
+      "tag": "0003_phase2_chat_ux",
+      "breakpoints": true
     }
   ]
 }

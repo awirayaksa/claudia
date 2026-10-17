@@ -55,3 +55,39 @@ export const SidebarIcon = () => (
     <path d="M9 4v16" />
   </svg>
 );
+export const SlidersIcon = () => (
+  <svg {...base}>
+    <path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0" />
+    <circle cx="16" cy="6" r="2" />
+    <circle cx="10" cy="12" r="2" />
+    <circle cx="18" cy="18" r="2" />
+  </svg>
+);
+export const ShareIcon = () => (
+  <svg {...base}>
+    <path d="M4 12v7a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-7M16 6l-4-4-4 4M12 2v13" />
+  </svg>
+);
+export const GhostIcon = () => (
+  <svg {...base}>
+    <path d="M5 21V10a7 7 0 0 1 14 0v11l-2.5-2-2.3 2-2.2-2-2.2 2-2.3-2Z" />
+    <path d="M9.5 10h.01M14.5 10h.01" />
+  </svg>
+);
+export const ArchiveIcon = () => (
+  <svg {...base}>
+    <rect x="3" y="4" width="18" height="4" rx="1" />
+    <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+  </svg>
+);
+export const TagIcon = () => (
+  <svg {...base}>
+    <path d="M3 12V4a1 1 0 0 1 1-1h8l9 9-9 9Z" />
+    <path d="M7.5 7.5h.01" />
+  </svg>
+);
+export const CloseIcon = () => (
+  <svg {...base}>
+    <path d="M6 6l12 12M18 6 6 18" />
+  </svg>
+);

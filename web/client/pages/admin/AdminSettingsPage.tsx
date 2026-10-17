@@ -134,6 +134,14 @@ export function AdminSettingsPage() {
           />
           {t('admin.generateTitles')}
         </label>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.tasks.generateFollowUps}
+            onChange={(e) => set('tasks', { ...draft.tasks, generateFollowUps: e.target.checked })}
+          />
+          {t('admin.generateFollowUps')}
+        </label>
         <label className="mt-3 block text-sm">
           <span className="mb-1 block">{t('admin.titleModel')}</span>
           <ModelSelect

@@ -5,11 +5,37 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 1b** (directory login, tools and files), on top of the
-Phase 1a chat core (local accounts with admin approval, admin-managed LLM
-connections and model allowlists, server-side streaming chats that survive
-reloads and resume in another tab, folders, per-user settings, rate limits,
-a responsive UI). Phase 1b adds:
+Status: **Phase 2** (rich chat UX). Phase 2 adds:
+
+- **Math and diagrams:** LaTeX (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`, with prices
+  like "$5" left alone) and Mermaid diagrams (loaded on first use, strict
+  mode). The desktop app renders them too.
+- **Versions:** regenerate a reply or edit a message to get a new version
+  next to the old one (`‹ 2/3 ›`), fork a chat from any message, and rate
+  replies (👎 asks what was wrong).
+- **Several models at once:** "Compare models" sends a message to up to four
+  models, whose answers show side by side; the chat continues from the one
+  you pick.
+- **Per chat:** system prompt and parameters (temperature, top P, max tokens,
+  penalties) under the chat's settings button, follow-up question
+  suggestions under each reply (Admin → Settings can turn them off), and a
+  queue for messages typed while a reply is still being written.
+- **Temporary chats** (the ghost button on a new chat): not listed, not
+  titled, deleted after a day without activity unless you keep them.
+- **Finding and organising:** search finds words inside messages (with a
+  snippet), plus tags, archived chats and folders inside folders.
+- **Export and import** (Settings → Data): Claudia JSON with every version,
+  and imports of Claudia desktop conversation folders, Open WebUI exports and
+  ChatGPT's `conversations.json` (converted in the browser).
+- **Share links:** a read-only snapshot of the chat as it is now, for anyone
+  with the link, deleted at once when you delete the link. Tool screens and
+  attachment contents aren't shared, and the chat's text can't run script for
+  the people who open it.
+
+Earlier phases: the Phase 1a chat core (local accounts with admin approval,
+admin-managed LLM connections and model allowlists, server-side streaming
+chats that survive reloads and resume in another tab, folders, per-user
+settings, rate limits, a responsive UI) and Phase 1b:
 
 - **LDAP / Active Directory sign-in** (Admin → Directory), hardened: empty
   passwords never reach the directory, usernames are escaped in filters,
@@ -48,7 +74,7 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 | Command | What it does |
 |---|---|
 | `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test) and client tests |
-| `npm run test:e2e` | Browser tests of the Phase 1a and 1b flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
+| `npm run test:e2e` | Browser tests of the Phase 1a, 1b and 2 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
 | `npm run type-check` | Client and server, including the shared `../src` code |
 | `npm run build` | Client (`dist/client`) and server bundle (`dist/server/index.cjs`) |
 | `npm start` | Run the production build |

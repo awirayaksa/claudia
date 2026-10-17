@@ -4,9 +4,12 @@
  * - contains "slow": 80 words, one every 120 ms (time to stop or open a second tab);
  * - contains "save it" and a write_file tool is offered: calls it, then answers
  *   "Saved: <tool result>";
- * - otherwise: "Echo: <message>" in a few chunks, prefixed with "[skill] " when
- *   a system prompt contains SKILL-MARKER.
- * Non-streaming calls (titles) answer "E2E Chat Title".
+ * - contains "render math": a formula and a Mermaid diagram;
+ * - otherwise: "Echo: <message>" in a few chunks ("Echo (<model>): " when the
+ *   message contains "compare"), prefixed with "[skill] " when a system
+ *   prompt contains SKILL-MARKER.
+ * Non-streaming calls answer "E2E Chat Title", or two follow-up questions
+ * when asked for them.
  */
 import http from 'node:http';
 
@@ -37,12 +40,14 @@ http
     const writeTool = (json.tools ?? []).find((t: any) => t.function?.name === 'write_file');
 
     if (!json.stream) {
+      const followUps = String(json.messages[0]?.content ?? '').includes('follow-up');
+      const content = followUps ? '["Tell me more", "Give an example"]' : 'E2E Chat Title';
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(
         JSON.stringify({
           id: 'x',
           object: 'chat.completion',
-          choices: [{ index: 0, message: { role: 'assistant', content: 'E2E Chat Title' }, finish_reason: 'stop' }],
+          choices: [{ index: 0, message: { role: 'assistant', content }, finish_reason: 'stop' }],
         })
       );
     }
@@ -63,9 +68,12 @@ http
     }
     let closed = false;
     res.on('close', () => (closed = true));
+    const echo = prompt.includes('compare') ? `Echo (${json.model}): ` : 'Echo: ';
     const words = prompt.includes('slow')
       ? Array.from({ length: 80 }, (_, i) => `word${i} `)
-      : [skill ? '[skill] Echo: ' : 'Echo: ', ...prompt.split(/(\s+)/)];
+      : prompt.includes('render math')
+        ? ['Einstein: $E=mc^2$\n\n', '```mermaid\ngraph TD\n  A[Start] --> B[End]\n```\n']
+        : [skill ? `[skill] ${echo}` : echo, ...prompt.split(/(\s+)/)];
     const delay = prompt.includes('slow') ? 120 : 15;
     for (const w of words) {
       if (closed) return;

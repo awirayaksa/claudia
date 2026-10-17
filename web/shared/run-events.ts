@@ -26,6 +26,8 @@ export type RunEvent =
   | { type: 'tool.client_request'; runId: string; messageId: string; callId: string; name: string; args: string }
   | { type: 'message.usage'; messageId: string; usage: MessageUsage }
   | { type: 'message.citations'; messageId: string; citations: Array<{ index: number; source: CitationSource }> }
+  /** Suggested next questions, after the reply is complete. */
+  | { type: 'message.followups'; messageId: string; followUps: string[] }
   | { type: 'message.completed'; messageId: string; status: RunStatus; error?: string; parts: MessagePart[] }
   /** Something the user should know about the request, e.g. history trimmed to fit. */
   | { type: 'run.notice'; code: 'history_trimmed' | 'context_trimmed' | 'context_overflow'; message: string }

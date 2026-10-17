@@ -44,7 +44,7 @@ export const AppSettingsResponse = z.object({
     concurrentRuns: z.number(),
     maxToolIterations: z.number(),
   }),
-  tasks: z.object({ generateTitles: z.boolean(), titleModel: z.string().nullable() }),
+  tasks: z.object({ generateTitles: z.boolean(), generateFollowUps: z.boolean(), titleModel: z.string().nullable() }),
   'mcp.builtins': z.object({ enabled: z.array(z.string()) }),
   'net.allowlist': z.object({ hosts: z.array(z.string()) }),
   'connections.user': z.object({ enabled: z.boolean() }),

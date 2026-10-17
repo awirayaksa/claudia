@@ -6,10 +6,10 @@
  * background and streamed through the run hub. A disconnected client doesn't
  * stop the run; POST /api/runs/:id/stop does.
  */
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/client';
-import { messages, usageEvents, users, type UserSettings } from '../db/schema';
+import { messages, usageEvents, users, type MessageMeta, type UserSettings } from '../db/schema';
 import { badRequest } from '../lib/errors';
 import { uuidv7 } from '../lib/ids';
 import type { AuthUser } from '../auth/sessions';
@@ -29,12 +29,14 @@ import type { ModelRegistry, ResolvedModel } from './model-registry';
 import type { Run, RunHub } from './run-hub';
 import { PartsBuilder } from './parts-builder';
 import { NO_TOOLS, type RunToolset } from './tools';
-import { fallbackTitle, generateTitle } from './tasks';
+import { fallbackTitle, generateFollowUps, generateTitle } from './tasks';
 import type { FileService } from '../modules/files/service';
 import type { SkillService } from '../modules/skills/service';
 
 /** Streaming replies are written to the database at most this often. */
 const PERSIST_INTERVAL_MS = 500;
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface OrchestratorDeps {
   db: Database;
@@ -82,23 +84,31 @@ export class ChatOrchestrator {
 
   async start(user: AuthUser, chatId: string, req: CompletionRequest): Promise<CompletionResponse> {
     const { db, models, runs, settings } = this.deps;
-    if (!req.content.trim() && req.fileIds.length === 0) throw badRequest('The message is empty.', 'empty_message');
+    if (!req.regenerate && !req.content.trim() && req.fileIds.length === 0) {
+      throw badRequest('The message is empty.', 'empty_message');
+    }
 
     const chat = await this.repo.getOwned(user.id, chatId);
     const targetsResolved = await Promise.all(req.modelIds.map((id) => models.resolve(id, user.role, user.id)));
     const limits = await settings.get('limits');
 
-    const all = (await this.repo.messages(chat.id)).map(toNode);
+    const rows = await this.repo.messages(chat.id);
+    const all = rows.map(toNode);
     if (req.parentId && !all.some((n) => n.id === req.parentId)) {
       throw badRequest('The message to reply to is not part of this chat.', 'invalid_parent');
     }
-    const history = pathTo(all, req.parentId);
+
+    // Regenerating: answer an existing user turn again, as new sibling replies
+    const existing = req.regenerate ? rows.find((r) => r.id === req.parentId) : undefined;
+    if (req.regenerate && (!existing || existing.role !== 'user')) {
+      throw badRequest('Only a message you sent can be answered again.', 'invalid_parent');
+    }
 
     // Attachments must be the user's own and ready
     const fileParts: MessagePart[] = [];
-    if (req.fileIds.length > 0) {
-      const rows = this.deps.files ? await this.deps.files.ownedByIds(user.id, req.fileIds) : [];
-      const byId = new Map(rows.map((r) => [r.id, r]));
+    if (!existing && req.fileIds.length > 0) {
+      const files = this.deps.files ? await this.deps.files.ownedByIds(user.id, req.fileIds) : [];
+      const byId = new Map(files.map((r) => [r.id, r]));
       for (const id of req.fileIds) {
         const row = byId.get(id);
         if (!row) throw badRequest('An attached file was not found.', 'file_not_found');
@@ -107,35 +117,45 @@ export class ChatOrchestrator {
       }
     }
 
+    // The skill of a regenerated turn is the one it was sent with
+    const skill = existing ? existing.meta?.skill : req.skill;
     let skillPrompt: string | null = null;
-    if (req.skill) {
-      skillPrompt = this.deps.skills ? await this.deps.skills.resolve(user.id, req.skill.id, req.skill.args) : null;
-      if (skillPrompt === null) throw badRequest(`There is no skill called /${req.skill.id}.`, 'skill_not_found');
+    if (skill) {
+      skillPrompt = this.deps.skills ? await this.deps.skills.resolve(user.id, skill.id, skill.args) : null;
+      if (skillPrompt === null) throw badRequest(`There is no skill called /${skill.id}.`, 'skill_not_found');
     }
 
     const run = runs.start({
       userId: user.id,
       chatId: chat.id,
-      lockKey: `${chat.id}:${req.parentId ?? 'root'}`,
+      // One run per branch: new turns lock the node they follow, regenerations the turn they answer
+      lockKey: existing ? `${chat.id}:answers:${existing.id}` : `${chat.id}:${req.parentId ?? 'root'}`,
       maxConcurrent: limits.concurrentRuns,
     });
 
     try {
       const now = new Date();
-      const userNode: MessageNode = {
-        id: uuidv7(),
-        chatId: chat.id,
-        parentId: req.parentId,
-        role: 'user',
-        parts: [...(req.content ? [{ type: 'text' as const, text: req.content }] : []), ...fileParts],
-        ...(req.params.effort ? { effort: req.params.effort } : {}),
-        status: 'completed',
-        createdAt: now.toISOString(),
-      };
-      const targets = targetsResolved.map((model) => ({ assistantId: uuidv7(), model }));
-
-      await db.transaction(async (tx) => {
-        await tx.insert(messages).values({
+      let userNode: MessageNode;
+      let newUserRow: typeof messages.$inferInsert | null = null;
+      if (existing) {
+        userNode = toNode(existing);
+      } else {
+        const meta: MessageMeta = {
+          ...(req.modelIds.length > 1 ? { models: req.modelIds } : {}),
+          ...(req.skill ? { skill: req.skill } : {}),
+        };
+        userNode = {
+          id: uuidv7(),
+          chatId: chat.id,
+          parentId: req.parentId,
+          role: 'user',
+          parts: [...(req.content ? [{ type: 'text' as const, text: req.content }] : []), ...fileParts],
+          ...(req.params.effort ? { effort: req.params.effort } : {}),
+          ...(meta.models ? { models: meta.models } : {}),
+          status: 'completed',
+          createdAt: now.toISOString(),
+        };
+        newUserRow = {
           id: userNode.id,
           chatId: chat.id,
           parentId: userNode.parentId,
@@ -143,8 +163,15 @@ export class ChatOrchestrator {
           parts: userNode.parts,
           effort: req.params.effort ?? null,
           status: 'completed',
+          meta,
           createdAt: now,
-        });
+        };
+      }
+      const history = pathTo(all, userNode.parentId);
+      const targets = targetsResolved.map((model) => ({ assistantId: uuidv7(), model }));
+
+      await db.transaction(async (tx) => {
+        if (newUserRow) await tx.insert(messages).values(newUserRow);
         for (const t of targets) {
           await tx.insert(messages).values({
             id: t.assistantId,
@@ -158,7 +185,8 @@ export class ChatOrchestrator {
           });
         }
       });
-      await this.repo.touch(chat.id, { currentLeafId: targets[0].assistantId, modelIds: req.modelIds });
+      // Answering one turn again doesn't change which models the chat uses
+      await this.repo.touch(chat.id, { currentLeafId: targets[0].assistantId, ...(existing ? {} : { modelIds: req.modelIds }) });
 
       runs.emit(run, {
         type: 'run.started',
@@ -167,7 +195,7 @@ export class ChatOrchestrator {
         userMessageId: userNode.id,
         assistantMessageIds: targets.map((t) => t.assistantId),
       });
-      runs.emit(run, { type: 'message.created', message: userNode });
+      if (!existing) runs.emit(run, { type: 'message.created', message: userNode });
       for (const t of targets) {
         runs.emit(run, {
           type: 'message.created',
@@ -184,7 +212,12 @@ export class ChatOrchestrator {
         });
       }
 
-      const plan: RunPlan = { run, user, chat, req, history, userNode, skillPrompt, targets };
+      // A regeneration without its own effort uses the turn's
+      const effectiveReq: CompletionRequest =
+        existing && req.params.effort === undefined && userNode.effort
+          ? { ...req, params: { ...req.params, effort: userNode.effort } }
+          : req;
+      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets };
       void this.execute(plan).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
         runs.finish(run, 'error');
@@ -235,9 +268,15 @@ export class ChatOrchestrator {
         ? 'stopped'
         : 'error';
 
-    if (!chat.titleSet && !run.controller.signal.aborted) {
+    // Background tasks once the replies are in (temporary chats get no title)
+    if (!run.controller.signal.aborted && !chat.titleSet && !chat.temporary) {
       await this.setTitle(plan, results).catch((err) =>
         this.deps.log.warn({ err: String(err), chatId: chat.id }, 'title generation failed')
+      );
+    }
+    if (!run.controller.signal.aborted) {
+      await this.setFollowUps(plan, results).catch((err) =>
+        this.deps.log.warn({ err: String(err), chatId: chat.id }, 'follow-up suggestions failed')
       );
     }
     await this.repo.touch(chat.id);
@@ -272,11 +311,12 @@ export class ChatOrchestrator {
       target.providerModelId
     );
     const temperature: number | undefined = req.params.temperature ?? chat.params.temperature ?? opts.prefs.temperature;
+    const maxTokens = chat.params.maxTokens;
 
     const budget = fitToContext({
       model: target.providerModelId,
       contextWindow: target.model.contextLength,
-      outputReserve: typeof opts.prefs.maxTokens === 'number' ? opts.prefs.maxTokens : undefined,
+      outputReserve: maxTokens ?? (typeof opts.prefs.maxTokens === 'number' ? opts.prefs.maxTokens : undefined),
       system: opts.system,
       history: toOpenAIMessages(plan.history, opts.fileOpts),
       current: toOpenAIMessages([plan.userNode], opts.fileOpts),
@@ -325,6 +365,10 @@ export class ChatOrchestrator {
           model: target.providerModelId,
           messages: [...budget.messages, ...turnSoFar],
           ...(temperature !== undefined ? { temperature } : {}),
+          ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
+          ...(chat.params.topP !== undefined ? { top_p: chat.params.topP } : {}),
+          ...(chat.params.frequencyPenalty !== undefined ? { frequency_penalty: chat.params.frequencyPenalty } : {}),
+          ...(chat.params.presencePenalty !== undefined ? { presence_penalty: chat.params.presencePenalty } : {}),
           ...(effort ? { reasoning_effort: effort } : {}),
           ...(offerTools ? { tools, tool_choice: 'auto' as const } : tools.length > 0 ? { tool_choice: 'none' as const } : {}),
         };
@@ -425,7 +469,10 @@ export class ChatOrchestrator {
    * message building stays synchronous. Files deleted since are left out.
    */
   private async fileOptions(user: AuthUser, nodes: MessageNode[]): Promise<ToOpenAIOptions> {
-    const ids = [...new Set(nodes.flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' ? [p.fileId] : []))))];
+    // Imported and shared chats keep attachment names only (empty ids)
+    const ids = [
+      ...new Set(nodes.flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' && UUID.test(p.fileId) ? [p.fileId] : [])))),
+    ];
     if (ids.length === 0 || !this.deps.files) return {};
     const resolved = new Map<string, ResolvedFile>();
     for (const row of await this.deps.files.ownedByIds(user.id, ids)) {
@@ -479,6 +526,36 @@ export class ChatOrchestrator {
     });
   }
 
+  /** The model (task model, else the reply's) for a background task. */
+  private async taskModel(fallback: ResolvedModel): Promise<ResolvedModel> {
+    const tasks = await this.deps.settings.get('tasks');
+    // The task model is the admin's choice, so the user's allowlist doesn't apply
+    return tasks.titleModel ? await this.deps.models.resolve(tasks.titleModel, 'admin').catch(() => fallback) : fallback;
+  }
+
+  private async replyText(messageId: string): Promise<string> {
+    const [row] = await this.deps.db.select({ parts: messages.parts }).from(messages).where(eq(messages.id, messageId));
+    return (row?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
+  }
+
+  /** Suggested next questions under the first finished reply. */
+  private async setFollowUps(plan: RunPlan, results: RunStatus[]): Promise<void> {
+    const tasks = await this.deps.settings.get('tasks');
+    const target = plan.targets[results.indexOf('completed')];
+    if (!tasks.generateFollowUps || !target) return;
+    const userText = plan.userNode.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
+    const assistantText = await this.replyText(target.assistantId);
+    if (!assistantText.trim()) return;
+    const model = await this.taskModel(target.model);
+    const followUps = await generateFollowUps(model.provider, model.providerModelId, userText, assistantText);
+    if (followUps.length === 0) return;
+    await this.deps.db
+      .update(messages)
+      .set({ meta: sql`${messages.meta} || ${JSON.stringify({ followUps })}::jsonb` })
+      .where(eq(messages.id, target.assistantId));
+    this.deps.runs.emit(plan.run, { type: 'message.followups', messageId: target.assistantId, followUps });
+  }
+
   /** First exchange done: name the chat (model-generated, or the first line). */
   private async setTitle(plan: RunPlan, results: RunStatus[]): Promise<void> {
     const { chat, run } = plan;
@@ -489,12 +566,8 @@ export class ChatOrchestrator {
     const tasks = await this.deps.settings.get('tasks');
     if (tasks.generateTitles && firstOk) {
       try {
-        const [row] = await this.deps.db.select().from(messages).where(eq(messages.id, firstOk.assistantId));
-        const assistantText = (row?.parts ?? []).map((p) => (p.type === 'text' ? p.text : '')).join('');
-        // The task model is the admin's choice, so the user's allowlist doesn't apply
-        const model = tasks.titleModel
-          ? await this.deps.models.resolve(tasks.titleModel, 'admin').catch(() => firstOk.model)
-          : firstOk.model;
+        const assistantText = await this.replyText(firstOk.assistantId);
+        const model = await this.taskModel(firstOk.model);
         title = await generateTitle(model.provider, model.providerModelId, userText, assistantText);
       } catch (err) {
         this.deps.log.warn({ err: String(err), chatId: chat.id }, 'model title failed; using the first line');

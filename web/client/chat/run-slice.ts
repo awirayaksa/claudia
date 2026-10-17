@@ -79,6 +79,11 @@ const runSlice = createSlice({
           }
           break;
         }
+        case 'message.followups': {
+          const n = live.nodes[e.messageId];
+          if (n) n.followUps = e.followUps;
+          break;
+        }
         case 'run.notice':
           live.notices.push(e.message);
           break;

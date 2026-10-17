@@ -16,9 +16,10 @@ import {
 import { PageFrame, Tabs } from '../components/PageFrame';
 import { ToolsSettings } from './settings/ToolsSettings';
 import { FilesSettings } from './settings/FilesSettings';
+import { DataSettings } from './settings/DataSettings';
 import { ConnectionsManager } from './admin/ConnectionsPage';
 
-type Tab = 'appearance' | 'preferences' | 'tools' | 'skills' | 'files' | 'connections' | 'account';
+type Tab = 'appearance' | 'preferences' | 'tools' | 'skills' | 'files' | 'data' | 'connections' | 'account';
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -34,6 +35,7 @@ export function SettingsPage() {
           { id: 'tools', label: t('settings.tools') },
           { id: 'skills', label: t('settings.skills') },
           { id: 'files', label: t('settings.files') },
+          { id: 'data', label: t('settings.data') },
           { id: 'connections', label: t('settings.connections') },
           { id: 'account', label: t('settings.account') },
         ]}
@@ -44,6 +46,7 @@ export function SettingsPage() {
         {tab === 'tools' && <ToolsSettings />}
         {tab === 'skills' && <SkillSettings />}
         {tab === 'files' && <FilesSettings />}
+        {tab === 'data' && <DataSettings />}
         {tab === 'connections' && (
           <div className="p-5">
             <ConnectionsManager scope="own" />

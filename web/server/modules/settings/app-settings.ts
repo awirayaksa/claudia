@@ -28,6 +28,8 @@ export const AppSettingsSchema = {
   }),
   tasks: z.object({
     generateTitles: z.boolean(),
+    /** Three suggested next questions under each reply. */
+    generateFollowUps: z.boolean(),
     /** Model for titles and other background tasks; null = the chat's model. */
     titleModel: z.string().nullable(),
   }),
@@ -50,7 +52,7 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   'models.allowlist': { user: null },
   'models.default': { model: null },
   limits: { completionsPerMinute: 30, concurrentRuns: 3, maxToolIterations: 10 },
-  tasks: { generateTitles: true, titleModel: null },
+  tasks: { generateTitles: true, generateFollowUps: true, titleModel: null },
   'mcp.builtins': {
     enabled: ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'],
   },

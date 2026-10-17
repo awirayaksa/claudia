@@ -34,6 +34,9 @@ import { SkillService } from './modules/skills/service';
 import { skillRoutes } from './modules/skills/routes';
 import { McpPools } from './mcp/mcp-pool';
 import { LdapService } from './auth/ldap';
+import { ShareService } from './modules/shares/service';
+import { shareRoutes, sharedRoutes } from './modules/shares/routes';
+import { ChatRepo, TEMPORARY_CHAT_TTL_MS } from './modules/chats/repo';
 import { adminLdapRoutes } from './auth/ldap-routes';
 import { adminMcpRoutes, mcpUserRoutes, toolRoutes } from './mcp/routes';
 import { MAX_UPLOAD_BYTES } from '../shared/files';
@@ -152,10 +155,19 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     skills,
     mcp,
     ldap: new LdapService({ db: deps.db.db, secrets, config: deps.config, log: app.log }),
+    shares: new ShareService(deps.db.db),
     log: app.log,
   };
   app.decorate('ctx', ctx);
+  // Temporary chats go after a day without activity
+  const purgeTemporary = () =>
+    void new ChatRepo(deps.db.db)
+      .purgeTemporary(new Date(Date.now() - TEMPORARY_CHAT_TTL_MS))
+      .catch((err) => app.log.warn({ err: String(err) }, 'removing old temporary chats failed'));
+  const sweeper = setInterval(purgeTemporary, 60 * 60 * 1000);
+  sweeper.unref();
   app.addHook('onClose', async () => {
+    clearInterval(sweeper);
     runs.close();
     await mcp.close();
     await extract.close();
@@ -208,6 +220,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => modelRoutes(a, ctx), { prefix: '/models' });
       await api.register((a) => chatRoutes(a, ctx), { prefix: '/chats' });
       await api.register((a) => folderRoutes(a, ctx), { prefix: '/folders' });
+      await api.register((a) => shareRoutes(a, ctx), { prefix: '/shares' });
+      await api.register((a) => sharedRoutes(a, ctx), { prefix: '/shared' });
       await api.register((a) => runRoutes(a, ctx), { prefix: '/runs' });
       await api.register((a) => llmRoutes(a, ctx), { prefix: '/llm' });
       await api.register((a) => userConnectionRoutes(a, ctx), { prefix: '/connections' });
@@ -251,6 +265,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   // Fails only when the database isn't migrated yet (/readyz reports that)
   await skills.seedBuiltins().catch((err) => app.log.warn({ err: String(err) }, 'seeding built-in skills failed'));
   if (deps.bootstrap !== false) await bootstrapAdmin(ctx);
+  if (deps.bootstrap !== false) purgeTemporary();
   if (deps.startMcp !== false) void mcp.startAll().catch((err) => app.log.warn({ err: String(err) }, 'starting MCP servers failed'));
   return app;
 }

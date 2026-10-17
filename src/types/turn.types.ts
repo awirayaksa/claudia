@@ -54,5 +54,11 @@ export interface MessageNode {
   /** Set when status is 'error'. */
   error?: string;
   rating?: 1 | -1;
+  /** What the user said along with the rating. */
+  feedback?: { comment?: string; reasons?: string[] };
+  /** User nodes: the models asked at once (more than one → answers side by side). */
+  models?: string[];
+  /** Assistant nodes: suggested next questions. */
+  followUps?: string[];
   createdAt: string;
 }

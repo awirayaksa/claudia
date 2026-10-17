@@ -15,9 +15,29 @@ interface ChatMessageProps {
   onRetry?: (messageId: string) => void;
   onBranch?: (messageId: string) => void;
   disabled?: boolean;
+  /** Shown instead of "Claudia" above a reply (e.g. the model, next to other models' answers). */
+  authorLabel?: string;
+  /** Host-specific controls at the start of the action row (e.g. a version switcher). */
+  actions?: React.ReactNode;
+  /** Ratings work only where the host stores them. */
+  rating?: 1 | -1;
+  onRate?: (rating: 1 | -1 | null) => void;
+  /** Read-only views (e.g. a shared chat) leave the rating buttons out. */
+  hideRatings?: boolean;
 }
 
-export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, onRetry, onBranch, disabled }: ChatMessageProps) {
+export const ChatMessage = React.memo(function ChatMessage({
+  message,
+  onEdit,
+  onRetry,
+  onBranch,
+  disabled,
+  authorLabel,
+  actions,
+  rating,
+  onRate,
+  hideRatings,
+}: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isTool = message.role === 'tool';
@@ -69,25 +89,29 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
             )}
           </div>
           {/* Hover actions */}
-          <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
-              onClick={handleCopy}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
-              title={copied ? 'Copied!' : 'Copy'}
-            >
-              {copied ? '✓' : 'Copy'}
-            </button>
-            {/* Actions show only where the host supports them */}
-            {onEdit && (
+          <div className="mt-1 flex items-center justify-end gap-1">
+            {/* Host controls (e.g. versions) stay visible; the rest shows on hover */}
+            {actions}
+            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
               <button
-                onClick={() => onEdit(message.id, message.content, message.attachments)}
-                disabled={disabled}
-                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-                title="Edit message"
+                onClick={handleCopy}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+                title={copied ? 'Copied!' : 'Copy'}
               >
-                Edit
+                {copied ? '✓' : 'Copy'}
               </button>
-            )}
+              {/* Actions show only where the host supports them */}
+              {onEdit && (
+                <button
+                  onClick={() => onEdit(message.id, message.content, message.attachments)}
+                  disabled={disabled}
+                  className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                  title="Edit message"
+                >
+                  Edit
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -101,7 +125,7 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
         {/* Avatar chip + name + inline stats */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
           <ClaudiaAvatar />
-          <span className="text-sm font-semibold text-text-primary">Claudia</span>
+          <span className="text-sm font-semibold text-text-primary">{authorLabel ?? 'Claudia'}</span>
           <span className="text-xs text-text-secondary">{formattedTime}</span>
           {showStatistics && message.usage?.total_tokens != null && (
             <>
@@ -164,7 +188,8 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
           )}
 
           {/* Action row — persistent */}
-          <div className="mt-2 flex gap-1">
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {actions}
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
@@ -190,8 +215,31 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
                 ↗ Branch
               </button>
             )}
-            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👍</button>
-            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👎</button>
+            {hideRatings ? null : onRate ? (
+              <>
+                <button
+                  onClick={() => onRate(rating === 1 ? null : 1)}
+                  aria-pressed={rating === 1}
+                  title="Good reply"
+                  className={`rounded px-2 py-1 text-xs transition-colors hover:bg-surface ${rating === 1 ? 'bg-surface text-accent' : 'text-text-secondary'}`}
+                >
+                  👍
+                </button>
+                <button
+                  onClick={() => onRate(rating === -1 ? null : -1)}
+                  aria-pressed={rating === -1}
+                  title="Bad reply"
+                  className={`rounded px-2 py-1 text-xs transition-colors hover:bg-surface ${rating === -1 ? 'bg-surface text-accent' : 'text-text-secondary'}`}
+                >
+                  👎
+                </button>
+              </>
+            ) : (
+              <>
+                <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👍</button>
+                <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👎</button>
+              </>
+            )}
           </div>
         </div>
       </div>

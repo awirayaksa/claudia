@@ -2,7 +2,7 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ServerContext } from '../../context';
-import { chats, folders } from '../../db/schema';
+import { chats, folders, messages } from '../../db/schema';
 import { badRequest, notFound } from '../../lib/errors';
 import { uuidv7 } from '../../lib/ids';
 import { currentUser, requireUser } from '../../auth/rbac';
@@ -10,12 +10,19 @@ import {
   ChatListQuery,
   CompletionRequest,
   CreateChatRequest,
+  FeedbackRequest,
   FolderInput,
+  ForkRequest,
+  ImportRequest,
   LlmCompleteRequest,
   UpdateChatRequest,
   type ChatDetail,
 } from '../../../shared/chats';
-import { ChatRepo, toChatSummary, toFolder, toNode } from './repo';
+import { ChatRepo, toChatSummary, toFolder, toNode, toShareView } from './repo';
+import { ChatTransfer, dropNulls } from './transfer';
+
+/** Imports arrive in batches of chats; one batch may be this large. */
+const IMPORT_BODY_LIMIT = 16 * 1024 * 1024;
 
 const IdParams = z.object({ id: z.uuid() });
 
@@ -34,12 +41,15 @@ function completionRateLimit(ctx: ServerContext) {
 export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Promise<void> {
   app.addHook('preHandler', requireUser);
   const repo = new ChatRepo(ctx.db);
+  const transfer = new ChatTransfer(ctx.db);
 
   app.get('/', async (req) => {
     const q = ChatListQuery.parse(req.query);
     const rows = await repo.list(currentUser(req).id, q);
-    return { chats: rows.map(toChatSummary) };
+    return { chats: rows.map((r) => ({ ...toChatSummary(r), ...(r.match ? { match: r.match } : {}) })) };
   });
+
+  app.get('/tags', async (req) => ({ tags: await repo.tags(currentUser(req).id) }));
 
   app.post('/', async (req, reply) => {
     const me = currentUser(req);
@@ -53,16 +63,33 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
         folderId: body.folderId ?? null,
         ...(body.title ? { title: body.title, titleSet: true } : {}),
         modelIds: body.modelIds ?? [],
+        temporary: body.temporary ?? false,
       })
       .returning();
     reply.code(201);
     return { chat: toChatSummary(row) };
   });
 
+  // Every (non-temporary) chat of the user, as Claudia JSON
+  app.get('/export', async (req, reply) => {
+    const data = await transfer.exportChats(currentUser(req).id);
+    reply.header('Content-Disposition', `attachment; filename="claudia-chats-${new Date().toISOString().slice(0, 10)}.json"`);
+    return data;
+  });
+
+  // Claudia JSON; the client converts other formats first and sends them in batches
+  app.post('/import', { bodyLimit: IMPORT_BODY_LIMIT }, async (req, reply) => {
+    const body = ImportRequest.parse(req.body);
+    const result = await transfer.importChats(currentUser(req).id, body.chats);
+    reply.code(201);
+    return result;
+  });
+
   app.get('/:id', async (req): Promise<{ chat: ChatDetail }> => {
     const { id } = IdParams.parse(req.params);
     const chat = await repo.getOwned(currentUser(req).id, id);
     const nodes = (await repo.messages(chat.id)).map(toNode);
+    const share = await repo.share(chat.id);
     return {
       chat: {
         ...toChatSummary(chat),
@@ -70,6 +97,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
         params: chat.params,
         messages: nodes,
         activeRuns: ctx.runs.activeForChat(chat.id).map((r) => ({ runId: r.id, lastSeq: r.events.length })),
+        share: share ? toShareView(share) : null,
       },
     };
   });
@@ -91,10 +119,13 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
         ...(body.folderId !== undefined ? { folderId: body.folderId } : {}),
         ...(body.pinned !== undefined ? { pinned: body.pinned } : {}),
         ...(body.archived !== undefined ? { archived: body.archived } : {}),
+        ...(body.temporary !== undefined ? { temporary: body.temporary } : {}),
+        ...(body.tags !== undefined ? { tags: [...new Set(body.tags)] } : {}),
         ...(body.currentLeafId !== undefined ? { currentLeafId: body.currentLeafId } : {}),
         ...(body.modelIds !== undefined ? { modelIds: body.modelIds } : {}),
-        ...(body.params !== undefined ? { params: { ...chat.params, ...body.params } } : {}),
-        updatedAt: new Date(),
+        ...(body.params !== undefined ? { params: dropNulls({ ...chat.params, ...body.params }) } : {}),
+        // Switching versions isn't activity: the chat keeps its place in the list
+        ...(Object.keys(body).some((k) => k !== 'currentLeafId') ? { updatedAt: new Date() } : {}),
       })
       .where(eq(chats.id, chat.id))
       .returning();
@@ -116,6 +147,70 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     const result = await ctx.orchestrator.start(currentUser(req), id, body);
     reply.code(202);
     return result;
+  });
+
+  // Rating (and an optional comment) of one reply
+  app.put('/:id/messages/:messageId/feedback', async (req) => {
+    const me = currentUser(req);
+    const { id, messageId } = z.object({ id: z.uuid(), messageId: z.uuid() }).parse(req.params);
+    const body = FeedbackRequest.parse(req.body);
+    const chat = await repo.getOwned(me.id, id);
+    const withText = body.rating !== null && (!!body.comment || !!body.reasons?.length);
+    const [row] = await ctx.db
+      .update(messages)
+      .set({
+        rating: body.rating,
+        feedback: withText
+          ? {
+              ...(body.comment ? { comment: body.comment } : {}),
+              ...(body.reasons?.length ? { reasons: body.reasons } : {}),
+              at: new Date().toISOString(),
+            }
+          : null,
+      })
+      .where(and(eq(messages.id, messageId), eq(messages.chatId, chat.id), eq(messages.role, 'assistant')))
+      .returning({ id: messages.id });
+    if (!row) throw notFound('Reply');
+    return { ok: true };
+  });
+
+  // A new chat with the path up to one message
+  app.post('/:id/fork', async (req, reply) => {
+    const me = currentUser(req);
+    const { id } = IdParams.parse(req.params);
+    const { messageId } = ForkRequest.parse(req.body);
+    const chat = await repo.getOwned(me.id, id);
+    const nodes = await repo.messages(chat.id);
+    if (!nodes.some((n) => n.id === messageId)) throw badRequest('That message is not part of this chat.');
+    const forked = await transfer.fork(me.id, chat, messageId);
+    reply.code(201);
+    return { chat: toChatSummary(forked) };
+  });
+
+  app.get('/:id/export', async (req, reply) => {
+    const { id } = IdParams.parse(req.params);
+    const data = await transfer.exportChats(currentUser(req).id, [id]);
+    reply.header('Content-Disposition', 'attachment; filename="claudia-chat.json"');
+    return data;
+  });
+
+  // Create the share link, or refresh its snapshot
+  app.post('/:id/share', async (req, reply) => {
+    const me = currentUser(req);
+    const { id } = IdParams.parse(req.params);
+    const chat = await repo.getOwned(me.id, id);
+    if (chat.temporary) throw badRequest('Keep the chat before sharing it.', 'chat_temporary');
+    const share = await ctx.shares.upsert(me.id, chat);
+    reply.code(201);
+    return { share: toShareView(share) };
+  });
+
+  app.delete('/:id/share', async (req) => {
+    const me = currentUser(req);
+    const { id } = IdParams.parse(req.params);
+    const chat = await repo.getOwned(me.id, id);
+    await ctx.shares.revokeForChat(chat.id);
+    return { ok: true };
   });
 }
 

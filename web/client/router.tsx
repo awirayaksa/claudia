@@ -10,12 +10,14 @@ import { AdminSettingsPage } from './pages/admin/AdminSettingsPage';
 import { ToolServersPage } from './pages/admin/ToolServersPage';
 import { DirectoryPage } from './pages/admin/DirectoryPage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { SharePage } from './pages/SharePage';
 
 /**
- * Routes. Later phases add /workspace/* (Phase 3) and /s/:token (Phase 2,
- * outside the sign-in gate).
+ * Routes. Share links (/s/:token) are outside the sign-in gate; Phase 3
+ * adds /workspace/*.
  */
 export const routes: RouteObject[] = [
+  { path: '/s/:token', element: <SharePage /> },
   {
     element: (
       <AuthGate>

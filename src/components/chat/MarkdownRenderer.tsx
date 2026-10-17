@@ -1,12 +1,22 @@
 import React, { useMemo, ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Options as MarkdownOptions } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useAppSelector } from '../../store';
 import { getPluginRenderConfig } from '../../services/plugins/plugin-renderer.service';
 import { RenderContext } from '../../types/plugin.types';
 import { Message } from '../../types/message.types';
+import { normalizeMath } from '../../utils/math-delimiters';
+import { MermaidDiagram } from './MermaidDiagram';
+
+// Single-dollar math is off so prices stay text; normalizeMath turns $x$, \(x\) and \[x\] into $$
+const MATH_OPTIONS = { singleDollarTextMath: false };
+// No \href, \url, \htmlClass etc. (trust: false); bad input renders as an error instead of throwing
+const KATEX_OPTIONS = { trust: false, strict: 'ignore', throwOnError: false, output: 'htmlAndMathml' } as const;
 
 interface MarkdownRendererProps {
   content: string;
@@ -49,10 +59,11 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
   }
 
   // Apply pre-processing from plugins
-  const processedContent = pluginConfig.preProcess(content, renderContext);
+  const processedContent = normalizeMath(pluginConfig.preProcess(content, renderContext));
 
   // Merge remark plugins
-  const remarkPlugins = [remarkGfm, ...pluginConfig.remarkPlugins];
+  const remarkPlugins: MarkdownOptions['remarkPlugins'] = [remarkGfm, [remarkMath, MATH_OPTIONS], ...pluginConfig.remarkPlugins];
+  const rehypePlugins: MarkdownOptions['rehypePlugins'] = [[rehypeKatex, KATEX_OPTIONS], ...pluginConfig.rehypePlugins];
 
   // Auto-incrementing counter for h2 headings (accent numeral prefix)
   let h2Counter = 0;
@@ -64,13 +75,14 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
           const match = /language-(\w+)/.exec(className || '');
           const language = match ? match[1] : '';
 
-          return !inline && language ? (
+          const source = String(children).replace(/\n$/, '');
+          const codeBlock = !inline && language ? (
             <div className="my-2 overflow-hidden rounded-md">
               <div className="flex items-center justify-between bg-surface-hover px-3 py-1.5">
                 <span className="text-xs font-medium text-text-secondary">{language}</span>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+                    navigator.clipboard.writeText(source);
                   }}
                   className="text-xs text-text-secondary hover:text-text-primary transition-colors"
                 >
@@ -89,10 +101,15 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
                 }}
                 {...props}
               >
-                {String(children).replace(/\n$/, '')}
+                {source}
               </SyntaxHighlighter>
             </div>
-          ) : (
+          ) : null;
+
+          if (codeBlock && language === 'mermaid') {
+            return <MermaidDiagram code={source} isDark={isDark} fallback={codeBlock} />;
+          }
+          return codeBlock ?? (
             <code
               className={`rounded px-1.5 py-0.5 text-xs font-mono ${
                 isUser
@@ -263,7 +280,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
   const rendered = (
     <ReactMarkdown
       remarkPlugins={remarkPlugins}
-      rehypePlugins={pluginConfig.rehypePlugins}
+      rehypePlugins={rehypePlugins}
       components={mergedComponents as any}
     >
       {processedContent}

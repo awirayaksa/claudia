@@ -1,6 +1,6 @@
 /**
  * Turn nodes → the desktop's flat `Message` shape, so the shared ChatMessage
- * component renders them unchanged (linear UI; Phase 2 adds versions).
+ * component renders them unchanged (versions are handled in MessageTurns).
  */
 import type { Message, ToolCall, ToolResult } from '@/types/message.types';
 import type { MessageNode, PartOf } from '@/types/turn.types';
@@ -37,12 +37,14 @@ export function toDisplayMessage(node: MessageNode): Message {
       timestamp: node.createdAt,
       attachments: node.parts
         .filter((p): p is PartOf<'file'> => p.type === 'file')
-        .map((p) => ({
-          id: p.fileId,
+        .map((p, i) => ({
+          id: p.fileId || `${node.id}:${i}`,
           type: p.mime.startsWith('image/') ? ('image' as const) : ('file' as const),
           name: p.name,
           size: p.size ?? 0,
           mimeType: p.mime,
+          // Imported and shared chats keep names only
+          ...(p.fileId ? { url: `/api/files/${p.fileId}/content` } : {}),
         })),
       ...(node.effort ? { effort: node.effort } : {}),
     };

@@ -14,6 +14,7 @@ import type { FileService } from './modules/files/service';
 import type { SkillService } from './modules/skills/service';
 import type { McpPools } from './mcp/mcp-pool';
 import type { LdapService } from './auth/ldap';
+import type { ShareService } from './modules/shares/service';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -33,5 +34,6 @@ export interface ServerContext {
   skills: SkillService;
   mcp: McpPools;
   ldap: LdapService;
+  shares: ShareService;
   log: FastifyBaseLogger;
 }

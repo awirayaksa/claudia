@@ -584,6 +584,15 @@ Changes no desktop behaviour.
 - **Exit:**
   - Playwright tests pass for version switching, multi-model, opening a share link while logged out, and an export → import round trip;
   - search finds text inside messages.
+- **Decisions made while building it:**
+  - Single-dollar math is off in remark-math; `normalizeMath` rewrites `$x$` (pandoc's rule, so "$5 and $10" stay text), `\(x\)` and `\[x\]` to `$$`, leaving code alone. KaTeX runs with `trust: false`.
+  - Message search is a generated `tsvector` column (`'simple'` config, so any language) over the text parts, via an immutable `claudia_parts_text()` SQL function; queries match every word as a prefix, and titles still match by substring.
+  - A user node records the models asked (`meta.models`) and the skill invoked (`meta.skill`); regenerating answers the same node again with the same skill and effort. Columns are shown when a turn asked several models; the chat continues from the column on the current path.
+  - Title first, then follow-up suggestions, in the same run (task model if set); `tasks.generateFollowUps` turns them off.
+  - The message queue lives in the browser and sends the next message once the run ends and the chat is refetched.
+  - Temporary chats are stored (so runs, resume and attachments work as usual) but never listed, searched, exported or titled, and are swept after 24 h without activity.
+  - Share links are one per chat, a snapshot renumbered `n1…` without internal ids, file ids, ratings or MCP-UI resources, served from `/api/shared/:token` with `Cache-Control: no-store`; re-sharing refreshes the snapshot and keeps the token; deleting the row revokes it. The viewer renders on the app origin with the same no-raw-HTML markdown (no MCP-UI, so nothing needs the sandbox origin).
+  - Imports are converted in the browser (desktop folders, Open WebUI, ChatGPT → Claudia JSON) and posted in batches; the server reads only the validated Claudia format, gives every node a new id and drops nodes whose parent is missing.
 
 ### Phase 3 — Workspace
 - **Model builder:** system prompt, tools and parameters. Knowledge binding arrives in Phase 4.

@@ -5,7 +5,19 @@
 import { createApi, type BaseQueryFn } from '@reduxjs/toolkit/query/react';
 import { apiFetchRaw, toApiError, ApiRequestError } from './http';
 import type { AdminUser, PublicUser, SessionInfo, SessionResponse } from '@shared/auth';
-import type { ChatDetail, ChatSummary, CompletionRequest, CompletionResponse, Folder } from '@shared/chats';
+import type {
+  ChatDetail,
+  ChatParams,
+  ChatSummary,
+  CompletionRequest,
+  CompletionResponse,
+  ExportedChat,
+  Folder,
+  ImportResponse,
+  SharedChat,
+  ShareListItem,
+  ShareView,
+} from '@shared/chats';
 import type { ConnectionInput, ConnectionView, ModelsResponse, UserConnectionsResponse } from '@shared/models';
 import type { AdminMcpServerView, McpServerInput, McpServerView } from '@shared/mcp';
 import type { LdapLookupResult, LdapSettingsResponse, LdapSettingsUpdate, LdapTestResult } from '@shared/ldap';
@@ -59,6 +71,8 @@ export const api = createApi({
     'AdminMcpServers',
     'Ldap',
     'Files',
+    'Tags',
+    'Shares',
   ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
@@ -102,11 +116,12 @@ export const api = createApi({
     models: b.query<ModelsResponse, void>({ query: () => '/models', providesTags: ['Models'] }),
 
     // ─── Chats ──────────────────────────────────────────────────────────────
-    chats: b.query<{ chats: ChatSummary[] }, { search?: string; archived?: boolean } | void>({
+    chats: b.query<{ chats: ChatSummary[] }, { search?: string; archived?: boolean; tag?: string } | void>({
       query: (q) => {
         const p = new URLSearchParams();
         if (q?.search) p.set('search', q.search);
         if (q?.archived) p.set('archived', 'true');
+        if (q?.tag) p.set('tag', q.tag);
         const qs = p.toString();
         return `/chats${qs ? `?${qs}` : ''}`;
       },
@@ -116,25 +131,90 @@ export const api = createApi({
       query: (id) => `/chats/${id}`,
       providesTags: (_r, _e, id) => [{ type: 'Chat', id }],
     }),
-    createChat: b.mutation<{ chat: ChatSummary }, { folderId?: string | null; modelIds?: string[]; title?: string }>({
+    tags: b.query<{ tags: Array<{ tag: string; count: number }> }, void>({ query: () => '/chats/tags', providesTags: ['Tags'] }),
+    createChat: b.mutation<
+      { chat: ChatSummary },
+      { folderId?: string | null; modelIds?: string[]; title?: string; temporary?: boolean }
+    >({
       query: (body) => ({ url: '/chats', method: 'POST', body }),
       invalidatesTags: ['Chats'],
     }),
     updateChat: b.mutation<
       { chat: ChatSummary },
-      { id: string; title?: string; folderId?: string | null; pinned?: boolean; archived?: boolean; modelIds?: string[] }
+      {
+        id: string;
+        title?: string;
+        folderId?: string | null;
+        pinned?: boolean;
+        archived?: boolean;
+        temporary?: false;
+        tags?: string[];
+        currentLeafId?: string;
+        modelIds?: string[];
+        params?: { [K in keyof ChatParams]?: ChatParams[K] | null };
+      }
     >({
       query: ({ id, ...body }) => ({ url: `/chats/${id}`, method: 'PATCH', body }),
-      invalidatesTags: (_r, _e, { id }) => ['Chats', { type: 'Chat', id }],
+      invalidatesTags: (_r, _e, { id, tags }) => ['Chats', { type: 'Chat', id }, ...(tags ? (['Tags'] as const) : [])],
+      // Switching versions shows at once
+      async onQueryStarted({ id, currentLeafId }, { dispatch, queryFulfilled }) {
+        if (!currentLeafId) return;
+        const patch = dispatch(
+          api.util.updateQueryData('chat', id, (draft) => {
+            draft.chat.currentLeafId = currentLeafId;
+          })
+        );
+        queryFulfilled.catch(patch.undo);
+      },
+    }),
+    forkChat: b.mutation<{ chat: ChatSummary }, { id: string; messageId: string }>({
+      query: ({ id, messageId }) => ({ url: `/chats/${id}/fork`, method: 'POST', body: { messageId } }),
+      invalidatesTags: ['Chats'],
+    }),
+    rateMessage: b.mutation<
+      { ok: true },
+      { chatId: string; messageId: string; rating: 1 | -1 | null; comment?: string; reasons?: string[] }
+    >({
+      query: ({ chatId, messageId, ...body }) => ({ url: `/chats/${chatId}/messages/${messageId}/feedback`, method: 'PUT', body }),
+      async onQueryStarted({ chatId, messageId, rating }, { dispatch, queryFulfilled }) {
+        const patch = dispatch(
+          api.util.updateQueryData('chat', chatId, (draft) => {
+            const node = draft.chat.messages.find((m) => m.id === messageId);
+            if (node) {
+              if (rating === null) delete node.rating;
+              else node.rating = rating;
+            }
+          })
+        );
+        queryFulfilled.catch(patch.undo);
+      },
+    }),
+    shareChat: b.mutation<{ share: ShareView }, string>({
+      query: (id) => ({ url: `/chats/${id}/share`, method: 'POST' }),
+      invalidatesTags: (_r, _e, id) => [{ type: 'Chat', id }, 'Shares'],
+    }),
+    unshareChat: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/chats/${id}/share`, method: 'DELETE' }),
+      invalidatesTags: (_r, _e, id) => [{ type: 'Chat', id }, 'Shares'],
+    }),
+    myShares: b.query<{ shares: ShareListItem[] }, void>({ query: () => '/shares', providesTags: ['Shares'] }),
+    revokeShare: b.mutation<{ ok: true }, string>({
+      query: (token) => ({ url: `/shares/${token}`, method: 'DELETE' }),
+      invalidatesTags: ['Shares', 'Chat'],
+    }),
+    sharedChat: b.query<{ chat: SharedChat }, string>({ query: (token) => `/shared/${encodeURIComponent(token)}` }),
+    importChats: b.mutation<ImportResponse, { chats: ExportedChat[] }>({
+      query: (body) => ({ url: '/chats/import', method: 'POST', body }),
+      invalidatesTags: ['Chats', 'Folders', 'Tags'],
     }),
     deleteChat: b.mutation<{ ok: true }, string>({
       query: (id) => ({ url: `/chats/${id}`, method: 'DELETE' }),
-      invalidatesTags: ['Chats'],
+      invalidatesTags: ['Chats', 'Tags', 'Shares'],
     }),
     sendCompletion: b.mutation<
       CompletionResponse,
-      { chatId: string } & Omit<CompletionRequest, 'fileIds' | 'toolIds' | 'features'> &
-        Partial<Pick<CompletionRequest, 'fileIds' | 'toolIds'>>
+      { chatId: string } & Omit<CompletionRequest, 'fileIds' | 'toolIds' | 'features' | 'regenerate' | 'content'> &
+        Partial<Pick<CompletionRequest, 'fileIds' | 'toolIds' | 'regenerate' | 'content'>>
     >({
       query: ({ chatId, ...body }) => ({ url: `/chats/${chatId}/completions`, method: 'POST', body }),
     }),
@@ -175,7 +255,10 @@ export const api = createApi({
       query: (body) => ({ url: '/folders', method: 'POST', body }),
       invalidatesTags: ['Folders'],
     }),
-    updateFolder: b.mutation<{ folder: Folder }, { id: string; name?: string; systemPrompt?: string | null }>({
+    updateFolder: b.mutation<
+      { folder: Folder },
+      { id: string; name?: string; parentId?: string | null; systemPrompt?: string | null }
+    >({
       query: ({ id, ...body }) => ({ url: `/folders/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['Folders'],
     }),
@@ -277,6 +360,15 @@ export const {
   useChatsQuery,
   useChatQuery,
   useCreateChatMutation,
+  useTagsQuery,
+  useForkChatMutation,
+  useRateMessageMutation,
+  useShareChatMutation,
+  useUnshareChatMutation,
+  useMySharesQuery,
+  useRevokeShareMutation,
+  useSharedChatQuery,
+  useImportChatsMutation,
   useUpdateChatMutation,
   useDeleteChatMutation,
   useSendCompletionMutation,

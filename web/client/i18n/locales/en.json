@@ -51,7 +51,15 @@
     "admin": "Admin",
     "openMenu": "Open menu",
     "closeMenu": "Close menu",
-    "archived": "Archived"
+    "archived": "Archived",
+    "tags": "Tags",
+    "tagCount_one": "{{count}} chat",
+    "tagCount_other": "{{count}} chats",
+    "results": "Results",
+    "noArchived": "No archived chats.",
+    "backToChats": "Back to chats",
+    "newSubfolder": "New folder inside",
+    "topLevel": "Top level"
   },
   "chat": {
     "placeholder": "Message Claudia…",
@@ -71,7 +79,63 @@
     "deleteFolderBody": "The folder \"{{name}}\" is deleted; its chats stay, outside any folder.",
     "notFound": "This chat doesn't exist or isn't yours.",
     "stop": "Stop",
-    "actions": "Chat actions"
+    "actions": "Chat actions",
+    "folderActions": "Folder actions",
+    "previousVersion": "Previous version",
+    "nextVersion": "Next version",
+    "continueWith": "Continue with this answer",
+    "editMessage": "Edit message",
+    "saveAndSend": "Save and send",
+    "feedbackTitle": "What was wrong with this reply?",
+    "feedbackReasons": {
+      "inaccurate": "Not accurate",
+      "unhelpful": "Not helpful",
+      "instructions": "Didn't follow instructions",
+      "too_long": "Too long",
+      "unsafe": "Harmful or unsafe"
+    },
+    "feedbackComment": "Anything else? (optional)",
+    "feedbackSend": "Send feedback",
+    "followUps": "Ask next",
+    "temporary": "Temporary chat",
+    "temporaryTitle": "Temporary chat",
+    "temporaryToggle": "Temporary chat",
+    "temporaryHelp": "Not saved in your chat list, no title, deleted after a day without activity.",
+    "keep": "Keep this chat",
+    "keepHelp": "Save it to your chat list like any other chat",
+    "settings": "Chat settings",
+    "share": "Share",
+    "export": "Export chat",
+    "editTags": "Edit tags",
+    "tagsPlaceholder": "work urgent …",
+    "params": {
+      "systemPrompt": "System prompt",
+      "temperature": "Temperature",
+      "topP": "Top P",
+      "maxTokens": "Max tokens",
+      "frequencyPenalty": "Frequency penalty",
+      "presencePenalty": "Presence penalty"
+    },
+    "paramDefault": "Default",
+    "paramRange": "{{name}} must be between {{min}} and {{max}}.",
+    "systemPromptPlaceholder": "Instructions for this chat only",
+    "systemPromptHelp": "Added after your own and the folder's system prompts. Empty fields use your preferences.",
+    "shareTitle": "Share chat",
+    "shareHelp": "Anyone with the link can read the messages shown now, without signing in. Messages you add later are only shared when you update the link. Tool screens and attachment contents aren't shared.",
+    "shareLink": "Share link",
+    "shareCreate": "Create link",
+    "shareUpdate": "Update to the current messages",
+    "shareDelete": "Delete link",
+    "sharedAt": "Snapshot from {{date}}",
+    "copy": "Copy",
+    "copied": "Copied",
+    "queued": "Queued messages",
+    "queuedLabel": "Next",
+    "unqueue": "Remove from queue",
+    "compare": "Compare models",
+    "alsoAsk": "Also ask:",
+    "addModel": "Add a model",
+    "removeModel": "Remove {{name}}"
   },
   "settings": {
     "title": "Settings",
@@ -99,7 +163,26 @@
     "noFiles": "No files yet.",
     "fileTruncated": "only the beginning is read",
     "ownConnectionsHelp": "Use your own API keys. Their models appear as @prefix/model and only you can use them.",
-    "ownConnectionsOff": "Your administrator does not allow personal connections. You can still delete ones you added earlier."
+    "ownConnectionsOff": "Your administrator does not allow personal connections. You can still delete ones you added earlier.",
+    "data": "Data",
+    "exportTitle": "Export",
+    "exportHelp": "All your chats (not temporary ones) as one Claudia JSON file, with every version of every message.",
+    "exportAll": "Export all chats",
+    "importTitle": "Import",
+    "importHelp": "Claudia exports, Claudia desktop conversations (choose the conversations folder; add the projects folder's files for folder names), Open WebUI chat exports and ChatGPT's conversations.json. Attachments come along by name only.",
+    "importFiles": "Choose files",
+    "importFolder": "Choose a folder",
+    "importNoJson": "No JSON files were chosen.",
+    "importProgress": "Importing… {{done}} of {{total}}",
+    "importDone_one": "Imported {{count}} chat.",
+    "importDone_other": "Imported {{count}} chats.",
+    "importSkipped_one": "{{count}} broken message was left out.",
+    "importSkipped_other": "{{count}} broken messages were left out.",
+    "importProblems_one": "{{count}} file or chat could not be read",
+    "importProblems_other": "{{count}} files or chats could not be read",
+    "sharedLinks": "Shared links",
+    "noSharedLinks": "You haven't shared any chats.",
+    "revokeLink": "Delete link"
   },
   "admin": {
     "title": "Administration",
@@ -224,7 +307,8 @@
     "ldapLookupButton": "Look up",
     "ldapLookupMatches_one": "{{count}} entry matches; sign-in needs exactly one.",
     "ldapLookupMatches_other": "{{count}} entries match; sign-in needs exactly one.",
-    "ldapSubject": "Linked by"
+    "ldapSubject": "Linked by",
+    "generateFollowUps": "Suggest follow-up questions under replies"
   },
   "notFound": {
     "title": "Page not found",
@@ -239,5 +323,10 @@
       "error": "error",
       "stopping": "stopping"
     }
+  },
+  "share": {
+    "notFound": "This link doesn't exist or was deleted.",
+    "openApp": "Open Claudia",
+    "byline": "Shared by {{name}} · {{date}}"
   }
 }

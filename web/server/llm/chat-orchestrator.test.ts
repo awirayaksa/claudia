@@ -44,6 +44,7 @@ describe('completions', () => {
       'message.usage',
       'message.completed',
       'chat.updated',
+      'message.followups',
       'run.completed',
     ]);
     expect(events.map((e) => e.seq)).toEqual(events.map((_, i) => i + 1));
@@ -97,8 +98,10 @@ describe('completions', () => {
       { role: 'assistant', content: 'First answer' },
       { role: 'user', content: 'Two' },
     ]);
-    // The title is only generated once
-    expect(f.mock.requests.filter((r) => !r.stream)).toHaveLength(1);
+    // The title is only generated once (the other calls are follow-up suggestions)
+    const isTitle = (r: any) => r.messages[0].content.includes('title');
+    expect(f.mock.requests.filter((r) => !r.stream && isTitle(r))).toHaveLength(1);
+    expect(f.mock.requests.filter((r) => !r.stream && !isTitle(r))).toHaveLength(2);
   });
 
   it('stops a run on request, keeping the partial reply', async () => {
