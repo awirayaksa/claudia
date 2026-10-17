@@ -9,10 +9,13 @@
  *   message contains "compare"), prefixed with "[skill] " when a system
  *   prompt contains SKILL-MARKER and "[<name>] " when one contains
  *   PERSONA:<name> (custom models).
- * Non-streaming calls answer "E2E Chat Title", or two follow-up questions
- * when asked for them.
+ * When sources come with the message (knowledge, pages), the reply ends
+ * with " [1]". Non-streaming calls answer "E2E Chat Title", or two
+ * follow-up questions when asked for them. POST /embeddings answers with
+ * the test hash embedding; GET /page/tides is a web page.
  */
 import http from 'node:http';
+import { hashDims, hashEmbed } from '../server/test/hash-embed';
 
 const port = Number(process.env.MOCK_LLM_PORT ?? 18080);
 
@@ -28,6 +31,16 @@ http
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ data: [{ id: 'e2e-model', name: 'e2e-model' }, { id: 'e2e-other', name: 'e2e-other' }] }));
     }
+    if (req.method === 'POST' && req.url?.endsWith('/embeddings')) {
+      const json = JSON.parse(body);
+      const input: string[] = Array.isArray(json.input) ? json.input : [json.input];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ data: input.map((t, index) => ({ index, embedding: hashEmbed(String(t), hashDims(json.model ?? '')) })) }));
+    }
+    if (req.method === 'GET' && req.url === '/page/tides') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end('<html><head><title>Tide tables</title></head><body><article><h1>Tide tables</h1><p>High tide in Bergen is at 06:12 tomorrow morning.</p></article></body></html>');
+    }
     if (req.method !== 'POST' || !req.url?.endsWith('/chat/completions')) {
       res.writeHead(404);
       return res.end();
@@ -39,6 +52,7 @@ http
     const final = json.messages[json.messages.length - 1];
     const skill = json.messages.some((m: any) => m.role === 'system' && String(m.content).includes('SKILL-MARKER'));
     const writeTool = (json.tools ?? []).find((t: any) => t.function?.name === 'write_file');
+    const sourced = json.messages.some((m: any) => m.role === 'system' && String(m.content).includes('<source id="1"'));
     const persona = json.messages
       .filter((m: any) => m.role === 'system')
       .map((m: any) => /PERSONA:(\w+)/.exec(String(m.content))?.[1])
@@ -78,7 +92,7 @@ http
       ? Array.from({ length: 80 }, (_, i) => `word${i} `)
       : prompt.includes('render math')
         ? ['Einstein: $E=mc^2$\n\n', '```mermaid\ngraph TD\n  A[Start] --> B[End]\n```\n']
-        : [`${persona ? `[${persona}] ` : ''}${skill ? '[skill] ' : ''}${echo}`, ...prompt.split(/(\s+)/)];
+        : [`${persona ? `[${persona}] ` : ''}${skill ? '[skill] ' : ''}${echo}`, ...prompt.split(/(\s+)/), ...(sourced ? [' [1]'] : [])];
     const delay = prompt.includes('slow') ? 120 : 15;
     for (const w of words) {
       if (closed) return;

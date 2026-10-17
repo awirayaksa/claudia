@@ -39,6 +39,13 @@ interface ChatInputProps {
   onCommandPick?: (command: import('../../types/skill.types').Skill, insert: (text: string) => void) => void;
   /** Display name of a model id (defaults to the id). */
   modelLabel?: (model: string) => string;
+  /**
+   * A "#" menu (the web app: knowledge bases, chats, web pages). Picking an
+   * item removes the typed "#query" and calls `onHashPick`.
+   */
+  hashCommands?: import('../../types/skill.types').Skill[];
+  onHashPick?: (item: import('../../types/skill.types').Skill, insert: (text: string) => void) => void;
+  hashEmptyLabel?: string;
 }
 
 export interface ChatInputRef {
@@ -72,6 +79,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   extraCommands,
   onCommandPick,
   modelLabel,
+  hashCommands,
+  onHashPick,
+  hashEmptyLabel,
 }, ref) => {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -112,14 +122,21 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const skills = useAppSelector((state) => state.skills.skills);
   const commands = useMemo(() => (extraCommands?.length ? [...skills, ...extraCommands] : skills), [skills, extraCommands]);
   const skillMention = useSkillMention(commands);
+  const noHash = useMemo(() => [] as import('../../types/skill.types').Skill[], []);
+  const hashMention = useSkillMention(hashCommands ?? noHash, '#');
 
   /**
    * Show a picked command. Skills stay as "/id " text; an extra command's
    * text is taken out again and handed to the host, which inserts its own.
    */
   const applyCommand = useCallback(
-    (picked: import('../../types/skill.types').Skill | undefined, newValue: string, newCursorPos: number) => {
-      const extra = picked && extraCommands?.includes(picked) && onCommandPick;
+    (
+      picked: import('../../types/skill.types').Skill | undefined,
+      newValue: string,
+      newCursorPos: number,
+      trigger: '/' | '#' = '/'
+    ) => {
+      const extra = picked && (trigger === '#' ? onHashPick : extraCommands?.includes(picked) && onCommandPick);
       if (!extra) {
         setMessage(newValue);
         requestAnimationFrame(() => {
@@ -128,9 +145,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         });
         return;
       }
-      const start = newCursorPos - `/${picked.id} `.length;
+      const start = newCursorPos - `${trigger}${picked.id} `.length;
       setMessage(newValue.slice(0, start) + newValue.slice(newCursorPos));
-      onCommandPick(picked, (text) => {
+      extra(picked, (text) => {
         setMessage((m) => m.slice(0, start) + text + m.slice(start));
         requestAnimationFrame(() => {
           const el = textareaRef.current;
@@ -142,7 +159,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         });
       });
     },
-    [extraCommands, onCommandPick]
+    [extraCommands, onCommandPick, onHashPick]
   );
 
   // Expose methods to parent component
@@ -185,6 +202,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     if ((message.trim() || attachments.length > 0) && !disabled && !uploading) {
       fileMention.close();
       skillMention.close();
+      hashMention.close();
       const expandedMessage = filesystemDirectory
         ? expandFileMentions(message, filesystemDirectory)
         : message;
@@ -208,6 +226,15 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       if (result.consumed) {
         e.preventDefault();
         if (result.newValue !== undefined) applyCommand(picked, result.newValue, result.newCursorPos!);
+        return;
+      }
+    }
+    if (hashMention.isOpen) {
+      const picked = hashMention.filteredSkills[hashMention.activeIndex];
+      const result = hashMention.handleKeyDown(e);
+      if (result.consumed) {
+        e.preventDefault();
+        if (result.newValue !== undefined) applyCommand(picked, result.newValue, result.newCursorPos!, '#');
         return;
       }
     }
@@ -345,7 +372,17 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     // Trigger mention detection
     fileMention.handleChange(value, e.target.selectionStart ?? value.length);
     skillMention.handleChange(value, e.target.selectionStart ?? value.length);
+    if (hashCommands?.length) hashMention.handleChange(value, e.target.selectionStart ?? value.length);
   };
+
+  const handleHashSelect = useCallback(
+    (item: import('../../types/skill.types').Skill) => {
+      const cursorPos = textareaRef.current?.selectionStart ?? message.length;
+      const { newValue, newCursorPos } = hashMention.selectSkill(item, message, cursorPos);
+      applyCommand(item, newValue, newCursorPos, '#');
+    },
+    [message, hashMention, applyCommand]
+  );
 
   const handleSkillSelect = useCallback(
     (skill: import('../../types/skill.types').Skill) => {
@@ -556,6 +593,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           onBlur={() => {
             setTimeout(() => fileMention.close(), 150);
             setTimeout(() => skillMention.close(), 150);
+            setTimeout(() => hashMention.close(), 150);
           }}
           placeholder={placeholder}
           disabled={disabled || uploading}
@@ -619,6 +657,18 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           </div>
         </div>
       </div>
+
+      {/* "#" menu (references) */}
+      <SkillMentionDropdown
+        isOpen={hashMention.isOpen}
+        skills={hashMention.filteredSkills}
+        activeIndex={hashMention.activeIndex}
+        anchorRef={textareaRef}
+        onSelect={handleHashSelect}
+        onClose={hashMention.close}
+        emptyLabel={hashEmptyLabel}
+        prefix="#"
+      />
 
       {/* Skill mention dropdown */}
       <SkillMentionDropdown

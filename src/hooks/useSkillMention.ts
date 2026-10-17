@@ -18,7 +18,8 @@ export interface SkillMentionResult {
   close: () => void;
 }
 
-export function useSkillMention(skills: Skill[]): SkillMentionResult {
+/** `trigger`: the character that opens the menu ("/" for skills; the web app also uses "#"). */
+export function useSkillMention(skills: Skill[], trigger = '/'): SkillMentionResult {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -42,7 +43,7 @@ export function useSkillMention(skills: Skill[]): SkillMentionResult {
       const textBeforeCursor = value.slice(0, cursorPos);
 
       // Find last `/` before cursor
-      const slashIdx = textBeforeCursor.lastIndexOf('/');
+      const slashIdx = textBeforeCursor.lastIndexOf(trigger);
 
       if (slashIdx === -1) {
         if (isOpen) close();
@@ -71,7 +72,7 @@ export function useSkillMention(skills: Skill[]): SkillMentionResult {
       setIsOpen(true);
       triggerIndexRef.current = slashIdx;
     },
-    [isOpen, close]
+    [isOpen, close, trigger]
   );
 
   const buildReplacement = useCallback(
@@ -84,12 +85,12 @@ export function useSkillMention(skills: Skill[]): SkillMentionResult {
       const before = value.slice(0, slashIdx);
       const after = value.slice(cursorPos);
       // Insert command with trailing space so user can type args immediately
-      const token = `/${skill.id} `;
+      const token = `${trigger}${skill.id} `;
       const newValue = `${before}${token}${after}`;
       const newCursorPos = slashIdx + token.length;
       return { newValue, newCursorPos };
     },
-    []
+    [trigger]
   );
 
   const selectSkill = useCallback(

@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSessionQuery } from '../../api/rtk-api';
 import { PageFrame, Tabs } from '../../components/PageFrame';
 
-type Section = 'users' | 'groups' | 'connections' | 'tools' | 'directory' | 'settings';
+type Section = 'users' | 'groups' | 'connections' | 'tools' | 'knowledge' | 'directory' | 'settings';
 
 export function AdminLayout() {
   const { t } = useTranslation();
@@ -23,6 +23,7 @@ export function AdminLayout() {
           { id: 'groups', label: t('access.groups') },
           { id: 'connections', label: t('admin.connections') },
           { id: 'tools', label: t('admin.tools') },
+          { id: 'knowledge', label: t('rag.title') },
           { id: 'directory', label: t('admin.directory') },
           { id: 'settings', label: t('admin.settings') },
         ]}

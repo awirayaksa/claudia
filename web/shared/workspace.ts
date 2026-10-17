@@ -28,6 +28,8 @@ export const CustomModelInput = z.object({
   params: CustomModelParams.default({}),
   /** Tool servers switched on whenever this model answers. */
   toolIds: z.array(z.string().min(1).max(100)).max(50).default([]),
+  /** Knowledge bases searched whenever it answers (with the owner's access). */
+  knowledgeIds: z.array(z.uuid()).max(20).default([]),
   /** Starter prompts on an empty chat. */
   suggestions: z.array(z.string().trim().min(1).max(500)).max(8).default([]),
   active: z.boolean().default(true),

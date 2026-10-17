@@ -406,7 +406,9 @@
       "workspace.share_public": "Share workspace items with everyone",
       "mcp.user_servers": "Add their own tool servers",
       "connections.own": "Add their own LLM connections",
-      "api.keys": "Use API keys (OpenAI-compatible API)"
+      "api.keys": "Use API keys (OpenAI-compatible API)",
+      "workspace.knowledge": "Create knowledge bases",
+      "features.web_search": "Search the web from chats"
     },
     "caps": {
       "tokensPerDay": "Tokens per day",
@@ -451,7 +453,9 @@
     "promptBodyHelp": "Put {{name}} where something should be asked for, {{name:default}} with a default. {{CURRENT_DATE}} and {{USER_NAME}} fill themselves in.",
     "asksFor": "Asks for:",
     "preview": "Preview",
-    "insert": "Insert"
+    "insert": "Insert",
+    "knowledge": "Knowledge",
+    "knowledgeHelp": "Searched whenever this model answers, with your access (people using the model don't need their own)."
   },
   "memory": {
     "help": "Things every chat should know about you. They are sent to the model with each message.",
@@ -501,5 +505,110 @@
     "headersLabel": "Request headers",
     "headersKeep": "Leave empty to keep the stored headers",
     "yours": "yours"
+  },
+  "refs": {
+    "kb": "Knowledge base",
+    "chat": "Chat",
+    "url": "Web page",
+    "webPage": "A web page…",
+    "webPageHelp": "Read a page or YouTube video with this message",
+    "addUrl": "Read a web page",
+    "urlHelp": "The page (or YouTube video transcript) is read and its relevant parts are sent with your message.",
+    "remove": "Remove",
+    "nothing": "No knowledge bases or chats match",
+    "webSearch": "Search the web",
+    "webSearchHelp": "Search the web for this message and cite the results",
+    "webSearched": "Searched the web"
+  },
+  "knowledge": {
+    "help": "Documents chats can search and cite. Type # in a message to use one, or attach it to a folder or a custom model.",
+    "new": "New knowledge base",
+    "none": "No knowledge bases yet.",
+    "notFound": "This knowledge base was not found.",
+    "fileCount_one": "{{count}} file",
+    "fileCount_other": "{{count}} files",
+    "searchHybrid": "Searched by meaning and keywords ({{model}})",
+    "searchKeyword": "Searched by keywords (an admin can turn on embeddings for search by meaning)",
+    "fullContextOn": "whole documents when they fit",
+    "dropHelp": "Drop PDF, Word, Excel, PowerPoint, HTML, Markdown or text files here.",
+    "addFiles": "Add files",
+    "uploading": "Uploading {{name}}…",
+    "files_one": "{{count}} file",
+    "files_other": "{{count}} files",
+    "noFiles": "No files yet.",
+    "reindex": "Process again",
+    "status": {
+      "queued": "Waiting",
+      "processing": "Reading…",
+      "embedding": "Indexing {{percent}}%",
+      "ready_one": "Ready · {{count}} passage",
+      "ready_other": "Ready · {{count}} passages",
+      "failed": "Failed"
+    },
+    "tryQuery": "Try a question",
+    "tryPlaceholder": "What would a chat find for…",
+    "search": "Search",
+    "noHits": "Nothing matched.",
+    "edit": "Edit knowledge base",
+    "chunkSize": "Passage size (tokens)",
+    "chunkOverlap": "Overlap (tokens)",
+    "chunkHelp": "Empty uses the defaults. Changing them processes every file again.",
+    "fullContext": "Send whole documents when they fit",
+    "fullContextHelp": "Instead of the most relevant passages. Good for a few short documents.",
+    "deleteTitle": "Delete knowledge base?",
+    "deleteBody": "\"{{name}}\" and its index will be deleted. The files stay in your files."
+  },
+  "folder": {
+    "settings": "Folder settings",
+    "settingsTitle": "Folder \"{{name}}\"",
+    "systemPromptPlaceholder": "Instructions for every chat in this folder",
+    "knowledge": "Knowledge bases",
+    "knowledgeHelp": "Searched for every chat in this folder and its subfolders.",
+    "noKnowledge": "You have no knowledge bases yet (Workspace → Knowledge)."
+  },
+  "rag": {
+    "title": "Knowledge",
+    "embeddings": "Embeddings",
+    "embeddingsHelp": "With embeddings, knowledge is searched by meaning as well as keywords. Without them, keyword search still works.",
+    "engine": "Engine",
+    "engines": {
+      "none": "None (keyword search only)",
+      "openai": "OpenAI-compatible API",
+      "ollama": "Ollama",
+      "local": "Local (transformers.js)"
+    },
+    "model": "Model",
+    "baseUrl": "URL",
+    "apiKey": "API key",
+    "keyStored": "A key is stored; leave empty to keep it.",
+    "localMissing": "Local embeddings need the @huggingface/transformers package on the server.",
+    "test": "Test embeddings",
+    "testOk": "Works: {{dims}} dimensions.",
+    "changeWarning": "Changing the engine or model indexes every knowledge base and memory again.",
+    "retrieval": "Retrieval",
+    "chunkSize": "Passage size",
+    "chunkOverlap": "Overlap",
+    "topK": "Passages per message",
+    "maxContextTokens": "Source tokens per message",
+    "rerank": "Reranking",
+    "rerankEngines": {
+      "none": "None",
+      "cohere": "Cohere-style API (Cohere, Jina, …)",
+      "tei": "Text Embeddings Inference"
+    },
+    "webSearch": "Web search",
+    "webSearchHelp": "Lets people search the web from a chat (the globe button) and cite the results.",
+    "searchEngines": {
+      "none": "Off",
+      "searxng": "SearXNG",
+      "brave": "Brave Search",
+      "tavily": "Tavily",
+      "google_pse": "Google Programmable Search",
+      "duckduckgo": "DuckDuckGo"
+    },
+    "cx": "Search engine id (cx)",
+    "resultCount": "Results",
+    "fetchPages": "Read the result pages (not just the snippets)",
+    "savedReindexing": "Saved. Everything is being indexed again."
   }
 }

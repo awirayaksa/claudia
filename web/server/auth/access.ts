@@ -48,6 +48,8 @@ const PERMISSION_MESSAGES: Partial<Record<PermissionKey, string>> = {
   'mcp.user_servers': 'You are not allowed to add your own tool servers.',
   'connections.own': 'Your administrator does not allow personal connections.',
   'api.keys': 'You are not allowed to use API keys.',
+  'workspace.knowledge': 'You are not allowed to create knowledge bases.',
+  'features.web_search': 'You are not allowed to search the web.',
 };
 
 export class AccessService {

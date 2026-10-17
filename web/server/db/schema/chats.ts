@@ -17,6 +17,7 @@ import { sql } from 'drizzle-orm';
 import type { MessageNode, MessagePart, MessageStatus } from '../../../../src/types/turn.types';
 import type { MessageUsage } from '../../../../src/types/statistics.types';
 import { users } from './identity';
+import type { MessageRef } from '../../../shared/knowledge';
 
 /** Desktop projects import as top-level folders. */
 export const folders = pgTable(
@@ -29,6 +30,8 @@ export const folders = pgTable(
     parentId: uuid('parent_id').references((): AnyPgColumn => folders.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     systemPrompt: text('system_prompt'),
+    /** Knowledge bases searched for every chat in the folder (and its subfolders). */
+    knowledgeIds: jsonb('knowledge_ids').$type<string[]>().notNull().default([]),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -55,6 +58,9 @@ export interface MessageMeta {
   skill?: { id: string; args: string };
   /** Assistant nodes: suggested next questions. */
   followUps?: string[];
+  /** User nodes: #kb, #url and #chat references, and whether the web was searched. */
+  refs?: MessageRef[];
+  webSearch?: boolean;
 }
 
 export interface MessageFeedback {

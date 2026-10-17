@@ -66,6 +66,7 @@ export function toFolder(f: FolderRow): Folder {
     parentId: f.parentId,
     name: f.name,
     systemPrompt: f.systemPrompt,
+    knowledgeIds: f.knowledgeIds ?? [],
     createdAt: f.createdAt.toISOString(),
   };
 }
@@ -88,6 +89,8 @@ export function toNode(m: MessageRow): MessageNode {
       : {}),
     ...(m.meta?.models?.length ? { models: m.meta.models } : {}),
     ...(m.meta?.followUps?.length ? { followUps: m.meta.followUps } : {}),
+    ...(m.meta?.refs?.length ? { refs: m.meta.refs } : {}),
+    ...(m.meta?.webSearch ? { webSearch: true } : {}),
     createdAt: m.createdAt.toISOString(),
   };
 }

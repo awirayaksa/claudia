@@ -21,6 +21,7 @@ import {
 import { useWebDispatch } from '../hooks';
 import { Menu, type MenuItem } from '../components/Menu';
 import { ArchiveIcon, ChevronIcon, DotsIcon, FolderIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, TagIcon } from '../components/icons';
+import { FolderSettings } from './FolderSettings';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -330,6 +331,7 @@ function FolderItem({
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(folder.name);
   const [confirm, setConfirm] = useState(false);
+  const [settings, setSettings] = useState(false);
 
   return (
     <li>
@@ -363,6 +365,7 @@ function FolderItem({
             items={[
               { label: t('nav.newSubfolder'), onSelect: onNewSubfolder },
               { label: t('app.rename'), onSelect: () => setRenaming(true) },
+              { label: t('folder.settings'), onSelect: () => setSettings(true) },
               'separator',
               { heading: t('chat.moveTo') },
               ...moveTargets(tree, folder.parentId, tree.within(folder.id), (parentId) => void updateFolder({ id: folder.id, parentId }), t('nav.topLevel')),
@@ -373,6 +376,7 @@ function FolderItem({
         </div>
       </div>
       {open && <ul className="ml-4 space-y-0.5 border-l border-border pl-1">{children}</ul>}
+      {settings && <FolderSettings folder={folder} onClose={() => setSettings(false)} />}
       <ConfirmDialog
         isOpen={confirm}
         onClose={() => setConfirm(false)}

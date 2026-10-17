@@ -91,3 +91,15 @@ export const CloseIcon = () => (
     <path d="M6 6l12 12M18 6 6 18" />
   </svg>
 );
+export const GlobeIcon = () => (
+  <svg {...base}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18M12 3a14 14 0 0 1 0 18M12 3a14 14 0 0 0 0 18" />
+  </svg>
+);
+export const BookIcon = () => (
+  <svg {...base}>
+    <path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2V5z" />
+    <path d="M4 19a2 2 0 0 1 2-2h13" />
+  </svg>
+);

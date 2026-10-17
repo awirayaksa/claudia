@@ -26,14 +26,24 @@ const toView = (m: MemoryRow): MemoryView => ({
   updatedAt: m.updatedAt.toISOString(),
 });
 
-/** The system message carrying the user's memories, or null when there are none. */
-export async function memoryPrompt(db: Database, userId: string): Promise<string | null> {
-  const rows = await db
+/**
+ * The system message carrying the user's memories, or null when there are
+ * none. `pick` may narrow them down (the ones closest to the message, when
+ * there are many and embeddings are on); null keeps all, newest first.
+ */
+export async function memoryPrompt(
+  db: Database,
+  userId: string,
+  pick?: (totalChars: number) => Promise<string[] | null>
+): Promise<string | null> {
+  let rows = await db
     .select({ content: memories.content })
     .from(memories)
     .where(eq(memories.userId, userId))
     .orderBy(desc(memories.updatedAt))
     .limit(MAX_MEMORIES);
+  const picked = rows.length > 0 && pick ? await pick(rows.reduce((n, r) => n + r.content.length, 0)) : null;
+  if (picked) rows = picked.map((content) => ({ content }));
   const lines: string[] = [];
   let used = 0;
   for (const r of rows) {
@@ -48,6 +58,10 @@ export async function memoryPrompt(db: Database, userId: string): Promise<string
 export async function memoryRoutes(app: FastifyInstance, ctx: ServerContext): Promise<void> {
   app.addHook('preHandler', requireUser);
   const IdParams = z.object({ id: z.uuid() });
+  // With embeddings on, memories are also searchable by meaning
+  const embedLater = async (memoryId: string) => {
+    if (await ctx.rag.embedderKey()) await ctx.jobs.enqueue('memory.embed', { memoryId });
+  };
 
   app.get('/', async (req) => {
     const rows = await ctx.db
@@ -67,6 +81,7 @@ export async function memoryRoutes(app: FastifyInstance, ctx: ServerContext): Pr
       .where(eq(memories.userId, me.id));
     if (Number(n) >= MAX_MEMORIES) throw badRequest(`You can keep at most ${MAX_MEMORIES} memories.`, 'too_many_memories');
     const [row] = await ctx.db.insert(memories).values({ id: uuidv7(), userId: me.id, content }).returning();
+    await embedLater(row.id);
     reply.code(201);
     return { memory: toView(row) };
   });
@@ -80,6 +95,7 @@ export async function memoryRoutes(app: FastifyInstance, ctx: ServerContext): Pr
       .where(and(eq(memories.id, id), eq(memories.userId, currentUser(req).id)))
       .returning();
     if (!row) throw notFound('Memory');
+    await embedLater(row.id);
     return { memory: toView(row) };
   });
 

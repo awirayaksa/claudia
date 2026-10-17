@@ -38,7 +38,7 @@ export const groupMembers = pgTable(
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user_idx').on(t.userId)]
 );
 
-export type ResourceType = 'model' | 'prompt';
+export type ResourceType = 'model' | 'prompt' | 'knowledge';
 export type PrincipalType = 'user' | 'group' | 'public';
 
 /**
@@ -80,6 +80,8 @@ export const customModels = pgTable(
     systemPrompt: text('system_prompt').notNull().default(''),
     params: jsonb('params').$type<CustomModelParams>().notNull().default({}),
     toolIds: jsonb('tool_ids').$type<string[]>().notNull().default([]),
+    /** Knowledge bases searched whenever it answers (with its owner's access). */
+    knowledgeIds: jsonb('knowledge_ids').$type<string[]>().notNull().default([]),
     suggestions: jsonb('suggestions').$type<string[]>().notNull().default([]),
     active: boolean('active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),

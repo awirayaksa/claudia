@@ -15,6 +15,8 @@ import { GroupsPage } from './pages/admin/GroupsPage';
 import { WorkspaceLayout } from './pages/workspace/WorkspaceLayout';
 import { ModelsPage } from './pages/workspace/ModelsPage';
 import { PromptsPage } from './pages/workspace/PromptsPage';
+import { KnowledgePage } from './pages/workspace/KnowledgePage';
+import { RagSettingsPage } from './pages/admin/RagSettingsPage';
 
 /** Routes. Share links (/s/:token) are outside the sign-in gate. */
 export const routes: RouteObject[] = [
@@ -36,6 +38,8 @@ export const routes: RouteObject[] = [
           { index: true, element: <Navigate to="/workspace/models" replace /> },
           { path: 'models', element: <ModelsPage /> },
           { path: 'prompts', element: <PromptsPage /> },
+          { path: 'knowledge', element: <KnowledgePage /> },
+          { path: 'knowledge/:id', element: <KnowledgePage /> },
         ],
       },
       {
@@ -48,6 +52,7 @@ export const routes: RouteObject[] = [
           { path: 'connections', element: <ConnectionsPage /> },
           { path: 'tools', element: <ToolServersPage /> },
           { path: 'directory', element: <DirectoryPage /> },
+          { path: 'knowledge', element: <RagSettingsPage /> },
           { path: 'settings', element: <AdminSettingsPage /> },
         ],
       },

@@ -6,6 +6,7 @@
  */
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { ChatMessage } from '@/components/chat/ChatMessage';
 import { StreamingMessage } from '@/components/chat/StreamingMessage';
 import type { MessageNode } from '@/types/turn.types';
@@ -120,19 +121,41 @@ function UserTurn({
   const versions = siblingsOf(nodes, node);
   const index = versions.findIndex((v) => v.id === node.id);
   return (
-    <ChatMessage
-      message={toDisplayMessage(node)}
-      disabled={disabled}
-      onEdit={!readOnly && onEdit ? () => onEdit() : undefined}
-      actions={
-        <VersionSwitcher
-          index={index}
-          count={versions.length}
-          disabled={disabled}
-          onChange={(i) => onSelect?.(leafUnder(nodes, versions[i].id))}
-        />
-      }
-    />
+    <>
+      <ChatMessage
+        message={toDisplayMessage(node)}
+        disabled={disabled}
+        onEdit={!readOnly && onEdit ? () => onEdit() : undefined}
+        actions={
+          <VersionSwitcher
+            index={index}
+            count={versions.length}
+            disabled={disabled}
+            onChange={(i) => onSelect?.(leafUnder(nodes, versions[i].id))}
+          />
+        }
+      />
+      <RefChips node={node} />
+    </>
+  );
+}
+
+/** What a message referenced (#kb, #url, #chat) and whether it searched the web. */
+function RefChips({ node }: { node: MessageNode }) {
+  const { t } = useTranslation();
+  if (!node.refs?.length && !node.webSearch) return null;
+  const label = (r: NonNullable<MessageNode['refs']>[number]) =>
+    r.type === 'url' ? (r.url ?? '').replace(/^https?:\/\//, '') : (r.name ?? t(`refs.${r.type}`));
+  return (
+    <div className="-mt-2 mb-4 flex flex-wrap justify-end gap-1.5 text-xs" data-testid="message-refs">
+      {node.refs?.map((r, i) => (
+        <span key={i} className="max-w-[16rem] truncate rounded-full border border-border px-2 py-0.5 text-text-secondary" title={r.url ?? r.name}>
+          <span className="mr-1 text-accent">#</span>
+          {label(r)}
+        </span>
+      ))}
+      {node.webSearch && <span className="rounded-full border border-border px-2 py-0.5 text-text-secondary">{t('refs.webSearched')}</span>}
+    </div>
   );
 }
 
@@ -140,6 +163,7 @@ function AssistantTurn(
   props: Props & { node: MessageNode; authorLabel?: string; versions?: MessageNode[]; onFeedback: (id: string) => void; onVersion?: (id: string) => void }
 ) {
   const { node, nodes, running, readOnly } = props;
+  const navigate = useNavigate();
   if (node.status === 'streaming') {
     return <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />;
   }
@@ -150,6 +174,7 @@ function AssistantTurn(
     <ChatMessage
       message={toDisplayMessage(node)}
       authorLabel={props.authorLabel}
+      onOpenSource={readOnly ? undefined : (src) => src.kind === 'chat' && src.id && navigate(`/c/${src.id}`)}
       disabled={running}
       onRetry={!readOnly && props.onRegenerate ? () => props.onRegenerate!(node) : undefined}
       onBranch={!readOnly && props.onFork ? () => props.onFork!(node) : undefined}

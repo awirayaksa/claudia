@@ -5,3 +5,4 @@ export * from './chats';
 export * from './files';
 export * from './tools';
 export * from './access';
+export * from './knowledge';

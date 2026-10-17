@@ -30,7 +30,12 @@ export type RunEvent =
   | { type: 'message.followups'; messageId: string; followUps: string[] }
   | { type: 'message.completed'; messageId: string; status: RunStatus; error?: string; parts: MessagePart[] }
   /** Something the user should know about the request, e.g. history trimmed to fit. */
-  | { type: 'run.notice'; code: 'history_trimmed' | 'context_trimmed' | 'context_overflow'; message: string }
+  | {
+      type: 'run.notice';
+      /** sources: a knowledge, reference or web search note; sources_failed: they couldn't be loaded. */
+      code: 'history_trimmed' | 'context_trimmed' | 'context_overflow' | 'sources' | 'sources_failed';
+      message: string;
+    }
   | { type: 'chat.updated'; chatId: string; title?: string }
   | { type: 'run.completed'; runId: string; status: RunStatus };
 

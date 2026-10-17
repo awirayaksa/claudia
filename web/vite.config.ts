@@ -64,7 +64,8 @@ export default defineConfig({
     port: 5180,
     fs: { allow: [rootDir] },
     proxy: {
-      '/api': { target: 'http://localhost:8080', changeOrigin: false },
+      // ws: live updates (/api/ws); the Host header stays the page's, so the server's origin check passes
+      '/api': { target: 'http://localhost:8080', changeOrigin: false, ws: true },
       '/healthz': 'http://localhost:8080',
       '/readyz': 'http://localhost:8080',
     },

@@ -5,6 +5,7 @@
  */
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { hashDims, hashEmbed } from './hash-embed';
 
 export interface MockTurn {
   text?: string[];
@@ -25,6 +26,8 @@ export interface MockOpenAI {
   headers: http.IncomingHttpHeaders[];
   /** Turns used by non-streaming calls (titles); defaults to a fixed title. */
   completions: Array<{ content: string }>;
+  /** Bodies of POST /embeddings (answered with hashEmbed vectors; "hash-<n>" models give n dimensions). */
+  embeddingCalls: any[];
   push(...turns: MockTurn[]): void;
   close(): Promise<void>;
 }
@@ -37,6 +40,7 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
   const requests: any[] = [];
   const headers: http.IncomingHttpHeaders[] = [];
   const completions: Array<{ content: string }> = [];
+  const embeddingCalls: any[] = [];
 
   const server = http.createServer(async (req, res) => {
     headers.push(req.headers);
@@ -49,6 +53,19 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
     if (req.method === 'GET' && req.url?.endsWith('/models')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(JSON.stringify({ data: models.map((id) => ({ id, name: id, created: 0, owned_by: 'mock' })) }));
+    }
+    if (req.method === 'POST' && req.url?.endsWith('/embeddings')) {
+      const json = JSON.parse(body);
+      embeddingCalls.push(json);
+      const input: string[] = Array.isArray(json.input) ? json.input : [json.input];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(
+        JSON.stringify({
+          object: 'list',
+          data: input.map((t, index) => ({ object: 'embedding', index, embedding: hashEmbed(String(t), hashDims(json.model ?? '')) })),
+          model: json.model,
+        })
+      );
     }
     if (req.method !== 'POST' || !req.url?.endsWith('/chat/completions')) {
       res.writeHead(404);
@@ -114,6 +131,7 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
     requests,
     headers,
     completions,
+    embeddingCalls,
     push: (...turns) => queue.push(...turns),
     close: () =>
       new Promise((r) => {

@@ -2,7 +2,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { PageFrame, Tabs } from '../../components/PageFrame';
 
-type Section = 'models' | 'prompts';
+type Section = 'models' | 'prompts' | 'knowledge';
 
 /** /workspace: custom models and the prompt library. */
 export function WorkspaceLayout() {
@@ -18,6 +18,7 @@ export function WorkspaceLayout() {
         tabs={[
           { id: 'models', label: t('workspace.models') },
           { id: 'prompts', label: t('workspace.prompts') },
+          { id: 'knowledge', label: t('workspace.knowledge') },
         ]}
       />
       <div className="mt-4">

@@ -20,6 +20,11 @@ function cleanPart(p: MessagePart): MessagePart {
     const { uiResource: _ui, ...rest } = p;
     return rest;
   }
+  // Citations keep what they show (title, page, link, snippet), not file or chat ids
+  if (p.type === 'citation' && p.source.kind !== 'url') {
+    const { id: _id, ...source } = p.source;
+    return { ...p, source };
+  }
   return p;
 }
 

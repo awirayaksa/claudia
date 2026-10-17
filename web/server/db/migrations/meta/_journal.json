@@ -36,6 +36,13 @@
       "when": 1792258457334,
       "tag": "0004_phase3_workspace",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792263481098,
+      "tag": "0005_phase4_knowledge",
+      "breakpoints": true
     }
   ]
 }

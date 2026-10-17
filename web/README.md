@@ -5,7 +5,33 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 3** (workspace). Phase 3 adds:
+Status: **Phase 4** (knowledge and search). Phase 4 adds:
+
+- **Knowledge bases** (Workspace → Knowledge): PDF, Word, Excel, PowerPoint,
+  HTML, Markdown and text files are split into passages (keeping pages,
+  slides, sheets and headings) by a background job, with live progress. They
+  are private until shared, like models and prompts.
+- **Search and citations:** chats get the most relevant passages — keyword
+  search (PostgreSQL full-text) fused with vector search (pgvector) when an
+  embedding engine is set up, optionally reranked — or whole documents in
+  full-context mode. Replies cite them as `[1]`, `[2]`; clicking a number shows
+  the passage.
+- **References with `#`:** type `#` in a message for a knowledge base, a web
+  page (or YouTube video, by its transcript) or another of your chats; or
+  write `#https://…` in the text. Pages are read through the SSRF guard.
+- **Knowledge for folders and custom models:** every chat in a folder, or
+  every answer of a custom model, searches the knowledge bases attached to it.
+- **Web search** (the globe above the message box): SearXNG, Brave, Tavily,
+  Google Programmable Search or DuckDuckGo, with the result pages read and
+  cited. A SearXNG container is included (`docker compose --profile search`).
+- **Memory by relevance:** with embeddings on and many memories, only the
+  ones closest to the message are sent.
+- **Admin → Knowledge:** the embedding engine (OpenAI-compatible, Ollama, or
+  local transformers.js when `@huggingface/transformers` is installed),
+  passage size, passages per message, reranker (Cohere-style or TEI) and web
+  search. Without an embedding engine, knowledge works on keyword search.
+
+Phase 3 (workspace):
 
 - **Groups and permissions** (Admin → Groups, Admin → Settings): every user
   gets the default permissions (sharing chats, exporting, temporary chats,
@@ -104,7 +130,7 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 | Command | What it does |
 |---|---|
 | `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test) and client tests |
-| `npm run test:e2e` | Browser tests of the Phase 1a–3 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
+| `npm run test:e2e` | Browser tests of the Phase 1a–4 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
 | `npm run type-check` | Client and server, including the shared `../src` code |
 | `npm run build` | Client (`dist/client`) and server bundle (`dist/server/index.cjs`) |
 | `npm start` | Run the production build |
@@ -152,6 +178,9 @@ dependencies.
 
 Streaming behind a reverse proxy needs buffering off for `/api` (nginx:
 `proxy_buffering off;` and a read timeout longer than the longest run).
+Live updates use a WebSocket at `/api/ws`; the proxy must pass the upgrade
+(nginx: `proxy_http_version 1.1; proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection "upgrade";`) and keep the `Host` header.
 Session cookies get `Secure` when `CLAUDIA_PUBLIC_URL` is https.
 
 Every `LDAP_*` variable that is set wins over the admin page and shows there

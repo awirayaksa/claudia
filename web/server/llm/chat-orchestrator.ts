@@ -20,7 +20,7 @@ import { fitToContext } from '../../../src/services/chat/context-budget';
 import { coerceEffort, resolveEffort, type ReasoningEffort } from '../../../src/utils/effort-utils';
 import type { ChatCompletionRequest, ChatMessage } from '../../../src/types/api.types';
 import type { ToolCall } from '../../../src/types/message.types';
-import type { MessageNode, MessagePart } from '../../../src/types/turn.types';
+import type { MessageNode, MessagePart, PartOf } from '../../../src/types/turn.types';
 import type { MessageUsage } from '../../../src/types/statistics.types';
 import type { StreamEndReason } from '../../../src/services/api/sse-parser';
 import type { CompletionRequest, CompletionResponse } from '../../shared/chats';
@@ -34,6 +34,11 @@ import type { FileService } from '../modules/files/service';
 import type { SkillService } from '../modules/skills/service';
 import type { UsageService } from '../modules/usage/service';
 import { memoryPrompt } from '../modules/memories/routes';
+import type { AccessService } from '../auth/access';
+import type { RagConfig } from '../rag/config';
+import type { KnowledgeService } from '../rag/knowledge';
+import { readableKbIds, sourcesPrompt, type SourceBuilder, type TurnSource } from '../rag/sources';
+import type { MessageRef } from '../../shared/knowledge';
 import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
 
 /** Streaming replies are written to the database at most this often. */
@@ -55,7 +60,15 @@ export interface OrchestratorDeps {
   files?: FileService;
   /** `/skill` invocations (without it, a skill in the request is rejected). */
   skills?: SkillService;
+  /** Knowledge, #url / #chat references and web search (without them, references are rejected). */
+  access?: AccessService;
+  sources?: SourceBuilder;
+  knowledge?: KnowledgeService;
+  rag?: RagConfig;
 }
+
+/** Above this much memory text, only the memories closest to the message are sent (with embeddings). */
+const MEMORY_ALL_CHARS = 2000;
 
 interface RunPlan {
   run: Run;
@@ -66,6 +79,9 @@ interface RunPlan {
   userNode: MessageNode;
   /** The invoked skill's prompt, sent as a system message. */
   skillPrompt: string | null;
+  /** #kb / #url / #chat references and web search of this turn (checked). */
+  refs: MessageRef[];
+  webSearch: boolean;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
 }
 
@@ -131,6 +147,11 @@ export class ChatOrchestrator {
       if (skillPrompt === null) throw badRequest(`There is no skill called /${skill.id}.`, 'skill_not_found');
     }
 
+    // References and web search: a regeneration uses the turn's own
+    const refs: MessageRef[] = existing ? (existing.meta?.refs ?? []) : req.refs;
+    const webSearch = existing ? !!existing.meta?.webSearch : req.features.webSearch === true;
+    await this.checkRefs(user, refs, webSearch);
+
     const run = runs.start({
       userId: user.id,
       chatId: chat.id,
@@ -149,6 +170,8 @@ export class ChatOrchestrator {
         const meta: MessageMeta = {
           ...(req.modelIds.length > 1 ? { models: req.modelIds } : {}),
           ...(req.skill ? { skill: req.skill } : {}),
+          ...(refs.length ? { refs } : {}),
+          ...(webSearch ? { webSearch: true } : {}),
         };
         userNode = {
           id: uuidv7(),
@@ -223,7 +246,7 @@ export class ChatOrchestrator {
         existing && req.params.effort === undefined && userNode.effort
           ? { ...req, params: { ...req.params, effort: userNode.effort } }
           : req;
-      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets };
+      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets, refs, webSearch };
       void this.execute(plan).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
         runs.finish(run, 'error');
@@ -249,8 +272,9 @@ export class ChatOrchestrator {
     const before: ChatMessage[] = [];
     if (typeof prefs.systemPrompt === 'string' && prefs.systemPrompt.trim()) before.push(sys(prefs.systemPrompt));
     const after: ChatMessage[] = [];
+    const userText = plan.userNode.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
     if (userSettings.memory?.enabled !== false) {
-      const memory = await memoryPrompt(this.deps.db, user.id);
+      const memory = await memoryPrompt(this.deps.db, user.id, (total) => this.relevantMemories(user.id, userText, total));
       if (memory) after.push({ role: 'system', content: memory });
     }
     // Like the desktop: the skill follows the global prompt
@@ -259,6 +283,14 @@ export class ChatOrchestrator {
       if (f.systemPrompt?.trim()) after.push(sys(f.systemPrompt));
     }
     if (chat.params.systemPrompt?.trim()) after.push(sys(chat.params.systemPrompt));
+
+    // Sources (knowledge, references, web), numbered for citations, last
+    const sources = await this.gatherSources(plan, userText).catch((err) => {
+      this.deps.log.warn({ err: String(err), runId: run.id }, 'gathering sources failed');
+      this.deps.runs.emit(run, { type: 'run.notice', code: 'sources_failed', message: `Sources couldn't be loaded: ${err instanceof Error ? err.message : String(err)}` });
+      return [] as TurnSource[];
+    });
+    if (sources.length > 0) after.push({ role: 'system', content: sourcesPrompt(sources) });
 
     // A custom model's tools are on whenever it answers
     const toolsets = new Map<string, Promise<RunToolset>>();
@@ -283,6 +315,7 @@ export class ChatOrchestrator {
           toolset: await toolsetFor(t.model),
           fileOpts,
           reportTrim: i === 0,
+          citations: sources.map((src) => ({ type: 'citation' as const, index: src.index, source: src.source })),
         })
       )
     );
@@ -319,11 +352,20 @@ export class ChatOrchestrator {
       toolset: RunToolset;
       fileOpts: ToOpenAIOptions;
       reportTrim: boolean;
+      citations: Array<PartOf<'citation'>>;
     }
   ): Promise<RunStatus> {
     const { run, chat, req } = plan;
     const { runs, db, settings } = this.deps;
     const builder = new PartsBuilder();
+    for (const c of opts.citations) builder.add(c);
+    if (opts.citations.length > 0) {
+      runs.emit(run, {
+        type: 'message.citations',
+        messageId: assistantId,
+        citations: opts.citations.map((c) => ({ index: c.index, source: c.source })),
+      });
+    }
     const limits = await settings.get('limits');
     const signal = run.controller.signal;
     const started = Date.now();
@@ -511,6 +553,61 @@ export class ChatOrchestrator {
       if (view) resolved.set(row.id, view);
     }
     return { resolveFile: (part) => resolved.get(part.fileId) ?? null };
+  }
+
+  /** Refuse references the user can't use (before the run starts). */
+  private async checkRefs(user: AuthUser, refs: MessageRef[], webSearch: boolean): Promise<void> {
+    if (refs.length === 0 && !webSearch) return;
+    const { access, sources, rag } = this.deps;
+    if (!access || !sources || !rag) throw badRequest('References are not available here.', 'refs_unavailable');
+    for (const r of refs) {
+      if (r.type === 'chat') await this.repo.getOwned(user.id, r.id);
+      if (r.type === 'kb') {
+        const ok = await readableKbIds(this.deps.db, [r.id], async (kb) => (await access.rights(user, 'knowledge', kb)).read);
+        if (ok.length === 0) throw badRequest('A referenced knowledge base was not found.', 'kb_not_found');
+      }
+    }
+    if (webSearch) {
+      await access.require(user, 'features.web_search');
+      if ((await rag.settings()).webSearch.engine === 'none') throw badRequest('Web search is not set up on this server.', 'web_search_off');
+    }
+  }
+
+  /**
+   * Knowledge bases from #kb references and the chat's folders (with the
+   * user's access) and from custom models (with their owner's), plus
+   * referenced chats, #url pages and web search.
+   */
+  private async gatherSources(plan: RunPlan, query: string): Promise<TurnSource[]> {
+    const { access, sources } = this.deps;
+    if (!access || !sources) return [];
+    const { user, chat, refs } = plan;
+    const folderKbs = (await this.repo.folderChain(user.id, chat.folderId)).flatMap((f) => f.knowledgeIds ?? []);
+    const mine = [...refs.flatMap((r) => (r.type === 'kb' ? [r.id] : [])), ...folderKbs];
+    const kbIds = new Set(await readableKbIds(this.deps.db, mine, async (kb) => (await access.rights(user, 'knowledge', kb)).read));
+    for (const t of plan.targets) {
+      const custom = t.model.custom;
+      if (!custom?.knowledgeIds.length) continue;
+      const [owner] = await this.deps.db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, custom.ownerId));
+      if (!owner) continue;
+      for (const id of await readableKbIds(this.deps.db, custom.knowledgeIds, async (kb) => (await access.rights(owner, 'knowledge', kb)).read)) {
+        kbIds.add(id);
+      }
+    }
+    const urls = refs.flatMap((r) => (r.type === 'url' ? [r.url] : []));
+    const chatIds = refs.flatMap((r) => (r.type === 'chat' ? [r.id] : []));
+    if (kbIds.size === 0 && urls.length === 0 && chatIds.length === 0 && !plan.webSearch) return [];
+
+    const built = await sources.build({ userId: user.id, query, kbIds: [...kbIds], urls, chatIds, webSearch: plan.webSearch });
+    for (const message of built.notices) this.deps.runs.emit(plan.run, { type: 'run.notice', code: 'sources', message });
+    return built.sources;
+  }
+
+  /** With embeddings and many memories: the ones closest to the message. */
+  private async relevantMemories(userId: string, query: string, totalChars: number): Promise<string[] | null> {
+    if (totalChars <= MEMORY_ALL_CHARS || !this.deps.knowledge) return null;
+    const picked = await this.deps.knowledge.searchMemories(userId, query, 8).catch(() => []);
+    return picked.length > 0 ? picked : null;
   }
 
   /** One provider call as a promise of its end reason. */

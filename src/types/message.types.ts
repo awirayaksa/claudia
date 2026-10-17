@@ -2,6 +2,7 @@
 import { UIResourceContent } from './mcp.types';
 import { MessageUsage } from './statistics.types';
 import { ReasoningEffort } from '../utils/effort-utils';
+import type { CitationSource } from './turn.types';
 
 export interface Attachment {
   id: string;
@@ -59,6 +60,8 @@ export interface Message {
   usage?: MessageUsage;
   // Reasoning effort this message was sent with (user messages only, so retries reuse it)
   effort?: ReasoningEffort;
+  /** Numbered sources a reply cites as [n] (Claudia Web: knowledge, web pages, chats). */
+  citations?: Array<{ index: number; source: CitationSource }>;
 }
 
 export interface ChatState {

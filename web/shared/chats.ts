@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { MessageRef } from './knowledge';
 import type { MessageNode } from '../../src/types/turn.types';
 
 export const ChatSummary = z.object({
@@ -104,7 +105,10 @@ export const CompletionRequest = z.object({
   toolIds: z.array(z.string()).default([]),
   /** A `/skill args` invocation; content holds what the user sees. */
   skill: z.object({ id: z.string().min(1).max(64), args: z.string().max(100_000).default('') }).optional(),
+  /** webSearch: search the web for this message. */
   features: z.record(z.string(), z.boolean()).default({}),
+  /** #kb, #url and #chat references. */
+  refs: z.array(MessageRef).max(10).default([]),
 });
 export type CompletionRequest = z.infer<typeof CompletionRequest>;
 
@@ -131,6 +135,8 @@ export const Folder = z.object({
   parentId: z.string().nullable(),
   name: z.string(),
   systemPrompt: z.string().nullable(),
+  /** Knowledge bases searched for every chat in it. */
+  knowledgeIds: z.array(z.string()),
   createdAt: z.string(),
 });
 export type Folder = z.infer<typeof Folder>;
@@ -139,6 +145,7 @@ export const FolderInput = z.object({
   name: z.string().trim().min(1).max(100),
   parentId: z.uuid().nullable().optional(),
   systemPrompt: z.string().max(100_000).nullable().optional(),
+  knowledgeIds: z.array(z.uuid()).max(20).optional(),
 });
 
 export const LlmCompleteRequest = z.object({
@@ -222,6 +229,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
       url: z.string().max(4000).optional(),
       snippet: z.string().max(10_000).optional(),
       page: z.number().int().optional(),
+      section: z.string().max(1000).optional(),
     }),
   }),
 ]);

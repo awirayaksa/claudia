@@ -19,6 +19,8 @@ export interface CitationSource {
   url?: string;
   snippet?: string;
   page?: number;
+  /** The heading the passage is under ("Handbook › Vacation"). */
+  section?: string;
 }
 
 export type MessagePart =
@@ -60,5 +62,8 @@ export interface MessageNode {
   models?: string[];
   /** Assistant nodes: suggested next questions. */
   followUps?: string[];
+  /** User turns: #kb / #url / #chat references, and whether the web was searched. */
+  refs?: Array<{ type: 'kb' | 'url' | 'chat'; id?: string; url?: string; name?: string }>;
+  webSearch?: boolean;
   createdAt: string;
 }

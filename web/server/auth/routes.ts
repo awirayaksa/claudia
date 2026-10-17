@@ -52,7 +52,8 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
       user = row ? toPublicUser(row) : null;
       if (row) permissions = await ctx.access.permissionsFor(row);
     }
-    return { user, auth: await authOptions(), permissions };
+    const webSearch = (await ctx.rag.settings()).webSearch.engine !== 'none';
+    return { user, auth: await authOptions(), permissions, features: { webSearch } };
   });
 
   app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {

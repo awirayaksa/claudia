@@ -40,7 +40,13 @@ export async function openTestDatabase(url = process.env.TEST_DATABASE_URL): Pro
 }
 
 export async function buildTestApp(
-  opts: { db?: DbHandle; migrate?: boolean; env?: Record<string, string>; orchestrator?: AppDeps['orchestrator'] } = {}
+  opts: {
+    db?: DbHandle;
+    migrate?: boolean;
+    env?: Record<string, string>;
+    orchestrator?: AppDeps['orchestrator'];
+    youtubeOrigin?: string;
+  } = {}
 ) {
   const db = opts.db ?? (await openTestDatabase());
   if (opts.migrate !== false) await db.migrate(MIGRATIONS_DIR);
@@ -54,6 +60,7 @@ export async function buildTestApp(
     logger: false,
     bootstrap: opts.migrate !== false,
     orchestrator: opts.orchestrator,
+    youtubeOrigin: opts.youtubeOrigin,
   });
   return {
     app,

@@ -20,6 +20,7 @@ import {
 } from '../../../shared/chats';
 import { ChatRepo, toChatSummary, toFolder, toNode, toShareView } from './repo';
 import { ChatTransfer, dropNulls } from './transfer';
+import { readableKbIds } from '../../rag/sources';
 
 /** Imports arrive in batches of chats; one batch may be this large. */
 const IMPORT_BODY_LIMIT = 16 * 1024 * 1024;
@@ -242,6 +243,14 @@ export async function folderRoutes(app: FastifyInstance, ctx: ServerContext): Pr
     const { id } = IdParams.parse(req.params);
     const body = FolderInput.partial().parse(req.body);
     await repo.folderOwned(me.id, id);
+    // Only knowledge bases the user can read
+    const knowledgeIds =
+      body.knowledgeIds === undefined
+        ? undefined
+        : await readableKbIds(ctx.db, body.knowledgeIds, async (kb) => (await ctx.access.rights(me, 'knowledge', kb)).read);
+    if (knowledgeIds && body.knowledgeIds && knowledgeIds.length !== new Set(body.knowledgeIds).size) {
+      throw badRequest('A knowledge base was not found.', 'kb_not_found');
+    }
     if (body.parentId) {
       // No folder may end up inside itself
       const chain = await repo.folderChain(me.id, body.parentId);
@@ -253,6 +262,7 @@ export async function folderRoutes(app: FastifyInstance, ctx: ServerContext): Pr
         ...(body.name !== undefined ? { name: body.name } : {}),
         ...(body.parentId !== undefined ? { parentId: body.parentId } : {}),
         ...(body.systemPrompt !== undefined ? { systemPrompt: body.systemPrompt } : {}),
+        ...(knowledgeIds !== undefined ? { knowledgeIds } : {}),
         updatedAt: new Date(),
       })
       .where(and(eq(folders.id, id), eq(folders.userId, me.id)))

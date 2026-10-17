@@ -24,6 +24,7 @@ import type { LdapLookupResult, LdapSettingsResponse, LdapSettingsUpdate, LdapTe
 import type { FileView } from '@shared/files';
 import type { AppSettingsResponse, UserSettingsInput } from '@shared/settings';
 import type { PublicConfig } from '@shared/api';
+import type { KnowledgeDetail, KnowledgeInput, KnowledgeView, RagSettingsResponse, RagSettingsUpdate, SearchHit } from '@shared/knowledge';
 import type {
   GrantInput,
   GrantView,
@@ -106,6 +107,8 @@ export const api = createApi({
     'GroupMembers',
     'UserAccess',
     'MyGroups',
+    'Knowledge',
+    'Rag',
   ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
@@ -246,8 +249,8 @@ export const api = createApi({
     }),
     sendCompletion: b.mutation<
       CompletionResponse,
-      { chatId: string } & Omit<CompletionRequest, 'fileIds' | 'toolIds' | 'features' | 'regenerate' | 'content'> &
-        Partial<Pick<CompletionRequest, 'fileIds' | 'toolIds' | 'regenerate' | 'content'>>
+      { chatId: string } & Omit<CompletionRequest, 'fileIds' | 'toolIds' | 'features' | 'regenerate' | 'content' | 'refs'> &
+        Partial<Pick<CompletionRequest, 'fileIds' | 'toolIds' | 'regenerate' | 'content' | 'refs' | 'features'>>
     >({
       query: ({ chatId, ...body }) => ({ url: `/chats/${chatId}/completions`, method: 'POST', body }),
     }),
@@ -315,17 +318,63 @@ export const api = createApi({
       query: (id) => ({ url: `/workspace/prompts/${id}`, method: 'DELETE' }),
       invalidatesTags: ['Prompts'],
     }),
-    grants: b.query<{ grants: GrantView[] }, { kind: 'models' | 'prompts'; id: string }>({
-      query: ({ kind, id }) => `/workspace/${kind}/${id}/access`,
+    grants: b.query<{ grants: GrantView[] }, { kind: 'models' | 'prompts' | 'knowledge'; id: string }>({
+      query: ({ kind, id }) => `${kind === 'knowledge' ? '' : '/workspace'}/${kind}/${id}/access`,
       providesTags: (_r, _e, { id }) => [{ type: 'Grants', id }],
     }),
-    setGrants: b.mutation<{ grants: GrantView[] }, { kind: 'models' | 'prompts'; id: string; grants: GrantInput[] }>({
-      query: ({ kind, id, grants }) => ({ url: `/workspace/${kind}/${id}/access`, method: 'PUT', body: { grants } }),
+    setGrants: b.mutation<{ grants: GrantView[] }, { kind: 'models' | 'prompts' | 'knowledge'; id: string; grants: GrantInput[] }>({
+      query: ({ kind, id, grants }) => ({
+        url: `${kind === 'knowledge' ? '' : '/workspace'}/${kind}/${id}/access`,
+        method: 'PUT',
+        body: { grants },
+      }),
       invalidatesTags: (_r, _e, { id }) => [{ type: 'Grants', id }, 'Models'],
     }),
     myGroups: b.query<{ groups: GroupRef[] }, void>({ query: () => '/directory/groups', providesTags: ['MyGroups'] }),
     findUsers: b.query<{ users: Array<{ id: string; name: string; email: string }> }, string>({
       query: (q) => `/directory/users?q=${encodeURIComponent(q)}`,
+    }),
+
+    // ─── Knowledge ──────────────────────────────────────────────────────────
+    knowledgeList: b.query<{ knowledge: KnowledgeView[] }, void>({ query: () => '/knowledge', providesTags: ['Knowledge'] }),
+    knowledge: b.query<{ knowledge: KnowledgeDetail }, string>({
+      query: (id) => `/knowledge/${id}`,
+      providesTags: (_r, _e, id) => [{ type: 'Knowledge', id }],
+    }),
+    createKnowledge: b.mutation<{ knowledge: KnowledgeView }, Partial<KnowledgeInput>>({
+      query: (body) => ({ url: '/knowledge', method: 'POST', body }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    updateKnowledge: b.mutation<{ knowledge: KnowledgeView }, { id: string } & Partial<KnowledgeInput>>({
+      query: ({ id, ...body }) => ({ url: `/knowledge/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    deleteKnowledge: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/knowledge/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    addKnowledgeFile: b.mutation<{ ok: true }, { id: string; fileId: string }>({
+      query: ({ id, fileId }) => ({ url: `/knowledge/${id}/files`, method: 'POST', body: { fileId } }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    removeKnowledgeFile: b.mutation<{ ok: true }, { id: string; fileId: string }>({
+      query: ({ id, fileId }) => ({ url: `/knowledge/${id}/files/${fileId}`, method: 'DELETE' }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    reindexKnowledge: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/knowledge/${id}/reindex`, method: 'POST' }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    searchKnowledge: b.mutation<{ hits: SearchHit[] }, { id: string; query: string }>({
+      query: ({ id, query }) => ({ url: `/knowledge/${id}/search`, method: 'POST', body: { query } }),
+    }),
+    ragSettings: b.query<RagSettingsResponse, void>({ query: () => '/admin/rag', providesTags: ['Rag'] }),
+    updateRagSettings: b.mutation<RagSettingsResponse & { reindexing: boolean }, RagSettingsUpdate>({
+      query: (body) => ({ url: '/admin/rag', method: 'PUT', body }),
+      invalidatesTags: ['Rag', 'Knowledge', 'Session'],
+    }),
+    testEmbeddings: b.mutation<{ ok: boolean; error: string | null; dims: number | null }, void>({
+      query: () => ({ url: '/admin/rag/test-embeddings', method: 'POST' }),
     }),
 
     // ─── Memory, API keys, usage, own tool servers ──────────────────────────
@@ -381,7 +430,7 @@ export const api = createApi({
     }),
     updateFolder: b.mutation<
       { folder: Folder },
-      { id: string; name?: string; parentId?: string | null; systemPrompt?: string | null }
+      { id: string; name?: string; parentId?: string | null; systemPrompt?: string | null; knowledgeIds?: string[] }
     >({
       query: ({ id, ...body }) => ({ url: `/folders/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['Folders'],
@@ -609,6 +658,18 @@ export const {
   useGroupMembersQuery,
   useAddGroupMemberMutation,
   useRemoveGroupMemberMutation,
+  useKnowledgeListQuery,
+  useKnowledgeQuery,
+  useCreateKnowledgeMutation,
+  useUpdateKnowledgeMutation,
+  useDeleteKnowledgeMutation,
+  useAddKnowledgeFileMutation,
+  useRemoveKnowledgeFileMutation,
+  useReindexKnowledgeMutation,
+  useSearchKnowledgeMutation,
+  useRagSettingsQuery,
+  useUpdateRagSettingsMutation,
+  useTestEmbeddingsMutation,
 } = api;
 
 /** The signed-in user's permissions (all false until known). */

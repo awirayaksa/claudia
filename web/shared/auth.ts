@@ -26,6 +26,8 @@ export interface SessionResponse {
   auth: AuthOptions;
   /** What the signed-in user may do (all false when signed out or pending). */
   permissions: Permissions | null;
+  /** Server features that are set up. */
+  features: { webSearch: boolean };
 }
 
 const email = z

@@ -1,7 +1,9 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Message, Attachment } from '../../types/message.types';
 import { MessageAttachment } from './MessageAttachment';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { Citations } from './Citations';
+import type { CitationSource } from '../../types/turn.types';
 import { ToolCallMessage } from './ToolCallMessage';
 import { ReasoningMessage } from './ReasoningMessage';
 import { UIResourceDisplay } from './UIResourceDisplay';
@@ -24,6 +26,8 @@ interface ChatMessageProps {
   onRate?: (rating: 1 | -1 | null) => void;
   /** Read-only views (e.g. a shared chat) leave the rating buttons out. */
   hideRatings?: boolean;
+  /** Open a cited source the host can show (e.g. a referenced chat). */
+  onOpenSource?: (source: CitationSource) => void;
 }
 
 export const ChatMessage = React.memo(function ChatMessage({
@@ -37,11 +41,14 @@ export const ChatMessage = React.memo(function ChatMessage({
   rating,
   onRate,
   hideRatings,
+  onOpenSource,
 }: ChatMessageProps) {
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isTool = message.role === 'tool';
   const [copied, setCopied] = useState(false);
+  const [activeCitation, setActiveCitation] = useState<number | null>(null);
+  const citationNumbers = useMemo(() => new Set((message.citations ?? []).map((c) => c.index)), [message.citations]);
 
   const { showReasoning, showStatistics } = useAppSelector((state) => state.settings.preferences);
 
@@ -149,8 +156,17 @@ export const ChatMessage = React.memo(function ChatMessage({
 
           {/* Message content */}
           <div className="text-[14px] leading-[1.7] text-text-primary">
-            <MarkdownRenderer content={message.content} isUser={false} />
+            <MarkdownRenderer
+              content={message.content}
+              isUser={false}
+              citations={citationNumbers}
+              onCitation={(n) => setActiveCitation((a) => (a === n ? null : n))}
+            />
           </div>
+
+          {message.citations && message.citations.length > 0 && (
+            <Citations citations={message.citations} active={activeCitation} onActiveChange={setActiveCitation} onOpen={onOpenSource} />
+          )}
 
           {/* Error display */}
           {message.error && (

@@ -18,7 +18,10 @@ import {
   useCreateChatMutation,
   useForkChatMutation,
   useMcpServersQuery,
+  useChatsQuery,
+  useKnowledgeListQuery,
   useModelsQuery,
+  usePermissions,
   usePromptsQuery,
   useRateMessageMutation,
   useSendCompletionMutation,
@@ -35,6 +38,8 @@ import { MessageTurns } from '../chat/MessageTurns';
 import { ChatHeader } from '../chat/ChatHeader';
 import { CloseIcon, PlusIcon } from '../components/icons';
 import { PromptVariablesForm } from '../workspace/PromptForm';
+import { ContextBar, hashMenuItems, refFromItem, sameRef, UrlDialog, urlRefsIn } from '../chat/ContextBar';
+import type { MessageRef } from '@shared/knowledge';
 
 /** The model last picked by this user (per browser), for new chats. */
 const LAST_MODEL_KEY = 'claudia.lastModel';
@@ -54,6 +59,8 @@ const UUID = /^[0-9a-f-]{36}$/i;
 interface Outgoing {
   raw: string;
   attachments: Attachment[];
+  refs?: MessageRef[];
+  webSearch?: boolean;
 }
 
 export function ChatPage() {
@@ -73,6 +80,15 @@ export function ChatPage() {
   const skills = useAppSelector((s) => s.skills.skills);
   const { data: mcpData } = useMcpServersQuery();
   const { data: promptData } = usePromptsQuery({ scope: 'usable' });
+  const { data: kbData } = useKnowledgeListQuery();
+  const { data: recentChats } = useChatsQuery();
+  const permissions = usePermissions();
+  /** References and web search for the next message. */
+  const [refs, setRefs] = useState<MessageRef[]>([]);
+  const [webSearch, setWebSearch] = useState(false);
+  const [askUrl, setAskUrl] = useState(false);
+  const canSearchWeb = !!session?.features?.webSearch && !!permissions?.['features.web_search'];
+  const addRef = (r: MessageRef) => setRefs((list) => (list.some((x) => sameRef(x, r)) ? list : [...list, r].slice(0, 10)));
   /** A prompt waiting for its {{variables}}, and where its text goes. */
   const [promptForm, setPromptForm] = useState<{ prompt: PromptView; insert: (text: string) => void } | null>(null);
 
@@ -114,6 +130,8 @@ export function ChatPage() {
   useEffect(() => {
     setSendError(null);
     setQueue([]);
+    setRefs([]);
+    setWebSearch(false);
     if (!chatId) {
       setCompare([]);
       setTemporary(false);
@@ -192,6 +210,8 @@ export function ChatPage() {
         fileIds: out.attachments.map((a) => a.id).filter((x) => UUID.test(x)),
         toolIds: enabledServerIds(mcpData?.servers),
         ...(skill ? { skill } : {}),
+        ...(out.refs?.length ? { refs: out.refs } : {}),
+        ...(out.webSearch ? { features: { webSearch: true } } : {}),
       }).unwrap();
       follow(id, res.runId);
       if (!chatId) navigate(`/c/${id}`);
@@ -216,6 +236,16 @@ export function ChatPage() {
       })),
     [prompts]
   );
+  // The "#" menu: knowledge bases, a web page, recent chats (not this one)
+  const hashItems = useMemo(
+    () =>
+      hashMenuItems(
+        kbData?.knowledge ?? [],
+        (recentChats?.chats ?? []).filter((c) => c.id !== chatId),
+        { kb: t('refs.kb'), chat: t('refs.chat'), url: t('refs.webPage'), urlHelp: t('refs.webPageHelp') }
+      ),
+    [kbData, recentChats, chatId, t]
+  );
   const openPrompt = (prompt: PromptView, insert: (text: string) => void) => {
     if (templateVariables(prompt.body).length > 0) setPromptForm({ prompt, insert });
     else insert(fillTemplate(prompt.body, {}, { userName: session?.user?.name, language: navigator.language }));
@@ -229,12 +259,22 @@ export function ChatPage() {
       openPrompt(prompt, (text) => inputRef.current?.setMessage(text));
       return;
     }
+    // "#https://…" in the text reads that page too
+    const typed = urlRefsIn(raw);
+    const out: Outgoing = {
+      raw: typed.text,
+      attachments,
+      refs: [...refs, ...typed.refs.filter((r) => !refs.some((x) => sameRef(x, r)))].slice(0, 10),
+      webSearch,
+    };
+    setRefs([]);
+    setWebSearch(false);
     if (live || sending.current) {
       // A reply is still being written: send this one after it
-      setQueue((q) => [...q, { id: Date.now() + Math.random(), raw, attachments }]);
+      setQueue((q) => [...q, { id: Date.now() + Math.random(), ...out }]);
       return;
     }
-    void send({ raw, attachments }, chatId ? leafId : null);
+    void send(out, chatId ? leafId : null);
   };
 
   // Next queued message once the run is over and the chat is up to date
@@ -274,7 +314,8 @@ export function ChatPage() {
     const attachments = node.parts.flatMap((p) =>
       p.type === 'file' && p.fileId ? [{ id: p.fileId, type: 'file' as const, name: p.name, size: p.size ?? 0, mimeType: p.mime }] : []
     );
-    void send({ raw: text, attachments }, node.parentId);
+    // An edit keeps the turn's references and web search
+    void send({ raw: text, attachments, refs: (node.refs ?? []) as MessageRef[], webSearch: !!node.webSearch }, node.parentId);
   };
 
   const fork = async (node: MessageNode) => {
@@ -384,6 +425,13 @@ export function ChatPage() {
             onChange={setCompareModels}
           />
         )}
+        <ContextBar
+          refs={refs}
+          onRemove={(r) => setRefs((list) => list.filter((x) => !sameRef(x, r)))}
+          webSearch={webSearch}
+          onWebSearch={setWebSearch}
+          canSearchWeb={canSearchWeb}
+        />
         <ChatInput
           ref={inputRef}
           onSend={handleSend}
@@ -396,11 +444,28 @@ export function ChatPage() {
           onModelChange={handleModelChange}
           modelLabel={(id) => modelName(id) ?? id}
           extraCommands={promptCommands}
+          hashCommands={hashItems}
+          hashEmptyLabel={t('refs.nothing')}
+          onHashPick={(item) => {
+            const r = refFromItem(item);
+            if (r === 'ask-url') setAskUrl(true);
+            else if (r) addRef(r);
+          }}
           onCommandPick={(cmd, insert) => {
             const prompt = prompts.find((p) => p.command === cmd.id);
             if (prompt) openPrompt(prompt, insert);
           }}
         />
+        {askUrl && (
+          <UrlDialog
+            onClose={() => setAskUrl(false)}
+            onAdd={(url) => {
+              addRef({ type: 'url', url });
+              setAskUrl(false);
+              inputRef.current?.focus();
+            }}
+          />
+        )}
         {promptForm && (
           <PromptVariablesForm
             prompt={promptForm.prompt}

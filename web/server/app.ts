@@ -47,7 +47,16 @@ import { workspacePromptRoutes } from './modules/workspace/prompts';
 import { memoryRoutes } from './modules/memories/routes';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
+import { RagConfig } from './rag/config';
+import { KnowledgeService } from './rag/knowledge';
+import { SourceBuilder } from './rag/sources';
+import { VectorStore } from './rag/vector-store';
+import { JobQueue } from './jobs/queue';
+import { EventHub, registerWebSocket } from './ws/gateway';
+import { adminRagRoutes, knowledgeRoutes } from './modules/knowledge/routes';
 import { MAX_UPLOAD_BYTES } from '../shared/files';
+import { eq } from 'drizzle-orm';
+import { knowledgeBases } from './db/schema';
 import type { HealthResponse, PublicConfig, ReadyResponse } from '../shared/api';
 
 export interface AppDeps {
@@ -67,6 +76,10 @@ export interface AppDeps {
   bootstrap?: boolean;
   /** Start the enabled global MCP servers on startup (default true). */
   startMcp?: boolean;
+  /** Run background jobs in this process (default true). */
+  startJobs?: boolean;
+  /** Test hook: where YouTube pages are fetched from. */
+  youtubeOrigin?: string;
 }
 
 declare module 'fastify' {
@@ -128,6 +141,27 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const extract = new ExtractPool();
   const files = new FileService({ db: deps.db.db, storage, extract, log: app.log });
   const skills = new SkillService(deps.db.db);
+  const rag = new RagConfig({ db: deps.db.db, secrets });
+  const jobQueue = new JobQueue({ db: deps.db.db, log: app.log });
+  const events = new EventHub();
+  const knowledge = new KnowledgeService({
+    db: deps.db.db,
+    storage,
+    extract,
+    config: rag,
+    vectors: new VectorStore(deps.db.db),
+    jobs: jobQueue,
+    events,
+    log: app.log,
+  });
+  const netPolicy = () => ({ allow: settings.peek('net.allowlist').hosts });
+  const sources = new SourceBuilder({
+    db: deps.db.db,
+    config: rag,
+    knowledge,
+    web: { extract, policy: netPolicy, ...(deps.youtubeOrigin ? { youtubeOrigin: deps.youtubeOrigin } : {}) },
+    log: app.log,
+  });
   const mcp = new McpPools({
     db: deps.db.db,
     secrets,
@@ -136,7 +170,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     log: app.log,
     dataDir: deps.config.dataDir,
     extract,
-    netPolicy: () => ({ allow: settings.peek('net.allowlist').hosts }),
+    netPolicy,
     access,
   });
   const ctx: ServerContext = {
@@ -159,6 +193,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       skills,
       toolsFor: (user, toolIds, alwaysOn) => mcp.toolset(user.id, toolIds, alwaysOn),
       usage,
+      access,
+      sources,
+      knowledge,
+      rag,
       ...deps.orchestrator,
     }),
     storage,
@@ -170,6 +208,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     shares: new ShareService(deps.db.db),
     access,
     usage,
+    rag,
+    knowledge,
+    jobs: jobQueue,
+    events,
     log: app.log,
   };
   app.decorate('ctx', ctx);
@@ -182,6 +224,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   sweeper.unref();
   app.addHook('onClose', async () => {
     clearInterval(sweeper);
+    await jobQueue.stop();
     runs.close();
     await mcp.close();
     await extract.close();
@@ -199,6 +242,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     crossOriginResourcePolicy: { policy: 'same-site' },
   });
   registerAuthHooks(app, ctx);
+  events.guard('kb', async (user, id) => {
+    const [kb] = await deps.db.db.select({ id: knowledgeBases.id, ownerId: knowledgeBases.ownerId }).from(knowledgeBases).where(eq(knowledgeBases.id, id));
+    return !!kb && (await access.rights(user, 'knowledge', kb)).read;
+  });
+  await registerWebSocket(app, ctx);
 
   // ─── Health ───────────────────────────────────────────────────────────────
   // /healthz: the process is up. /readyz: the database answers and is migrated.
@@ -237,6 +285,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => workspacePromptRoutes(a, ctx), { prefix: '/workspace/prompts' });
       await api.register((a) => directoryRoutes(a, ctx), { prefix: '/directory' });
       await api.register((a) => openaiRoutes(a, ctx), { prefix: '/v1' });
+      await api.register((a) => knowledgeRoutes(a, ctx), { prefix: '/knowledge' });
       await api.register((a) => modelRoutes(a, ctx), { prefix: '/models' });
       await api.register((a) => chatRoutes(a, ctx), { prefix: '/chats' });
       await api.register((a) => folderRoutes(a, ctx), { prefix: '/folders' });
@@ -255,6 +304,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => adminSettingsRoutes(a, ctx), { prefix: '/admin/settings' });
       await api.register((a) => adminLdapRoutes(a, ctx), { prefix: '/admin/ldap' });
       await api.register((a) => adminGroupRoutes(a, ctx), { prefix: '/admin/groups' });
+      await api.register((a) => adminRagRoutes(a, ctx), { prefix: '/admin/rag' });
       api.setNotFoundHandler((req, reply) => {
         reply.code(404).send({ error: { code: 'not_found', message: `No route for ${req.method} ${req.url}` } });
       });
@@ -287,6 +337,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await skills.seedBuiltins().catch((err) => app.log.warn({ err: String(err) }, 'seeding built-in skills failed'));
   if (deps.bootstrap !== false) await bootstrapAdmin(ctx);
   if (deps.bootstrap !== false) purgeTemporary();
+  if (deps.startJobs !== false) jobQueue.start();
   if (deps.startMcp !== false) void mcp.startAll().catch((err) => app.log.warn({ err: String(err) }, 'starting MCP servers failed'));
   return app;
 }

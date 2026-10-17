@@ -52,6 +52,9 @@ export function toDisplayMessage(node: MessageNode): Message {
 
   const calls = node.parts.filter((p): p is PartOf<'tool_call'> => p.type === 'tool_call');
   const results = node.parts.filter((p): p is PartOf<'tool_result'> => p.type === 'tool_result');
+  const citations = node.parts
+    .filter((p): p is PartOf<'citation'> => p.type === 'citation')
+    .map((p) => ({ index: p.index, source: p.source }));
   const toolCalls: ToolCall[] = calls.map((c) => ({
     id: c.callId,
     type: 'function',
@@ -79,6 +82,7 @@ export function toDisplayMessage(node: MessageNode): Message {
     reasoning: nodeText(node, 'reasoning', '') || undefined,
     ...(toolCalls.length ? { toolCalls, toolResults } : {}),
     ...(node.usage ? { usage: node.usage } : {}),
+    ...(citations.length ? { citations } : {}),
     ...(node.status === 'error' ? { error: node.error ?? 'The reply failed.' } : {}),
   };
 }

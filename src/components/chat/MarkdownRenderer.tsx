@@ -11,6 +11,7 @@ import { getPluginRenderConfig } from '../../services/plugins/plugin-renderer.se
 import { RenderContext } from '../../types/plugin.types';
 import { Message } from '../../types/message.types';
 import { normalizeMath } from '../../utils/math-delimiters';
+import { citationIndex, linkCitations } from '../../utils/citations';
 import { MermaidDiagram } from './MermaidDiagram';
 
 // Single-dollar math is off so prices stay text; normalizeMath turns $x$, \(x\) and \[x\] into $$
@@ -22,9 +23,12 @@ interface MarkdownRendererProps {
   content: string;
   isUser?: boolean;
   message?: Message;
+  /** Source numbers that exist: "[n]" for them becomes a citation chip. */
+  citations?: ReadonlySet<number>;
+  onCitation?: (index: number) => void;
 }
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ content, isUser = false, message }) => {
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ content, isUser = false, message, citations, onCitation }) => {
   const { theme } = useAppSelector((state) => state.settings.appearance);
   const { activeExtensions, activeReplacement } = useAppSelector((state) => state.plugins);
 
@@ -59,7 +63,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
   }
 
   // Apply pre-processing from plugins
-  const processedContent = normalizeMath(pluginConfig.preProcess(content, renderContext));
+  const preprocessed = normalizeMath(pluginConfig.preProcess(content, renderContext));
+  const processedContent = citations?.size ? linkCitations(preprocessed, citations) : preprocessed;
 
   // Merge remark plugins
   const remarkPlugins: MarkdownOptions['remarkPlugins'] = [remarkGfm, [remarkMath, MATH_OPTIONS], ...pluginConfig.remarkPlugins];
@@ -177,6 +182,20 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
         },
         // Links
         a({ href, children }: { href?: string; children?: ReactNode }) {
+          const cite = citationIndex(href);
+          if (cite !== null) {
+            return (
+              <button
+                type="button"
+                className="mx-0.5 inline-flex h-4 min-w-4 -translate-y-0.5 items-center justify-center rounded-full bg-accent/15 px-1 align-baseline text-[10px] font-semibold leading-none text-accent hover:bg-accent hover:text-white"
+                onClick={() => onCitation?.(cite)}
+                aria-label={`Source ${cite}`}
+                data-testid="citation-link"
+              >
+                {cite}
+              </button>
+            );
+          }
           return (
             <a
               href={href}

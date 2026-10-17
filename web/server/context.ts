@@ -17,6 +17,10 @@ import type { LdapService } from './auth/ldap';
 import type { ShareService } from './modules/shares/service';
 import type { AccessService } from './auth/access';
 import type { UsageService } from './modules/usage/service';
+import type { RagConfig } from './rag/config';
+import type { KnowledgeService } from './rag/knowledge';
+import type { JobQueue } from './jobs/queue';
+import type { EventHub } from './ws/gateway';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -39,5 +43,9 @@ export interface ServerContext {
   shares: ShareService;
   access: AccessService;
   usage: UsageService;
+  rag: RagConfig;
+  knowledge: KnowledgeService;
+  jobs: JobQueue;
+  events: EventHub;
   log: FastifyBaseLogger;
 }

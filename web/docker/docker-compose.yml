@@ -6,6 +6,9 @@
 #
 # Then open http://localhost:8080. Back up the `pgdata` volume (pg_dump) and
 # the `claudia-data` volume (uploads and workspaces).
+#
+# Web search with a private SearXNG: docker compose --profile search up -d,
+# then Admin → Knowledge → Web search: SearXNG at http://searxng:8080.
 
 name: claudia
 
@@ -46,6 +49,16 @@ services:
       interval: 5s
       timeout: 5s
       retries: 20
+
+  searxng:
+    # Pin a dated tag from hub.docker.com/r/searxng/searxng for reproducible deployments
+    image: searxng/searxng:latest
+    profiles: [search]
+    restart: unless-stopped
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-claudia-searxng-change-me}
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
 
 volumes:
   claudia-data:

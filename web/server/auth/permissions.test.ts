@@ -31,6 +31,8 @@ beforeAll(async () => {
     member: users.find((u) => u.email === 'member@example.com')!.id,
     outsider: users.find((u) => u.email === 'outsider@example.com')!.id,
   };
+  // A search engine is set up (nothing listens there: searching fails inside the run, not the request)
+  expect((await admin.put('/api/admin/rag', { webSearch: { engine: 'searxng', baseUrl: 'http://127.0.0.1:9', cx: '', resultCount: 3, fetchPages: false } })).statusCode).toBe(200);
   const team = await admin.post('/api/admin/groups', { name: 'Team' });
   expect(team.statusCode).toBe(201);
   teamId = team.json().group.id;
@@ -74,6 +76,19 @@ const attempts: Record<PermissionKey, (c: TestClient) => Promise<number>> = {
     (await c.post('/api/connections', { name: 'Own', prefix: `own${Math.floor(Math.random() * 1e6)}`, type: 'openai', baseUrl: 'https://api.example.com/v1' }))
       .statusCode,
   'api.keys': async (c) => (await c.post('/api/me/api-keys', { name: 'k' })).statusCode,
+  'workspace.knowledge': async (c) => (await c.post('/api/knowledge', { name: `KB ${Math.random()}` })).statusCode,
+  'features.web_search': async (c) => {
+    const chat = await c.post('/api/chats', {});
+    if (chat.statusCode !== 201) return chat.statusCode;
+    return (
+      await c.post(`/api/chats/${chat.json().chat.id}/completions`, {
+        parentId: null,
+        content: 'Search this',
+        modelIds: ['mock/gpt-test'],
+        features: { webSearch: true },
+      })
+    ).statusCode;
+  },
 };
 
 /** What each principal should get: allowed, or refused with 403. */
@@ -163,13 +178,23 @@ const RESOURCES = [
       ((await c.get('/api/workspace/prompts?scope=usable')).json().prompts as Array<{ id: string }>).some((p) => p.id === id),
     edit: (c: TestClient, id: string) => c.patch(`/api/workspace/prompts/${id}`, { description: 'edited' }),
   },
+  {
+    type: 'knowledge',
+    base: '/api/knowledge',
+    create: (c: TestClient, name: string) => c.post('/api/knowledge', { name }),
+    idOf: (res: any) => res.json().knowledge.id as string,
+    /** Can the actor use it: in their list (what the # menu offers). */
+    uses: async (c: TestClient, id: string) =>
+      ((await c.get('/api/knowledge')).json().knowledge as Array<{ id: string }>).some((k) => k.id === id),
+    edit: (c: TestClient, id: string) => c.patch(`/api/knowledge/${id}`, { description: 'edited' }),
+  },
 ] as const;
 
 describe('permission matrix: workspace item × grant × actor', () => {
   for (const r of RESOURCES) {
     for (const c of ITEM_CASES) {
       it(`${r.type}, ${c.grant}`, async () => {
-        await configure({ 'workspace.models': true, 'workspace.prompts': true }, {});
+        await configure({ 'workspace.models': true, 'workspace.prompts': true, 'workspace.knowledge': true }, {});
         // The admin owns it (and may share with everyone)
         const created = await r.create(admin, `${r.type} ${c.grant} ${Date.now()}`);
         expect(created.statusCode).toBe(201);
@@ -196,7 +221,7 @@ describe('permission matrix: workspace item × grant × actor', () => {
     }
 
     it(`${r.type}: owners other than admins manage their own`, async () => {
-      await configure({ 'workspace.models': true, 'workspace.prompts': true }, {});
+      await configure({ 'workspace.models': true, 'workspace.prompts': true, 'workspace.knowledge': true }, {});
       const created = await r.create(member, `${r.type} by member ${Date.now()}`);
       expect(created.statusCode).toBe(201);
       const id = r.idOf(created);

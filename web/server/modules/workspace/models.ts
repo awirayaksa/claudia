@@ -17,6 +17,7 @@ import type { Principal } from '../../auth/access';
 import type { CustomModelRow } from '../../llm/model-registry';
 import { CustomModelInput, customModelKey, type CustomModelView } from '../../../shared/workspace';
 import { registerAccessRoutes } from './access-routes';
+import { readableKbIds } from '../../rag/sources';
 
 const IdParams = z.object({ id: z.uuid() });
 
@@ -32,6 +33,7 @@ function toView(row: CustomModelRow, ownerName: string, access: { write: boolean
     systemPrompt: row.systemPrompt,
     params: row.params,
     toolIds: row.toolIds,
+    knowledgeIds: row.knowledgeIds,
     suggestions: row.suggestions,
     active: row.active,
     access: { write: access.write, manage: access.manage },
@@ -64,7 +66,7 @@ export async function workspaceModelRoutes(app: FastifyInstance, ctx: ServerCont
    * owner may use (the model runs with the owner's access); tools must be
    * servers the editor can see.
    */
-  const validate = async (me: Principal, ownerId: string, input: Pick<CustomModelInput, 'baseModelId' | 'toolIds'>) => {
+  const validate = async (me: Principal, ownerId: string, input: Pick<CustomModelInput, 'baseModelId' | 'toolIds' | 'knowledgeIds'>) => {
     const mine = await ctx.models.allowedGlobal(me);
     if (!mine.some((m) => m.id === input.baseModelId)) {
       throw badRequest('Choose a base model you can use (not a personal or custom one).', 'invalid_base_model');
@@ -79,6 +81,14 @@ export async function workspaceModelRoutes(app: FastifyInstance, ctx: ServerCont
       const visible = new Set((await ctx.mcp.serversFor(me.id)).map((s) => s.id));
       const unknown = input.toolIds.filter((id) => !visible.has(id));
       if (unknown.length > 0) throw badRequest('One of the tool servers is not available.', 'invalid_tool');
+    }
+    // The model searches them with its owner's access, so both must be able to read them
+    if (input.knowledgeIds.length > 0) {
+      const [owner] = await ctx.db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, ownerId));
+      const ok = await readableKbIds(ctx.db, input.knowledgeIds, async (kb) =>
+        (await ctx.access.rights(me, 'knowledge', kb)).read && !!owner && (await ctx.access.rights(owner, 'knowledge', kb)).read
+      );
+      if (ok.length !== new Set(input.knowledgeIds).size) throw badRequest('One of the knowledge bases is not available.', 'invalid_knowledge');
     }
   };
 
@@ -120,7 +130,9 @@ export async function workspaceModelRoutes(app: FastifyInstance, ctx: ServerCont
     if (!existing.rights.write) throw forbidden('You can use this model but not change it.', 'read_only');
     const body = parsePatch(CustomModelInput, req.body);
     const merged = { ...existing.model, ...body };
-    if (body.baseModelId !== undefined || body.toolIds !== undefined) await validate(me, existing.model.ownerId, merged);
+    if (body.baseModelId !== undefined || body.toolIds !== undefined || body.knowledgeIds !== undefined) {
+      await validate(me, existing.model.ownerId, merged);
+    }
     const [row] = await ctx.db
       .update(customModels)
       .set({ ...body, updatedAt: new Date() })

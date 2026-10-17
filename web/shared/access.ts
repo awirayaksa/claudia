@@ -10,10 +10,12 @@ export const PERMISSION_KEYS = [
   'chat.temporary',
   'workspace.models',
   'workspace.prompts',
+  'workspace.knowledge',
   'workspace.share_public',
   'mcp.user_servers',
   'connections.own',
   'api.keys',
+  'features.web_search',
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 export type Permissions = Record<PermissionKey, boolean>;
@@ -25,10 +27,12 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   'chat.temporary': true,
   'workspace.models': false,
   'workspace.prompts': true,
+  'workspace.knowledge': true,
   'workspace.share_public': false,
   'mcp.user_servers': false,
   'connections.own': false,
   'api.keys': false,
+  'features.web_search': true,
 };
 
 export const PermissionsSchema = z.object(

@@ -82,3 +82,19 @@ describe('MarkdownRenderer mermaid', () => {
     expect(mermaid.render).not.toHaveBeenCalled();
   });
 });
+
+describe('MarkdownRenderer citations', () => {
+  it('turns [n] of known sources into buttons that report the number', async () => {
+    const picked: number[] = [];
+    const { container } = render(
+      <Provider store={createAppStore({})}>
+        <MarkdownRenderer content="Twenty-five days [1][2], see `a[1]`." citations={new Set([1, 2])} onCitation={(n) => picked.push(n)} />
+      </Provider>
+    );
+    const links = container.querySelectorAll('[data-testid="citation-link"]');
+    expect([...links].map((l) => l.textContent)).toEqual(['1', '2']);
+    (links[1] as HTMLButtonElement).click();
+    expect(picked).toEqual([2]);
+    expect(container.querySelector('code')?.textContent).toBe('a[1]');
+  });
+});

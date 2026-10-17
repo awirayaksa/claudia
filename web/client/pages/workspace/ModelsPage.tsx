@@ -9,6 +9,7 @@ import {
   errorMessage,
   useCreateWorkspaceModelMutation,
   useDeleteWorkspaceModelMutation,
+  useKnowledgeListQuery,
   useMcpServersQuery,
   useModelsQuery,
   usePermissions,
@@ -112,6 +113,7 @@ function ModelModal({ model, onClose }: { model: CustomModelView | null; onClose
   const { t } = useTranslation();
   const { data: models } = useModelsQuery();
   const { data: servers } = useMcpServersQuery();
+  const { data: kbs } = useKnowledgeListQuery();
   const [create, createState] = useCreateWorkspaceModelMutation();
   const [update, updateState] = useUpdateWorkspaceModelMutation();
   const bases = (models?.models ?? []).filter((m) => !m.custom && !m.own);
@@ -122,6 +124,7 @@ function ModelModal({ model, onClose }: { model: CustomModelView | null; onClose
     systemPrompt: model?.systemPrompt ?? '',
     params: model?.params ?? {},
     toolIds: model?.toolIds ?? [],
+    knowledgeIds: model?.knowledgeIds ?? [],
     suggestions: model?.suggestions ?? [],
     active: model?.active ?? true,
   });
@@ -235,6 +238,28 @@ function ModelModal({ model, onClose }: { model: CustomModelView | null; onClose
                     }
                   />
                   {s.name}
+                </label>
+              ))}
+            </div>
+          </Field>
+        )}
+
+        {(kbs?.knowledge.length ?? 0) > 0 && (
+          <Field label={t('workspace.knowledge')} help={t('workspace.knowledgeHelp')}>
+            <div className="grid gap-1 sm:grid-cols-2" data-testid="model-knowledge">
+              {kbs!.knowledge.map((k) => (
+                <label key={k.id} className="flex items-center gap-2 text-sm font-normal">
+                  <input
+                    type="checkbox"
+                    checked={draft.knowledgeIds.includes(k.id)}
+                    onChange={(e) =>
+                      setDraft({
+                        ...draft,
+                        knowledgeIds: e.target.checked ? [...draft.knowledgeIds, k.id] : draft.knowledgeIds.filter((x) => x !== k.id),
+                      })
+                    }
+                  />
+                  {k.name}
                 </label>
               ))}
             </div>
