@@ -2,54 +2,58 @@ import { Input } from '../common/Input';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { setPreferences } from '../../store/slices/settingsSlice';
 import { EFFORT_LEVELS, ReasoningEffort, formatEffort } from '../../utils/effort-utils';
+import { getPlatform } from '../../platform';
 
 export function PreferencesSettings() {
   const dispatch = useAppDispatch();
   const { temperature, showReasoning, showStatistics, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
 
+  const platform = getPlatform();
+
   const handleTemperatureChange = async (value: number) => {
     dispatch(setPreferences({ temperature: value }));
-    await window.electron.config.set({ preferences: { temperature: value } });
+    await platform.config.set({ preferences: { temperature: value } });
   };
 
   const handleReasoningEffortChange = async (value: ReasoningEffort | null) => {
     dispatch(setPreferences({ reasoningEffort: value }));
-    await window.electron.config.set({ preferences: { reasoningEffort: value } });
+    await platform.config.set({ preferences: { reasoningEffort: value } });
   };
 
   const handleShowReasoningChange = async (value: boolean) => {
     dispatch(setPreferences({ showReasoning: value }));
-    await window.electron.config.set({ preferences: { showReasoning: value } });
+    await platform.config.set({ preferences: { showReasoning: value } });
   };
 
   const handleShowStatisticsChange = async (value: boolean) => {
     dispatch(setPreferences({ showStatistics: value }));
-    await window.electron.config.set({ preferences: { showStatistics: value } });
+    await platform.config.set({ preferences: { showStatistics: value } });
   };
 
   const handleSystemPromptChange = async (value: string) => {
     dispatch(setPreferences({ systemPrompt: value, systemPromptFileName: '' }));
-    await window.electron.config.set({ preferences: { systemPrompt: value, systemPromptFileName: '' } });
+    await platform.config.set({ preferences: { systemPrompt: value, systemPromptFileName: '' } });
   };
 
   const handleSelectFile = async () => {
-    const result = await window.electron.systemPrompt.selectFile();
+    if (!platform.systemPrompt) return;
+    const result = await platform.systemPrompt.selectFile();
     if (result) {
       dispatch(setPreferences({ systemPrompt: result.content, systemPromptFileName: result.fileName }));
-      await window.electron.config.set({ preferences: { systemPrompt: result.content, systemPromptFileName: result.fileName } });
+      await platform.config.set({ preferences: { systemPrompt: result.content, systemPromptFileName: result.fileName } });
     }
   };
 
   const handleReset = async () => {
     dispatch(setPreferences({ systemPrompt: '', systemPromptFileName: '' }));
-    await window.electron.config.set({ preferences: { systemPrompt: '', systemPromptFileName: '' } });
+    await platform.config.set({ preferences: { systemPrompt: '', systemPromptFileName: '' } });
   };
 
   const handleUpdateCheckUrlChange = async (value: string) => {
     dispatch(setPreferences({ updateCheckUrl: value }));
-    await window.electron.config.set({ preferences: { updateCheckUrl: value } });
+    await platform.config.set({ preferences: { updateCheckUrl: value } });
     // Restart the periodic check with the new URL
-    await window.electron.updater.restartCheck();
+    await platform.updater?.restartCheck();
   };
 
   return (
@@ -123,13 +127,15 @@ export function PreferencesSettings() {
           className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text-primary placeholder-text-secondary focus:outline-none focus:ring-2 focus:ring-accent hover:border-accent resize-y"
         />
         <div className="mt-2 flex gap-2">
-          <button
-            type="button"
-            onClick={handleSelectFile}
-            className="rounded border border-border bg-surface px-3 py-1.5 text-sm text-text-primary hover:border-accent hover:bg-background transition-colors"
-          >
-            Select .txt or .md file
-          </button>
+          {platform.systemPrompt && (
+            <button
+              type="button"
+              onClick={handleSelectFile}
+              className="rounded border border-border bg-surface px-3 py-1.5 text-sm text-text-primary hover:border-accent hover:bg-background transition-colors"
+            >
+              Select .txt or .md file
+            </button>
+          )}
           {systemPrompt && (
             <button
               type="button"
@@ -183,6 +189,7 @@ export function PreferencesSettings() {
         </label>
       </div>
 
+      {platform.capabilities.autoUpdate && (
       <div>
         <h3 className="mb-4 text-lg font-semibold text-text-primary">Auto Update</h3>
         <p className="mb-4 text-sm text-text-secondary">
@@ -198,6 +205,7 @@ export function PreferencesSettings() {
           helperText="Leave empty to disable automatic update checks"
         />
       </div>
+      )}
     </div>
   );
 }

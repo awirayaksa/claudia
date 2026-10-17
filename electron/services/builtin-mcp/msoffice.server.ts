@@ -517,7 +517,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
         const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
         const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
         const extract = (xml: string, tag: string) => {
-          const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)<\/[^:>]*:?${tag}>`));
+          const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)</[^:>]*:?${tag}>`));
           return m ? m[1].trim() : '';
         };
         const info: Record<string, string> = {
@@ -2085,7 +2085,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
         const needle = match_case !== false ? text_to_find : text_to_find.toLowerCase();
 
         for (let i = 0; i < paras.length; i++) {
-          let text = paraText(paras[i]);
+          const text = paraText(paras[i]);
           const haystack = match_case !== false ? text : text.toLowerCase();
           const searchNeedle = whole_word ? new RegExp(`\\b${needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`) : needle;
           const found = typeof searchNeedle === 'string' ? haystack.includes(searchNeedle) : searchNeedle.test(haystack);
@@ -2394,7 +2394,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
             addContentType(zip, '/docProps/core.xml', 'application/vnd.openxmlformats-package.core-properties+xml');
           }
           const upsert = (xml: string, tag: string, value: string): string => {
-            const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?<\/${tag}>`);
+            const re = new RegExp(`<${tag}[^>]*>[\\s\\S]*?</${tag}>`);
             const node = `<${tag}>${escapeXml(value)}</${tag}>`;
             if (re.test(xml)) return xml.replace(re, node);
             return xml.replace(/<\/cp:coreProperties>/, `${node}</cp:coreProperties>`);
@@ -2434,7 +2434,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
         const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
         const ctXml = getZipEntry(zip, '[Content_Types].xml') || '';
         const extract = (xml: string, tag: string) => {
-          const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)<\/[^:>]*:?${tag}>`));
+          const m = xml.match(new RegExp(`<[^:>]*:?${tag}[^>]*>([\\s\\S]*?)</[^:>]*:?${tag}>`));
           return m ? m[1].trim() : '';
         };
         const ctMatch = ctXml.match(/PartName="\/word\/document\.xml"\s+ContentType="([^"]+)"/);

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAppSelector } from '../store';
 import { useTheme } from './useTheme';
 import { generateHoverColor, isValidHexColor } from '../utils/color.utils';
+import { getPlatform } from '../platform';
 
 /**
  * Hook to apply custom accent color to CSS variables
@@ -21,8 +22,9 @@ export function useAccentColor() {
       root.style.setProperty('--color-accent-hover', hoverColor);
 
       // Update window background color (title bar)
-      if (window.electron?.window?.setBackgroundColor) {
-        window.electron.window.setBackgroundColor(customization.accentColor).catch((error) => {
+      const platformWindow = getPlatform().window;
+      if (platformWindow) {
+        platformWindow.setBackgroundColor(customization.accentColor).catch((error) => {
           console.error('Failed to set window background color:', error);
         });
       }
@@ -32,9 +34,10 @@ export function useAccentColor() {
       root.style.removeProperty('--color-accent-hover');
 
       // Reset window background color to default
-      if (window.electron?.window?.setBackgroundColor) {
+      const platformWindow = getPlatform().window;
+      if (platformWindow) {
         const defaultColor = effectiveTheme === 'dark' ? '#1a1a1a' : '#FAF9F7';
-        window.electron.window.setBackgroundColor(defaultColor).catch((error) => {
+        platformWindow.setBackgroundColor(defaultColor).catch((error) => {
           console.error('Failed to reset window background color:', error);
         });
       }

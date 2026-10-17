@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getAPIProvider } from '../../services/api/provider.service';
+import { getPlatform } from '../../platform';
 
 export interface PromptSuggestion {
   title: string;
@@ -105,8 +105,7 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
     setFailed(false);
 
     try {
-      const provider = getAPIProvider();
-      const response = await provider.chatCompletion({
+      const content = await getPlatform().llm.complete({
         model,
         messages: [
           {
@@ -123,13 +122,11 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
 [{"emoji":"📚","title":"Help me study","subtitle":"vocabulary for a college entrance exam","prompt":"Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option."}]`,
           },
         ],
-        stream: false,
-        max_tokens: 600,
+        maxTokens: 600,
         temperature: 1.0,
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (content && typeof content === 'string') {
+      if (content) {
         const jsonMatch = content.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]) as PromptSuggestion[];

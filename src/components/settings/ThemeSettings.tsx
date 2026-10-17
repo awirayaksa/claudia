@@ -2,12 +2,16 @@ import { useState, useEffect } from 'react';
 import { useTheme, Theme } from '../../hooks/useTheme';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { setAppearance } from '../../store/slices/settingsSlice';
+import { getPlatform } from '../../platform';
 
 export function ThemeSettings() {
   const { theme, setTheme, effectiveTheme } = useTheme();
   const dispatch = useAppDispatch();
   const appearance = useAppSelector((state) => state.settings.appearance);
   const customization = appearance.customization;
+  const platform = getPlatform();
+  // Only hosts that can change the app icon (desktop) show the icon section
+  const icon = platform.icon;
 
   // State for icon preview and restart notification
   const [iconPreview, setIconPreview] = useState<string | null>(null);
@@ -39,8 +43,8 @@ export function ThemeSettings() {
 
   // Load icon preview on mount
   useEffect(() => {
-    if (customization?.iconPath) {
-      window.electron.icon.getPreview(customization.iconPath).then((preview) => {
+    if (customization?.iconPath && icon) {
+      icon.getPreview(customization.iconPath).then((preview) => {
         if (preview) {
           setIconPreview(preview);
         }
@@ -48,7 +52,7 @@ export function ThemeSettings() {
     } else {
       setIconPreview(null);
     }
-  }, [customization?.iconPath]);
+  }, [customization?.iconPath, icon]);
 
   // Handler for accent color change
   const handleColorChange = async (color: string) => {
@@ -57,7 +61,7 @@ export function ThemeSettings() {
 
     // Save to electron store
     try {
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
     } catch (error) {
       console.error('Failed to save accent color:', error);
     }
@@ -70,7 +74,7 @@ export function ThemeSettings() {
 
     // Save to electron store
     try {
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
     } catch (error) {
       console.error('Failed to reset accent color:', error);
     }
@@ -83,7 +87,7 @@ export function ThemeSettings() {
 
     // Save to electron store
     try {
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
     } catch (error) {
       console.error('Failed to save app title:', error);
     }
@@ -91,24 +95,25 @@ export function ThemeSettings() {
 
   // Handler for icon upload
   const handleIconUpload = async () => {
+    if (!icon) return;
     try {
       // Select icon file
-      const filePath = await window.electron.icon.select();
+      const filePath = await icon.select();
       if (!filePath) return;
 
       // Upload to AppData
-      const destPath = await window.electron.icon.upload(filePath);
+      const destPath = await icon.upload(filePath);
 
       // Save to Redux and electron store
       const newCustomization = { ...customization, iconPath: destPath };
       dispatch(setAppearance({ customization: newCustomization }));
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
 
       // Try to apply immediately
-      const result = await window.electron.icon.apply(destPath);
+      const result = await icon.apply(destPath);
 
       // Get and set preview
-      const preview = await window.electron.icon.getPreview(destPath);
+      const preview = await icon.getPreview(destPath);
       if (preview) {
         setIconPreview(preview);
       }
@@ -124,11 +129,12 @@ export function ThemeSettings() {
 
   // Handler for resetting icon
   const handleResetIcon = async () => {
+    if (!icon) return;
     try {
       const newCustomization = { ...customization, iconPath: undefined };
       dispatch(setAppearance({ customization: newCustomization }));
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
-      await window.electron.icon.reset();
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await icon.reset();
       setIconPreview(null);
       setRestartRequired(false);
     } catch (error) {
@@ -427,6 +433,7 @@ export function ThemeSettings() {
         </div>
 
         {/* Application Icon */}
+        {icon && (
         <div style={{ marginBottom: 8 }}>
           <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Application Icon</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -496,6 +503,7 @@ export function ThemeSettings() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

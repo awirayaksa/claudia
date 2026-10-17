@@ -1,7 +1,6 @@
 import React from 'react';
 import { useAppDispatch } from '../../store';
 import { startMCPServer, stopMCPServer } from '../../store/slices/mcpSlice';
-import { clearMessages } from '../../store/slices/chatSlice';
 import { MCPServerConfig, MCPServerState, MCPServerStatus } from '../../types/mcp.types';
 
 interface MCPServerBadgeProps {
@@ -10,6 +9,8 @@ interface MCPServerBadgeProps {
   status: MCPServerStatus;
   toolCount: number;
   disabled?: boolean;
+  /** Called after the user starts (running = true) or stops a server. */
+  onToggled?: (serverId: string, running: boolean) => void;
 }
 
 const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
@@ -18,6 +19,7 @@ const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
   status,
   toolCount,
   disabled = false,
+  onToggled,
 }) => {
   const dispatch = useAppDispatch();
 
@@ -52,13 +54,11 @@ const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
     if (status === 'ready') {
       // Server is running, stop it
       dispatch(stopMCPServer(config.id));
-      // Clear chat to refresh context without the tools
-      dispatch(clearMessages());
+      onToggled?.(config.id, false);
     } else if (status === 'stopped' || status === 'error') {
       // Server is stopped or errored, start it
       dispatch(startMCPServer(config.id));
-      // Clear chat to refresh context with the new tools
-      dispatch(clearMessages());
+      onToggled?.(config.id, true);
     }
   };
 

@@ -18,6 +18,7 @@ import { MCPServerConfig } from '../../types/mcp.types';
 import { Button } from '../common/Button';
 import { MCPServerModal } from './MCPServerModal';
 import { BuiltinMCPSection } from './BuiltinMCPSection';
+import { getPlatform } from '../../platform';
 
 export function MCPSettings() {
   const dispatch = useAppDispatch();
@@ -42,7 +43,7 @@ export function MCPSettings() {
 
   // Subscribe to server events
   useEffect(() => {
-    const cleanupStatus = window.electron.mcp.onServerStatusChanged((event: { serverId: string; status: string; error?: string }) => {
+    const cleanupStatus = getPlatform().events.on('mcp.statusChanged', (event: { serverId: string; status: string; error?: string }) => {
       dispatch(
         updateServerStatus({
           id: event.serverId,
@@ -52,7 +53,7 @@ export function MCPSettings() {
       );
     });
 
-    const cleanupTools = window.electron.mcp.onServerToolsUpdated((event: { serverId: string; tools: any[] }) => {
+    const cleanupTools = getPlatform().events.on('mcp.toolsUpdated', (event: { serverId: string; tools: any[] }) => {
       console.log('[MCPSettings] Tools updated for server:', event.serverId, 'Tools count:', event.tools?.length || 0);
       dispatch(
         setServerTools({
@@ -62,7 +63,7 @@ export function MCPSettings() {
       );
     });
 
-    const cleanupResources = window.electron.mcp.onServerResourcesUpdated((event: { serverId: string; resources: any[] }) => {
+    const cleanupResources = getPlatform().events.on('mcp.resourcesUpdated', (event: { serverId: string; resources: any[] }) => {
       console.log('[MCPSettings] Resources updated for server:', event.serverId, 'Resources count:', event.resources?.length || 0);
       dispatch(
         setServerResources({
@@ -72,7 +73,7 @@ export function MCPSettings() {
       );
     });
 
-    const cleanupPrompts = window.electron.mcp.onServerPromptsUpdated((event: { serverId: string; prompts: any[] }) => {
+    const cleanupPrompts = getPlatform().events.on('mcp.promptsUpdated', (event: { serverId: string; prompts: any[] }) => {
       console.log('[MCPSettings] Prompts updated for server:', event.serverId, 'Prompts count:', event.prompts?.length || 0);
       dispatch(
         setServerPrompts({
@@ -82,7 +83,7 @@ export function MCPSettings() {
       );
     });
 
-    const cleanupError = window.electron.mcp.onServerError((event: { serverId: string; error: string }) => {
+    const cleanupError = getPlatform().events.on('mcp.error', (event: { serverId: string; error: string }) => {
       dispatch(
         setServerError({
           id: event.serverId,
@@ -155,7 +156,7 @@ export function MCPSettings() {
 
   const handleViewLogs = async (serverId: string, serverName: string) => {
     try {
-      const response = await window.electron.mcp.getLogs(serverId);
+      const response = await getPlatform().mcp.getLogs(serverId);
       if (response.success) {
         setLogsModal({ serverId, serverName, logs: response.logs });
       } else {
@@ -172,7 +173,7 @@ export function MCPSettings() {
 
     if (window.confirm('Clear all logs for this server?')) {
       try {
-        const response = await window.electron.mcp.clearLogs(logsModal.serverId);
+        const response = await getPlatform().mcp.clearLogs(logsModal.serverId);
         if (response.success) {
           // Refresh the logs modal
           setLogsModal({ ...logsModal, logs: [] });

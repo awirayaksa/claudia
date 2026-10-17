@@ -1,8 +1,23 @@
-import { MCPTool, UIResourceContent } from '../../types/mcp.types';
+import { MCPTool } from '../../types/mcp.types';
 import { ToolCall, ToolResult } from '../../types/message.types';
 import { OpenAITool } from '../../types/api.types';
 import { RootState } from '../../store';
-import { isUIResource } from '@mcp-ui/client';
+import {
+  ToolAlias,
+  aliasesToOpenAI,
+  buildToolAliases,
+  cleanJsonSchema,
+  mcpToolsToOpenAI,
+  normalizeToolResult,
+  resolveToolAlias,
+} from './tool-format';
+import { getPlatform } from '../../platform';
+
+/** Where a model-facing tool name is executed. */
+export interface ToolTarget {
+  serverId: string;
+  tool: string;
+}
 
 /**
  * Tool Integration Service
@@ -12,92 +27,67 @@ import { isUIResource } from '@mcp-ui/client';
  */
 export class ToolIntegrationService {
   /**
-   * Convert MCP tools to OpenAI function calling format.
+   * Convert MCP tools to OpenAI function calling format, keeping their own names.
    * Strips non-standard fields (e.g. $schema, additionalProperties) from the
    * JSON Schema to avoid strict-proxy 400 errors.
    */
   static mcpToolsToOpenAI(mcpTools: MCPTool[]): OpenAITool[] {
-    return mcpTools.map((tool) => {
-      const cleanedParameters = tool.inputSchema
-        ? this.cleanJsonSchema(tool.inputSchema)
-        : { type: 'object', properties: {} };
+    return mcpToolsToOpenAI(mcpTools);
+  }
 
-      return {
-        type: 'function' as const,
-        function: {
-          name: tool.name,
-          description: tool.description || '', // Provide empty string as fallback
-          parameters: cleanedParameters,
-        },
-      };
-    });
+  static cleanJsonSchema(schema: unknown): unknown {
+    return cleanJsonSchema(schema);
   }
 
   /**
-   * Recursively strip non-standard JSON Schema fields that OpenAI-compatible
-   * providers may reject (e.g. $schema, additionalProperties).
+   * Model-facing names for every tool on every ready server. Tools with the
+   * same name on two servers both stay available, under server-prefixed aliases.
    */
-  private static cleanJsonSchema(schema: any): any {
-    if (schema === null || typeof schema !== 'object') {
-      return schema;
-    }
+  static getToolAliases(mcpState: RootState['mcp']): ToolAlias[] {
+    return buildToolAliases(
+      Object.entries(mcpState.serverStates)
+        .filter(([, s]) => s.status === 'ready' && s.tools?.length)
+        .map(([id, s]) => ({ id, name: s.config?.name || id, tools: s.tools }))
+    );
+  }
 
-    if (Array.isArray(schema)) {
-      return schema.map((item) => this.cleanJsonSchema(item));
-    }
-
-    const { $schema, additionalProperties, ...rest } = schema;
-    const cleaned: any = {};
-    for (const [key, value] of Object.entries(rest)) {
-      cleaned[key] = this.cleanJsonSchema(value);
-    }
-    return cleaned;
+  /** OpenAI function definitions for every available tool, named by alias. */
+  static getOpenAITools(mcpState: RootState['mcp']): OpenAITool[] {
+    return aliasesToOpenAI(this.getToolAliases(mcpState));
   }
 
   /**
-   * Find which server has a specific tool
+   * Resolve a model-facing tool name to the server and real tool name to call.
+   * The name is first treated as an alias; a bare MCP tool name (older history,
+   * UI actions) falls back to the first ready server that offers it.
    */
-  private static findServerForTool(toolName: string, mcpState: RootState['mcp']): string | null {
-    for (const [serverId, serverState] of Object.entries(mcpState.serverStates)) {
-      if (serverState.status === 'ready' && serverState.tools) {
-        const hasTool = serverState.tools.some((tool) => tool.name === toolName);
-        if (hasTool) {
-          return serverId;
-        }
-      }
+  static resolveTool(name: string, mcpState: RootState['mcp']): ToolTarget | null {
+    const alias = resolveToolAlias(name, this.getToolAliases(mcpState));
+    if (alias) return { serverId: alias.serverId, tool: alias.tool };
+
+    const serverId = this.findServerForTool(name, mcpState);
+    return serverId ? { serverId, tool: name } : null;
+  }
+
+  /**
+   * Find which ready server has a tool with exactly this MCP name.
+   * When `preferredServerId` offers it, that server wins.
+   */
+  static findServerForTool(
+    toolName: string,
+    mcpState: RootState['mcp'],
+    preferredServerId?: string
+  ): string | null {
+    const offers = (serverId: string) => {
+      const serverState = mcpState.serverStates[serverId];
+      return (
+        serverState?.status === 'ready' && !!serverState.tools?.some((tool) => tool.name === toolName)
+      );
+    };
+    if (preferredServerId && offers(preferredServerId)) {
+      return preferredServerId;
     }
-    return null;
-  }
-
-  /**
-   * Check if content item is a UI resource using SDK utility
-   * Delegates to @mcp-ui/client's isUIResource for type-safe detection
-   */
-  private static isUIResource(content: any): boolean {
-    return isUIResource(content);
-  }
-
-  /**
-   * Extract UI resource from content array
-   */
-  private static extractUIResource(contentArray: any[]): UIResourceContent | null {
-    for (const item of contentArray) {
-      if (this.isUIResource(item)) {
-        return item.resource;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Extract text content from content array (ignoring UI resources)
-   */
-  private static extractTextContent(contentArray: any[]): string {
-    const textItems = contentArray
-      .filter((item: any) => item.type === 'text')
-      .map((item: any) => item.text);
-
-    return textItems.length > 0 ? textItems.join('\n') : '';
+    return Object.keys(mcpState.serverStates).find(offers) ?? null;
   }
 
   /**
@@ -106,13 +96,19 @@ export class ToolIntegrationService {
   static async executeToolCall(
     toolCall: ToolCall,
     mcpState: RootState['mcp'],
-    _traceId?: string
+    _traceId?: string,
+    target: ToolTarget | null = this.resolveTool(toolCall.function.name, mcpState)
   ): Promise<ToolResult> {
-    const toolName = toolCall.function.name;
-    const serverId = this.findServerForTool(toolName, mcpState);
+    const result = await this.runToolCall(toolCall, target);
+    // Remember which server produced the result, so UI actions go back to it
+    return target ? { ...result, serverId: target.serverId } : result;
+  }
+
+  private static async runToolCall(toolCall: ToolCall, target: ToolTarget | null): Promise<ToolResult> {
+    const toolName = target?.tool ?? toolCall.function.name;
     const TOOL_TIMEOUT_MS = 120000; // 120 seconds (Word COM launch can take 20+ seconds)
 
-    if (!serverId) {
+    if (!target) {
       return {
         tool_call_id: toolCall.id,
         role: 'tool',
@@ -146,7 +142,7 @@ export class ToolIntegrationService {
         setTimeout(() => reject(new Error('Tool execution timeout')), TOOL_TIMEOUT_MS)
       );
 
-      const executionPromise = window.electron.mcp.callTool(serverId, toolName, args, undefined);
+      const executionPromise = getPlatform().mcp.callTool(target.serverId, target.tool, args, undefined);
 
       const response = await Promise.race([executionPromise, timeoutPromise]);
 
@@ -165,67 +161,17 @@ export class ToolIntegrationService {
         return errorResult;
       }
 
-      // Check if the tool execution itself had an error
-      const toolResult = response.result;
-      if (toolResult.isError) {
-        const errorContent = toolResult.content.map((c: any) => c.text || JSON.stringify(c)).join('\n');
-        const errorResult = {
-          tool_call_id: toolCall.id,
-          role: 'tool' as const,
-          name: toolName,
-          content: errorContent,
-          isError: true,
-        };
-
-        return errorResult;
-      }
-
-      // Extract text content and UI resource separately
-      const textContent = this.extractTextContent(toolResult.content);
-      const uiResource = this.extractUIResource(toolResult.content);
-
-      if (uiResource) {
-        // Return BOTH text and UI resource
-        const uiResult = {
-          tool_call_id: toolCall.id,
-          role: 'tool' as const,
-          name: toolName,
-          content: textContent || `[Interactive UI: ${uiResource.uri}]`,  // Text for LLM
-          isError: false,
-          hasUI: true,
-          uiResource: uiResource,  // UI for rendering
-        };
-
-        return uiResult;
-      } else {
-        // Convert content array to string (existing behavior)
-        const contentString = toolResult.content.map((c: any) => {
-          if (c.type === 'text') {
-            return c.text;
-          } else if (c.type === 'image') {
-            return `[Image: ${c.mimeType || 'unknown'}]`;
-          } else if (c.type === 'resource') {
-            // Extract text content from resource if available
-            if (c.resource?.text) {
-              return c.resource.text;
-            }
-            // Fallback to URI or mimeType
-            return `[Resource: ${c.resource?.uri || c.mimeType || 'unknown'}]`;
-          }
-          return JSON.stringify(c);
-        }).join('\n');
-
-        const textResult = {
-          tool_call_id: toolCall.id,
-          role: 'tool' as const,
-          name: toolName,
-          content: contentString,
-          isError: false,
-          hasUI: false,
-        };
-
-        return textResult;
-      }
+      // Text for the model, plus any UI resource to render
+      const normalized = normalizeToolResult(response.result);
+      return {
+        tool_call_id: toolCall.id,
+        role: 'tool' as const,
+        name: toolName,
+        content: normalized.content,
+        isError: normalized.isError,
+        ...(normalized.isError ? {} : { hasUI: !!normalized.uiResource }),
+        ...(normalized.uiResource ? { uiResource: normalized.uiResource } : {}),
+      };
     } catch (error) {
       if (error instanceof Error && error.message === 'Tool execution timeout') {
         return {

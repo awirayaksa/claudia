@@ -1,67 +1,43 @@
 import { useState, useCallback } from 'react';
-import { getOpenWebUIService } from '../services/api/openWebUI.service';
-import { useAppSelector } from '../store';
 import { Attachment } from '../types/message.types';
+import { getPlatform } from '../platform';
 import { v4 as uuidv4 } from 'uuid';
 
 interface UploadProgress {
   [fileId: string]: number;
 }
 
+/**
+ * Turns picked files into attachments the model can read. How that happens is
+ * up to the host (`platform.files.upload`): desktop uploads to Open WebUI or
+ * extracts text locally; the web app uploads to its own server.
+ */
 export function useFileUpload() {
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<UploadProgress>({});
   const [error, setError] = useState<string | null>(null);
-  const { baseUrl, apiKey } = useAppSelector((state) => state.settings.api);
 
-  const uploadFile = useCallback(
-    async (file: File): Promise<Attachment | null> => {
-      if (!baseUrl || !apiKey) {
-        setError('API not configured');
-        return null;
-      }
+  const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
+    const progressId = uuidv4();
+    setUploading(true);
+    setError(null);
 
-      const fileId = uuidv4();
-      setUploading(true);
-      setError(null);
-
-      try {
-        const service = getOpenWebUIService(baseUrl, apiKey);
-
-        const uploadedId = await service.uploadFile(file, (progressValue) => {
-          setProgress((prev) => ({ ...prev, [fileId]: progressValue }));
-        });
-
-        const attachment: Attachment = {
-          id: fileId,
-          type: file.type.startsWith('image/') ? 'image' : 'file',
-          name: file.name,
-          size: file.size,
-          mimeType: file.type,
-          url: `${baseUrl}/api/v1/files/${uploadedId}`,
-        };
-
-        setProgress((prev) => {
-          const newProgress = { ...prev };
-          delete newProgress[fileId];
-          return newProgress;
-        });
-
-        return attachment;
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Upload failed');
-        setProgress((prev) => {
-          const newProgress = { ...prev };
-          delete newProgress[fileId];
-          return newProgress;
-        });
-        return null;
-      } finally {
-        setUploading(false);
-      }
-    },
-    [baseUrl, apiKey]
-  );
+    try {
+      return await getPlatform().files.upload(file, (value) => {
+        setProgress((prev) => ({ ...prev, [progressId]: value }));
+      });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Upload failed');
+      return null;
+    } finally {
+      setProgress((prev) => {
+        const next = { ...prev };
+        delete next[progressId];
+        return next;
+      });
+      setUploading(false);
+    }
+  }, []);
 
   const uploadFiles = useCallback(
     async (files: File[]): Promise<Attachment[]> => {

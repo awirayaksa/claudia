@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "allowImportingTsExtensions": true,
+    "types": ["vite/client"],
+    "paths": {
+      "@/*": ["../src/*"],
+      "@web/*": ["./client/*"],
+      "@shared/*": ["./shared/*"],
+      // Shared files under ../src pick up web's packages and type packages
+      "*": ["./node_modules/@types/*", "./node_modules/*"]
+    }
+  },
+  "include": ["client", "shared", "../src", "vite.config.ts"],
+  "exclude": ["../src/main.tsx", "../src/**/*.test.ts", "../src/**/*.test.tsx", "../src/test", "client/**/*.test.tsx"]
+}

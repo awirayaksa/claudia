@@ -1,0 +1,5 @@
+node_modules
+dist
+# Local data: PGlite database, uploads, generated secret key
+data
+coverage

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { assertPathAllowed, isPathAllowed, resolveRequestedPath } from './path-guard';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require('pdf-parse');
@@ -17,57 +18,8 @@ const JSZip = require('jszip');
 const MAX_READ_SIZE = 5 * 1024 * 1024; // 5 MB
 
 // ============================================================================
-// Security: Path Validation
+// Security: Path Validation (real paths; case-insensitive only on Windows)
 // ============================================================================
-
-function normalizePath(p: string): string {
-  return path.resolve(p).toLowerCase();
-}
-
-function isPathAllowed(targetPath: string, allowedDirs: string[]): boolean {
-  const resolved = normalizePath(targetPath);
-  return allowedDirs.some((dir) => {
-    const normalizedDir = normalizePath(dir);
-    return resolved === normalizedDir || resolved.startsWith(normalizedDir + path.sep);
-  });
-}
-
-function assertPathAllowed(targetPath: string, allowedDirs: string[]): void {
-  if (!isPathAllowed(targetPath, allowedDirs)) {
-    throw new Error(
-      `Access denied: "${targetPath}" is outside allowed directories.\n` +
-      `Allowed: ${allowedDirs.join(', ')}`
-    );
-  }
-}
-
-/**
- * Resolve a requested path against the allowed directories.
- *
- * The model often sends root-relative paths like "/hello.txt" or bare names
- * like "hello.txt" when a working directory is configured. This function
- * first tries the path as an absolute path; if it falls outside every allowed
- * directory it retries by stripping leading separators and joining with the
- * first allowed directory (i.e. the configured working directory).
- */
-function resolveRequestedPath(requestedPath: string, allowedDirs: string[]): string {
-  const absoluteResolved = path.resolve(requestedPath);
-
-  if (allowedDirs.length === 0 || isPathAllowed(absoluteResolved, allowedDirs)) {
-    return absoluteResolved;
-  }
-
-  // Fall back: treat as relative to the working directory (first allowed dir)
-  const stripped = requestedPath.replace(/^[/\\]+/, '');
-  if (stripped) {
-    const relativeResolved = path.resolve(allowedDirs[0], stripped);
-    if (isPathAllowed(relativeResolved, allowedDirs)) {
-      return relativeResolved;
-    }
-  }
-
-  return absoluteResolved; // Will fail assertPathAllowed with a clear error
-}
 
 function getDefaultAllowedDirectories(): string[] {
   return [];

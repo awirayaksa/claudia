@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { getAPIProvider } from '../../services/api/provider.service';
-import { useAppSelector } from '../../store';
+import { getPlatform } from '../../platform';
 
 interface MenuState {
   visible: boolean;
@@ -25,9 +24,11 @@ interface PopupState {
 
 interface TextSelectionMenuProps {
   containerRef: React.RefObject<HTMLDivElement>;
+  /** Model used for Explain / Ask (the conversation's model). */
+  model: string;
 }
 
-export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
+export function TextSelectionMenu({ containerRef, model }: TextSelectionMenuProps) {
   const [menu, setMenu] = useState<MenuState>({
     visible: false,
     x: 0,
@@ -50,13 +51,6 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
   const questionInputRef = useRef<HTMLTextAreaElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
-
-  const apiConfig = useAppSelector((state) => state.settings.api);
-  const selectedModel =
-    (apiConfig as any).selectedModel ||
-    (apiConfig as any).openwebui?.selectedModel ||
-    (apiConfig as any).openrouter?.selectedModel ||
-    '';
 
   const hideMenu = useCallback(() => {
     setMenu((prev) => ({ ...prev, visible: false }));
@@ -162,31 +156,15 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
       abortControllerRef.current = abortController;
 
       try {
-        const provider = getAPIProvider();
-        await provider.streamChatCompletion(
-          {
-            model: selectedModel,
-            messages: [{ role: 'user', content: prompt }],
+        await getPlatform().llm.complete({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          signal: abortController.signal,
+          onChunk: (chunk: string) => {
+            setPopup((prev) => ({ ...prev, response: prev.response + chunk }));
           },
-          {
-            onChunk: (chunk: string) => {
-              setPopup((prev) => ({ ...prev, response: prev.response + chunk }));
-            },
-            onComplete: () => {
-              setPopup((prev) => ({ ...prev, isLoading: false }));
-            },
-            onError: (error: Error) => {
-              if (error.name !== 'AbortError') {
-                setPopup((prev) => ({
-                  ...prev,
-                  isLoading: false,
-                  response: prev.response || `Error: ${error.message}`,
-                }));
-              }
-            },
-          },
-          abortController.signal
-        );
+        });
+        setPopup((prev) => ({ ...prev, isLoading: false }));
       } catch (error: any) {
         if (error?.name !== 'AbortError') {
           setPopup((prev) => ({
@@ -197,7 +175,7 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
         }
       }
     },
-    [selectedModel]
+    [model]
   );
 
   const handleExplain = useCallback(() => {

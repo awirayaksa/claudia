@@ -3,6 +3,7 @@ import { useAppSelector, useAppDispatch } from '../../store';
 import { createSkill, updateSkill, deleteSkill, clearSkillError, setSelectedSkill } from '../../store/slices/skillSlice';
 import type { Skill, SkillWritePayload } from '../../types/skill.types';
 import { Button } from '../common/Button';
+import { getPlatform } from '../../platform';
 
 const VALID_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 
@@ -194,7 +195,7 @@ export function SkillSettings() {
   );
 
   const handleOpenDir = async () => {
-    await window.electron.skills.openDir();
+    await getPlatform().skills.openDir?.();
   };
 
   return (

@@ -1,0 +1,28 @@
+/**
+ * HTTP contract between the web client and server: zod schemas for request
+ * and response bodies. Domain types come from ../src/types.
+ */
+import { z } from 'zod';
+
+export const HealthResponse = z.object({
+  status: z.literal('ok'),
+  version: z.string(),
+});
+export type HealthResponse = z.infer<typeof HealthResponse>;
+
+export const ReadyResponse = z.object({
+  status: z.enum(['ready', 'not_ready']),
+  database: z.enum(['postgres', 'pglite']),
+  migrations: z.object({ applied: z.number().int(), pending: z.number().int() }),
+  error: z.string().optional(),
+});
+export type ReadyResponse = z.infer<typeof ReadyResponse>;
+
+/** Every error response has this shape. */
+export const ApiError = z.object({
+  error: z.object({
+    code: z.string(),
+    message: z.string(),
+  }),
+});
+export type ApiError = z.infer<typeof ApiError>;

@@ -5,6 +5,7 @@ import {
   PluginRuntimeState,
   DiscoveredPlugin,
 } from '../../types/plugin.types';
+import { getPlatform } from '../../platform';
 
 // ============================================================================
 // State Interface
@@ -54,7 +55,7 @@ export const discoverPlugins = createAsyncThunk(
   'plugins/discover',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await window.electron.plugins.discover();
+      const response = await getPlatform().plugins.discover();
       if (!response.success) {
         throw new Error(response.error || 'Failed to discover plugins');
       }
@@ -72,7 +73,7 @@ export const loadPluginConfigs = createAsyncThunk(
   'plugins/loadConfigs',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await window.electron.plugins.list();
+      const response = await getPlatform().plugins.list();
       if (!response.success) {
         throw new Error(response.error || 'Failed to load plugin configs');
       }
@@ -95,7 +96,7 @@ export const enablePlugin = createAsyncThunk(
         state: { status: 'loading' },
       }));
 
-      const response = await window.electron.plugins.enable(pluginId);
+      const response = await getPlatform().plugins.enable(pluginId);
       if (!response.success) {
         throw new Error(response.error || 'Failed to enable plugin');
       }
@@ -125,7 +126,7 @@ export const disablePlugin = createAsyncThunk(
   'plugins/disable',
   async (pluginId: string, { dispatch, rejectWithValue }) => {
     try {
-      const response = await window.electron.plugins.disable(pluginId);
+      const response = await getPlatform().plugins.disable(pluginId);
       if (!response.success) {
         throw new Error(response.error || 'Failed to disable plugin');
       }
@@ -157,7 +158,7 @@ export const reloadPlugin = createAsyncThunk(
         state: { status: 'loading' },
       }));
 
-      const response = await window.electron.plugins.reload(pluginId);
+      const response = await getPlatform().plugins.reload(pluginId);
       if (!response.success) {
         throw new Error(response.error || 'Failed to reload plugin');
       }
@@ -187,7 +188,7 @@ export const updatePluginSettings = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const response = await window.electron.plugins.setSettings(pluginId, settings);
+      const response = await getPlatform().plugins.setSettings(pluginId, settings);
       if (!response.success) {
         throw new Error(response.error || 'Failed to update plugin settings');
       }
@@ -206,8 +207,8 @@ export const refreshActivePlugins = createAsyncThunk(
   async (_, { rejectWithValue }) => {
     try {
       const [extensionsResponse, replacementResponse] = await Promise.all([
-        window.electron.plugins.getActiveExtensions(),
-        window.electron.plugins.getActiveReplacement(),
+        getPlatform().plugins.getActiveExtensions(),
+        getPlatform().plugins.getActiveReplacement(),
       ]);
 
       if (!extensionsResponse.success) {

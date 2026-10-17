@@ -1,0 +1,17 @@
+{
+  "app": {
+    "name": "Claudia"
+  },
+  "preview": {
+    "title": "Claudia Web",
+    "subtitle": "Shared chat components, rendered from the desktop codebase.",
+    "server": "Server",
+    "serverReady": "ready ({{database}}, {{applied}} migrations)",
+    "serverNotReady": "not ready",
+    "serverUnreachable": "unreachable"
+  },
+  "notFound": {
+    "title": "Page not found",
+    "back": "Back to Claudia"
+  }
+}

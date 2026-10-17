@@ -1,0 +1,52 @@
+# Claudia Web with PostgreSQL + pgvector.
+#
+#   cd web/docker
+#   export CLAUDIA_SECRET_KEY=$(openssl rand -base64 48)
+#   docker compose up -d --build
+#
+# Then open http://localhost:8080. Back up the `pgdata` volume (pg_dump) and
+# the `claudia-data` volume (uploads and workspaces).
+
+name: claudia
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: web/docker/Dockerfile
+    image: claudia-web:local
+    restart: unless-stopped
+    ports:
+      - "${CLAUDIA_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://claudia:${POSTGRES_PASSWORD:-claudia}@db:5432/claudia
+      CLAUDIA_SECRET_KEY: ${CLAUDIA_SECRET_KEY:?Set CLAUDIA_SECRET_KEY (at least 32 characters), e.g. openssl rand -base64 48}
+      CLAUDIA_PUBLIC_URL: ${CLAUDIA_PUBLIC_URL:-}
+      CLAUDIA_SANDBOX_ORIGIN: ${CLAUDIA_SANDBOX_ORIGIN:-}
+      CLAUDIA_ADMIN_EMAIL: ${CLAUDIA_ADMIN_EMAIL:-}
+      CLAUDIA_ADMIN_PASSWORD: ${CLAUDIA_ADMIN_PASSWORD:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes:
+      - claudia-data:/data
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: claudia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-claudia}
+      POSTGRES_DB: claudia
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claudia -d claudia"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  claudia-data:
+  pgdata:

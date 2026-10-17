@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useRef } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
 import { setAppearance } from '../store/slices/settingsSlice';
+import { getPlatform } from '../platform';
 
 export type Theme = 'light' | 'dark' | 'system';
 
@@ -27,7 +28,7 @@ export function useTheme() {
     }
 
     // Save theme to electron store only after initial load
-    window.electron.config.set({
+    getPlatform().config.set({
       appearance: { theme },
     }).catch((error) => {
       console.error('Failed to save theme:', error);

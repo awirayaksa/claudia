@@ -278,3 +278,5 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
          prevProps.isUser === nextProps.isUser &&
          prevProps.message?.id === nextProps.message?.id;
 });
+
+MarkdownRenderer.displayName = 'MarkdownRenderer';

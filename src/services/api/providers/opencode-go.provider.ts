@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import { createParser, ParsedEvent, ReconnectInterval } from 'eventsource-parser';
+import { isAbortError, onceTerminal, readErrorMessage, streamOpenAICompatible } from '../sse-parser';
 import {
   Model,
   ChatCompletionRequest,
@@ -9,10 +10,9 @@ import {
   OpencodeGoConfig,
   APIError,
 } from '../../../types/api.types';
-import { ToolCall } from '../../../types/message.types';
 import { MessageUsage } from '../../../types/statistics.types';
 import { IAPIProvider } from '../provider.interface';
-import { StreamCallbacks } from '../streaming.service';
+import type { StreamCallbacks } from '../sse-parser';
 import { toAnthropicEffort } from '../../../utils/effort-utils';
 
 const OPENCODE_GO_MODELS: Model[] = [
@@ -95,6 +95,7 @@ export class OpencodeGoProvider implements IAPIProvider {
       supportsToolCalling: true,
       supportsStreaming: true,
       requiresCustomHeaders: false,
+      toolsFirstTurnOnly: true,
     };
   }
 
@@ -212,112 +213,25 @@ export class OpencodeGoProvider implements IAPIProvider {
     callbacks: StreamCallbacks,
     abortSignal?: AbortSignal
   ): Promise<void> {
-    const { onChunk, onComplete, onError, onToolCalls, onReasoning, onUsage } = callbacks;
     const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
+    const body = { ...request, stream: true };
+    console.log('[OpencodeGoProvider] Request body:', JSON.stringify(body));
 
-    try {
-      const requestBody = JSON.stringify({ ...request, stream: true });
-      console.log('[OpencodeGoProvider] Request body:', requestBody);
-
-      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
-        body: requestBody,
+    await streamOpenAICompatible(
+      {
+        url: `${baseUrl}/v1/chat/completions`,
+        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        body,
         signal: abortSignal,
-      });
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        let rawBody = '';
-        try {
-          rawBody = await response.text();
-          const errorData = JSON.parse(rawBody);
-          errorMessage = errorData.error?.message || errorMessage;
-          console.error('[OpencodeGoProvider] API error response:', errorData);
-          console.error('[OpencodeGoProvider] API error message:', errorData.error?.message || 'No message');
-        } catch {
-          console.error('[OpencodeGoProvider] API error raw body:', rawBody);
-        }
-        throw new Error(errorMessage);
+      },
+      {
+        ...callbacks,
+        onError: (error) => {
+          console.error('[OpencodeGoProvider] API error:', error.message);
+          callbacks.onError(error);
+        },
       }
-
-      if (!response.body) throw new Error('No response body received');
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      const accumulatedToolCalls: Map<number, ToolCall> = new Map();
-
-      const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
-        if (event.type === 'event') {
-          const data = event.data;
-          if (data === '[DONE]') { onComplete(); return; }
-          try {
-            const json = JSON.parse(data);
-            const delta = json.choices?.[0]?.delta;
-            const content = delta?.content;
-            const toolCallDeltas = delta?.tool_calls;
-            const reasoningContent = delta?.reasoning ?? delta?.reasoning_content;
-            const usage = json.usage;
-
-            if (content) onChunk(content);
-            if (reasoningContent && onReasoning) onReasoning(reasoningContent);
-            if (usage && onUsage) onUsage(usage);
-
-            if (toolCallDeltas && onToolCalls) {
-              for (const toolCallDelta of toolCallDeltas) {
-                const index = toolCallDelta.index;
-                const existing = accumulatedToolCalls.get(index);
-                if (!existing) {
-                  accumulatedToolCalls.set(index, {
-                    id: toolCallDelta.id || '',
-                    type: toolCallDelta.type || 'function',
-                    function: { name: toolCallDelta.function?.name || '', arguments: toolCallDelta.function?.arguments || '' },
-                  });
-                } else {
-                  if (toolCallDelta.function?.arguments) existing.function.arguments += toolCallDelta.function.arguments;
-                  if (toolCallDelta.id && !existing.id) existing.id = toolCallDelta.id;
-                  if (toolCallDelta.function?.name && !existing.function.name) existing.function.name = toolCallDelta.function.name;
-                }
-              }
-            }
-
-            if (json.choices?.[0]?.finish_reason) {
-              if (json.usage && onUsage) onUsage(json.usage);
-              if (accumulatedToolCalls.size > 0 && onToolCalls) {
-                const toolCallsArray = Array.from(accumulatedToolCalls.values()).map((tc) => ({
-                  ...tc,
-                  function: { ...tc.function, arguments: tc.function.arguments || '{}' },
-                }));
-                onToolCalls(toolCallsArray);
-              }
-            }
-          } catch { /* continue on parse error */ }
-        }
-      });
-
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) { onComplete(); break; }
-          parser.feed(decoder.decode(value, { stream: true }));
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          onComplete();
-        } else {
-          throw error;
-        }
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        onComplete();
-      } else {
-        onError(error instanceof Error ? error : new Error('Unknown streaming error'));
-      }
-    }
+    );
   }
 
   private async streamChatCompletionAnthropic(
@@ -325,7 +239,10 @@ export class OpencodeGoProvider implements IAPIProvider {
     callbacks: StreamCallbacks,
     abortSignal?: AbortSignal
   ): Promise<void> {
-    const { onChunk, onComplete, onError, onReasoning, onUsage } = callbacks;
+    const cb = onceTerminal(callbacks);
+    const { onChunk, onReasoning, onUsage } = cb;
+    // Anthropic stop_reason → StreamEndReason
+    let stopReason: 'stop' | 'tool_calls' | 'length' = 'stop';
 
     const systemMessages = request.messages.filter((m) => m.role === 'system');
     const nonSystemMessages = request.messages.filter((m) => m.role !== 'system');
@@ -360,19 +277,13 @@ export class OpencodeGoProvider implements IAPIProvider {
       });
 
       if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error?.message || errorMessage;
-        } catch { /* ignore */ }
-        throw new Error(errorMessage);
+        throw new Error(await readErrorMessage(response));
       }
 
       if (!response.body) throw new Error('No response body received');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
-      let completed = false;
 
       const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
         if (event.type !== 'event') return;
@@ -404,6 +315,9 @@ export class OpencodeGoProvider implements IAPIProvider {
             }
           } else if (eventName === 'message_delta') {
             const json = JSON.parse(data);
+            const reason = json.delta?.stop_reason;
+            if (reason === 'max_tokens') stopReason = 'length';
+            else if (reason === 'tool_use') stopReason = 'tool_calls';
             if (json.usage && onUsage) {
               const usage: MessageUsage = {
                 prompt_tokens: json.usage.input_tokens ?? 0,
@@ -413,8 +327,7 @@ export class OpencodeGoProvider implements IAPIProvider {
               onUsage(usage);
             }
           } else if (eventName === 'message_stop') {
-            completed = true;
-            onComplete();
+            cb.onComplete(stopReason);
           }
 
           // Fallback: some proxies send OpenAI-format events even on Anthropic endpoints
@@ -439,27 +352,18 @@ export class OpencodeGoProvider implements IAPIProvider {
         } catch { /* continue on parse error */ }
       });
 
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) {
-            if (!completed) onComplete();
-            break;
-          }
-          parser.feed(decoder.decode(value, { stream: true }));
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          onComplete();
-        } else {
-          throw error;
-        }
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        parser.feed(decoder.decode(value, { stream: true }));
       }
+      // No-op when message_stop already completed the stream
+      cb.onComplete(stopReason);
     } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        onComplete();
+      if (isAbortError(error) || abortSignal?.aborted) {
+        cb.onComplete('aborted');
       } else {
-        onError(error instanceof Error ? error : new Error('Unknown streaming error'));
+        cb.onError(error instanceof Error ? error : new Error('Unknown streaming error'));
       }
     }
   }

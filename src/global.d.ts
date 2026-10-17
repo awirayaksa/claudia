@@ -23,9 +23,23 @@ export interface ElectronAPI {
       entries: Array<{ name: string; isDirectory: boolean }>;
       error?: string;
     }>;
+    /** Extract plain text from an attachment (PDF, DOCX, XLSX, PPTX, text) in the main process. */
+    extractText: (payload: { name: string; mimeType?: string; data: Uint8Array }) => Promise<{
+      success: boolean;
+      text?: string;
+      truncated?: boolean;
+      error?: string;
+    }>;
   };
   conversation: {
+    /** Writes messages. Title, model and starred already on disk are kept. Returns the saved metadata. */
     save: (conversation: any) => Promise<any>;
+    /** Patch title / model / starred in one step without touching messages. */
+    updateMeta: (
+      id: string,
+      projectId: string | null,
+      patch: { title?: string; model?: string; starred?: boolean }
+    ) => Promise<{ success: boolean; data?: any; error?: string }>;
     load: (id: string, projectId: string | null) => Promise<any>;
     list: (projectId?: string | null) => Promise<any>;
     delete: (id: string, projectId: string | null) => Promise<any>;

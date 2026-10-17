@@ -14,7 +14,8 @@ import { useConversations } from '../../hooks/useConversations';
 import { useProjects } from '../../hooks/useProjects';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { Attachment } from '../../types/message.types';
-import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage, setFilesystemDirectory, setEffortLevel } from '../../store/slices/chatSlice';
+import { clearMessages, addMessage, deleteMessagesAfter, setEditingMessage } from '../../store/slices/chatSlice';
+import { setFilesystemDirectory, setEffortLevel } from '../../store/slices/composerSlice';
 import { setCurrentConversation } from '../../store/slices/conversationSlice';
 import { resolveSkillCommand } from '../../utils/skill-utils';
 import { parseEffortDirective } from '../../utils/effort-utils';
@@ -47,7 +48,7 @@ export function ChatWindow() {
 
   const editingMessage = useAppSelector((state) => state.chat.editingMessage);
   const streamingReasoning = useAppSelector((state) => state.chat.streamingReasoning);
-  const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
+  const filesystemDirectory = useAppSelector((state) => state.composer.filesystemDirectory);
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
   const streamingUsage = useAppSelector((state) => state.chat.streamingUsage);
   const modelContextLengths = useAppSelector((state) => state.settings.api.modelContextLengths);
@@ -311,6 +312,11 @@ export function ChatWindow() {
       }
     };
   }, [messages, currentConversationId, currentConversation, saveConversation, updateConversation, generateConversationTitle]);
+
+  // Starting or stopping a server changes the available tools: start a fresh chat
+  const handleMCPServerToggled = useCallback(() => {
+    dispatch(clearMessages());
+  }, [dispatch]);
 
   const handleModelChange = async (newModel: string) => {
     try {
@@ -622,6 +628,7 @@ export function ChatWindow() {
                 initialMessage={editingMessage?.content}
                 initialAttachments={editingMessage?.attachments}
                 onCancelEdit={handleCancelEdit}
+                onMCPServerToggled={handleMCPServerToggled}
               />
             </div>
 
@@ -671,7 +678,10 @@ export function ChatWindow() {
         /* Chat with messages - normal layout */
         <>
           {/* Text selection context menu (portal-rendered, fixed positioning) */}
-          <TextSelectionMenu containerRef={messagesContainerRef} />
+          <TextSelectionMenu
+            containerRef={messagesContainerRef}
+            model={currentConversation?.model || pendingModel || selectedModel || ''}
+          />
 
           {/* Conversation header */}
           <div className="flex items-center justify-between border-b border-border bg-background px-5 py-2.5">
@@ -834,6 +844,7 @@ export function ChatWindow() {
             initialMessage={editingMessage?.content}
             initialAttachments={editingMessage?.attachments}
             onCancelEdit={handleCancelEdit}
+            onMCPServerToggled={handleMCPServerToggled}
           />
         </>
       )}

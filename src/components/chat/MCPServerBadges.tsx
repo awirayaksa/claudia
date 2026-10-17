@@ -5,6 +5,8 @@ import MCPServerBadge from './MCPServerBadge';
 
 interface MCPServerBadgesProps {
   disabled?: boolean;
+  /** Called after the user starts or stops a server from its badge. */
+  onServerToggled?: (serverId: string, running: boolean) => void;
 }
 
 /**
@@ -12,7 +14,7 @@ interface MCPServerBadgesProps {
  * Always shows an expand/collapse toggle. Collapse fully hides the badges;
  * expand shows all of them.
  */
-const MCPServerBadges: React.FC<MCPServerBadgesProps> = ({ disabled = false }) => {
+const MCPServerBadges: React.FC<MCPServerBadgesProps> = ({ disabled = false, onServerToggled }) => {
   const enabledServers = useAppSelector(selectStartedMCPServers);
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -30,6 +32,7 @@ const MCPServerBadges: React.FC<MCPServerBadgesProps> = ({ disabled = false }) =
               status={server.status}
               toolCount={server.toolCount}
               disabled={disabled}
+              onToggled={onServerToggled}
             />
           ))}
         </div>

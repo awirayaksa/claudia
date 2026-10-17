@@ -11,8 +11,9 @@ import { useSkillMention } from '../../hooks/useSkillMention';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { CompactModelSelector } from './CompactModelSelector';
 import { EffortSelector } from './EffortSelector';
-import { setEffortLevel } from '../../store/slices/chatSlice';
+import { setEffortLevel } from '../../store/slices/composerSlice';
 import { parseEffortDirective } from '../../utils/effort-utils';
+import { getPlatform } from '../../platform';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -27,6 +28,8 @@ interface ChatInputProps {
   initialAttachments?: Attachment[];
   onCancelEdit?: () => void;
   variant?: 'centered' | 'default';
+  /** Called after the user starts or stops an MCP server from the badges above the input. */
+  onMCPServerToggled?: (serverId: string, running: boolean) => void;
 }
 
 export interface ChatInputRef {
@@ -36,7 +39,7 @@ export interface ChatInputRef {
 }
 
 function expandFileMentions(message: string, baseDir: string): string {
-  const mentionRegex = /@([\w.\-\/\\]+)/g;
+  const mentionRegex = /@([\w.\-/\\]+)/g;
   return message.replace(mentionRegex, (_match, relPath) => {
     const absPath = `${baseDir}/${relPath}`.replace(/\\/g, '/');
     return absPath;
@@ -56,6 +59,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   initialMessage,
   initialAttachments,
   onCancelEdit,
+  onMCPServerToggled,
 }, ref) => {
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
@@ -72,19 +76,22 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
   // Reasoning effort: session override, Preferences default, and any directive
   // present in the text being typed right now (applies to the next message only).
-  const sessionEffort = useAppSelector((state) => state.chat.effortLevel);
+  const sessionEffort = useAppSelector((state) => state.composer.effortLevel);
   const preferredEffort = useAppSelector((state) => state.settings.preferences.reasoningEffort);
   const pendingEffort = useMemo(() => parseEffortDirective(message).effort, [message]);
 
   // Redux selectors for filesystem mention feature
-  const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
+  const filesystemDirectory = useAppSelector((state) => state.composer.filesystemDirectory);
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
+  // @file mentions browse the user's own disk, so only hosts with a local filesystem offer them
+  const hasLocalFilesystem = getPlatform().capabilities.localFilesystem;
   const isFilesystemReady = useMemo(
     () =>
+      hasLocalFilesystem &&
       Object.values(serverStates).some(
         (s) => s.config.builtinId === 'builtin-filesystem-001' && s.status === 'ready'
       ),
-    [serverStates]
+    [serverStates, hasLocalFilesystem]
   );
 
   const fileMention = useFileMention(filesystemDirectory, isFilesystemReady);
@@ -391,7 +398,11 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp'],
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'text/plain': ['.txt'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+      'application/json': ['.json'],
+      'text/plain': ['.txt', '.log'],
+      'text/markdown': ['.md'],
       'text/csv': ['.csv'],
     },
     maxSize: 10 * 1024 * 1024, // 10MB
@@ -455,7 +466,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       )}
 
       {/* MCP Server Toggles */}
-      <MCPServerBadges disabled={disabled || uploading} />
+      <MCPServerBadges disabled={disabled || uploading} onServerToggled={onMCPServerToggled} />
 
       {/* Upload progress */}
       {uploading && Object.keys(progress).length > 0 && (

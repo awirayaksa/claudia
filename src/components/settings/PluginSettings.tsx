@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { usePlugins } from '../../hooks/usePlugins';
 import { PluginCard } from '../plugins/PluginCard';
 import { Button } from '../common/Button';
+import { getPlatform } from '../../platform';
 
 export function PluginSettings() {
   const {
@@ -20,7 +21,7 @@ export function PluginSettings() {
 
   // Load local plugins directory path
   useEffect(() => {
-    window.electron.plugins.getLocalPluginsDir().then((response: { success: boolean; dir?: string }) => {
+    getPlatform().plugins.getLocalPluginsDir?.().then((response: { success: boolean; dir?: string }) => {
       if (response.success && response.dir) {
         setLocalPluginsDir(response.dir);
       }

@@ -12,6 +12,12 @@ export interface Attachment {
   url?: string;
   localPath?: string;
   data?: string; // base64 data URI for inline embedding (e.g. images)
+  /** Plain text extracted from a document; inlined into the message sent to the model. */
+  extractedText?: string;
+  /** True when extractedText was cut off at the size limit. */
+  textTruncated?: boolean;
+  /** Id of the file on the provider (Open WebUI), sent in the request's `files` field. */
+  remoteFileId?: string;
 }
 
 // Tool calling types (OpenAI function calling format)
@@ -32,6 +38,7 @@ export interface ToolResult {
   isError?: boolean;
   hasUI?: boolean; // Track if this result contains UI
   uiResource?: UIResourceContent; // Separate UI resource for rendering
+  serverId?: string; // MCP server that produced this result
 }
 
 export interface Message {

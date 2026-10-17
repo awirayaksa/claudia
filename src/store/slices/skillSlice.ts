@@ -1,5 +1,6 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import type { Skill, SkillWritePayload } from '../../types/skill.types';
+import { getPlatform } from '../../platform';
 
 interface SkillState {
   skills: Skill[];
@@ -19,7 +20,7 @@ const initialState: SkillState = {
 
 export const loadSkills = createAsyncThunk('skills/load', async (_, { rejectWithValue }) => {
   try {
-    const result = await window.electron.skills.list();
+    const result = await getPlatform().skills.list();
     if (!result.success) return rejectWithValue(result.error ?? 'Failed to load skills');
     return result.skills as Skill[];
   } catch (err) {
@@ -31,7 +32,7 @@ export const createSkill = createAsyncThunk(
   'skills/create',
   async (payload: SkillWritePayload, { rejectWithValue }) => {
     try {
-      const result = await window.electron.skills.create(payload);
+      const result = await getPlatform().skills.create(payload);
       if (!result.success) return rejectWithValue(result.error ?? 'Failed to create skill');
       return result.skill as Skill;
     } catch (err) {
@@ -44,7 +45,7 @@ export const updateSkill = createAsyncThunk(
   'skills/update',
   async (payload: SkillWritePayload, { rejectWithValue }) => {
     try {
-      const result = await window.electron.skills.update(payload);
+      const result = await getPlatform().skills.update(payload);
       if (!result.success) return rejectWithValue(result.error ?? 'Failed to update skill');
       return result.skill as Skill;
     } catch (err) {
@@ -57,7 +58,7 @@ export const deleteSkill = createAsyncThunk(
   'skills/delete',
   async (id: string, { rejectWithValue }) => {
     try {
-      const result = await window.electron.skills.delete(id);
+      const result = await getPlatform().skills.delete(id);
       if (!result.success) return rejectWithValue(result.error ?? 'Failed to delete skill');
       return id;
     } catch (err) {

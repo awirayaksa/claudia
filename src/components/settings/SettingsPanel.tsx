@@ -7,7 +7,8 @@ import { PreferencesSettings } from './PreferencesSettings';
 import { SkillSettings } from './SkillSettings';
 import { ProfileSwitcher } from './ProfileSwitcher';
 import { ProfilesSettings } from './ProfilesSettings';
-import { useAppSelector, useAppDispatch, store } from '../../store';
+import { useStore } from 'react-redux';
+import { useAppSelector, useAppDispatch, type RootState } from '../../store';
 import { setSettingsOpen } from '../../store/slices/uiSlice';
 import { clearMessages } from '../../store/slices/chatSlice';
 import { createConversation } from '../../store/slices/conversationSlice';
@@ -61,6 +62,8 @@ export function SettingsPanel() {
     setIsDirty(false);
   }, [dispatch, isDirty]);
 
+  const reduxStore = useStore<RootState>();
+
   const handleSave = async () => {
     let success = true;
     if (saveRef) {
@@ -71,7 +74,7 @@ export function SettingsPanel() {
       setIsDirty(false);
 
       // Read the latest state directly so we pick up any model/provider changes
-      const latestState = store.getState();
+      const latestState = reduxStore.getState();
       const latestModel = latestState.settings.api.selectedModel;
       const latestProjectId = latestState.project.currentProjectId;
 
