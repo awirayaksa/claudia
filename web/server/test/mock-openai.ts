@@ -21,6 +21,8 @@ export interface MockTurn {
 export interface MockOpenAI {
   url: string;
   requests: any[];
+  /** Headers of every request received (model listings included). */
+  headers: http.IncomingHttpHeaders[];
   /** Turns used by non-streaming calls (titles); defaults to a fixed title. */
   completions: Array<{ content: string }>;
   push(...turns: MockTurn[]): void;
@@ -33,9 +35,11 @@ const chunk = (delta: object, extra: object = {}) =>
 export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promise<MockOpenAI> {
   const queue: MockTurn[] = [];
   const requests: any[] = [];
+  const headers: http.IncomingHttpHeaders[] = [];
   const completions: Array<{ content: string }> = [];
 
   const server = http.createServer(async (req, res) => {
+    headers.push(req.headers);
     const body = await new Promise<string>((resolve) => {
       let data = '';
       req.on('data', (c) => (data += c));
@@ -108,6 +112,7 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
   return {
     url: `http://127.0.0.1:${port}/v1`,
     requests,
+    headers,
     completions,
     push: (...turns) => queue.push(...turns),
     close: () =>

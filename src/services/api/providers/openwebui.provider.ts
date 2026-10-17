@@ -21,7 +21,7 @@ export class OpenWebUIProvider implements IAPIProvider {
   constructor(config: OpenWebUIConfig) {
     console.log('[OpenWebUIProvider] Constructor - input baseUrl:', config.baseUrl);
     this.config = config;
-    this.service = new OpenWebUIService(config.baseUrl, config.apiKey);
+    this.service = new OpenWebUIService(config.baseUrl, config.apiKey, config.http);
     console.log('[OpenWebUIProvider] Constructor - this.config.baseUrl:', this.config.baseUrl);
   }
 
@@ -58,7 +58,8 @@ export class OpenWebUIProvider implements IAPIProvider {
       request,
       callbacks,
       abortSignal,
-      traceId
+      traceId,
+      this.config.http?.fetch
     );
   }
 
@@ -69,7 +70,7 @@ export class OpenWebUIProvider implements IAPIProvider {
   updateConfig(config: OpenWebUIConfig): void {
     console.log('[OpenWebUIProvider] updateConfig - input baseUrl:', config.baseUrl);
     this.config = config;
-    this.service.updateConfig(config.baseUrl, config.apiKey);
+    this.service.updateConfig(config.baseUrl, config.apiKey, config.http);
     console.log('[OpenWebUIProvider] updateConfig - this.config.baseUrl:', this.config.baseUrl);
   }
 

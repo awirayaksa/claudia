@@ -8,6 +8,12 @@ import type { LoginGuard } from './auth/login-guard';
 import type { ModelRegistry } from './llm/model-registry';
 import type { RunHub } from './llm/run-hub';
 import type { ChatOrchestrator } from './llm/chat-orchestrator';
+import type { Storage } from './storage/local';
+import type { ExtractPool } from './extract/pool';
+import type { FileService } from './modules/files/service';
+import type { SkillService } from './modules/skills/service';
+import type { McpPools } from './mcp/mcp-pool';
+import type { LdapService } from './auth/ldap';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -21,5 +27,11 @@ export interface ServerContext {
   models: ModelRegistry;
   runs: RunHub;
   orchestrator: ChatOrchestrator;
+  storage: Storage;
+  extract: ExtractPool;
+  files: FileService;
+  skills: SkillService;
+  mcp: McpPools;
+  ldap: LdapService;
   log: FastifyBaseLogger;
 }

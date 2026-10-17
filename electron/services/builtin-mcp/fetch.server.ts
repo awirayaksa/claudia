@@ -43,6 +43,41 @@ function getTurndownGfm(): any {
 // Config types
 // ============================================================================
 
+/** One HTTP GET, already following redirects. */
+export interface HttpGetResult {
+  status: number;
+  statusText: string;
+  contentType?: string;
+  body: Buffer;
+  finalUrl: string;
+}
+
+/** HTML → the page's main content as markdown. The web server runs it in a worker. */
+export type HtmlToMarkdown = (html: string, url: string) => Promise<{ title: string | null; markdown: string }>;
+
+/** The desktop's converter: readability + turndown in this process (scripts never run). */
+const inProcessHtmlToMarkdown: HtmlToMarkdown = async (html, url) => {
+  const { JSDOM } = getJSDOM();
+  const { Readability } = getReadability();
+  const TurndownService = getTurndown();
+  const { gfm } = getTurndownGfm();
+
+  // Scripts never run: JSDOM's default (runScripts unset)
+  const dom = new JSDOM(html, { url });
+  const document = dom.window.document;
+  const article = new Readability(document).parse();
+  const turndownService = new TurndownService({ headingStyle: 'atx', codeBlockStyle: 'fenced' });
+  turndownService.use(gfm);
+  const content = article && article.content ? article.content : (document.body?.innerHTML ?? html);
+  const title = (article && article.content ? article.title : document.title) || null;
+  return { title, markdown: turndownService.turndown(content) };
+};
+
+export type HttpGet = (
+  url: string,
+  opts: { headers: Record<string, string>; timeoutMs: number; maxBytes: number }
+) => Promise<HttpGetResult>;
+
 interface FetchConfig {
   userAgent?: string;
   timeoutMs?: number;
@@ -50,7 +85,34 @@ interface FetchConfig {
   respectRobotsTxt?: boolean;
   allowPrivateNetworks?: boolean;
   defaultMaxLength?: number;
+  /**
+   * How to GET a URL. The web server injects its SSRF-guarded fetch, which
+   * checks every resolved address and redirect hop; the desktop default uses
+   * axios with the hostname check below.
+   */
+  httpGet?: HttpGet;
+  /** The web server parses pages in its worker pool, with a time limit. */
+  htmlToMarkdown?: HtmlToMarkdown;
 }
+
+/** The desktop's getter: axios, up to 5 redirects. */
+const axiosGet: HttpGet = async (url, { headers, timeoutMs, maxBytes }) => {
+  const response = await axios.get(url, {
+    responseType: 'arraybuffer',
+    timeout: timeoutMs,
+    maxContentLength: maxBytes,
+    maxRedirects: 5,
+    headers,
+    validateStatus: () => true,
+  });
+  return {
+    status: response.status,
+    statusText: response.statusText,
+    contentType: (response.headers['content-type'] as string | undefined) ?? undefined,
+    body: Buffer.from(response.data),
+    finalUrl: getFinalUrl(response) || url,
+  };
+};
 
 // ============================================================================
 // SSRF Protection
@@ -84,7 +146,8 @@ const robotsCache = new Map<string, { allowed: boolean; expires: number }>();
 
 async function isAllowedByRobots(
   url: string,
-  userAgent: string
+  userAgent: string,
+  httpGet: HttpGet
 ): Promise<{ allowed: boolean; reason?: string }> {
   const parsed = new URL(url);
   const origin = parsed.origin;
@@ -98,13 +161,8 @@ async function isAllowedByRobots(
 
   try {
     const robotsUrl = `${origin}/robots.txt`;
-    const resp = await axios.get(robotsUrl, {
-      timeout: 10000,
-      maxRedirects: 5,
-      headers: { 'User-Agent': userAgent },
-      validateStatus: () => true,
-      responseType: 'text',
-    });
+    const got = await httpGet(robotsUrl, { headers: { 'User-Agent': userAgent }, timeoutMs: 10000, maxBytes: 512 * 1024 });
+    const resp = { status: got.status, data: got.body.toString('utf-8') };
 
     if (resp.status >= 400) {
       robotsCache.set(origin, {
@@ -212,6 +270,10 @@ export function createFetchServer(config?: Record<string, unknown>): McpServer {
   const respectRobotsTxt = cfg.respectRobotsTxt ?? false;
   const allowPrivateNetworks = cfg.allowPrivateNetworks ?? false;
   const defaultMaxLength = cfg.defaultMaxLength ?? 5000;
+  const httpGet = cfg.httpGet ?? axiosGet;
+  const htmlToMarkdown = cfg.htmlToMarkdown ?? inProcessHtmlToMarkdown;
+  // An injected getter enforces its own (stricter) network policy
+  const checkHostname = !cfg.httpGet && !allowPrivateNetworks;
 
   const server = new McpServer(
     { name: 'Claudia Fetch', version: '1.0.0' },
@@ -274,7 +336,7 @@ export function createFetchServer(config?: Record<string, unknown>): McpServer {
       }
 
       // 2. SSRF guard
-      if (!allowPrivateNetworks && isPrivateIP(parsedUrl.hostname)) {
+      if (checkHostname && isPrivateIP(parsedUrl.hostname)) {
         return {
           content: [
             {
@@ -289,7 +351,7 @@ export function createFetchServer(config?: Record<string, unknown>): McpServer {
 
       // 3. robots.txt check
       if (respectRobotsTxt) {
-        const robotsResult = await isAllowedByRobots(url, userAgent);
+        const robotsResult = await isAllowedByRobots(url, userAgent, httpGet);
         if (!robotsResult.allowed) {
           return {
             content: [
@@ -304,19 +366,16 @@ export function createFetchServer(config?: Record<string, unknown>): McpServer {
       }
 
       // 4. Fetch
-      let response;
+      let response: HttpGetResult;
       try {
-        response = await axios.get(url, {
-          responseType: 'arraybuffer',
-          timeout: timeoutMs,
-          maxContentLength: maxBytes,
-          maxRedirects: 5,
+        response = await httpGet(url, {
           headers: {
             'User-Agent': userAgent,
             Accept:
               'text/html,application/xhtml+xml,application/json;q=0.9,text/plain;q=0.8,*/*;q=0.5',
           },
-          validateStatus: () => true,
+          timeoutMs,
+          maxBytes,
         });
       } catch (err: any) {
         const msg = err?.message || String(err);
@@ -339,10 +398,9 @@ export function createFetchServer(config?: Record<string, unknown>): McpServer {
         };
       }
 
-      const contentTypeHeader: string | undefined =
-        response.headers['content-type'];
+      const contentTypeHeader: string | undefined = response.contentType;
       const charset = getCharset(contentTypeHeader);
-      const buffer = Buffer.from(response.data);
+      const buffer = response.body;
       const isBinary = isBinaryContentType(contentTypeHeader);
 
       // 6. Binary content
@@ -379,35 +437,10 @@ export function createFetchServer(config?: Record<string, unknown>): McpServer {
       // 9. HTML → readability → turndown
       let markdown: string;
       try {
-        const { JSDOM } = getJSDOM();
-        const { Readability } = getReadability();
-        const TurndownService = getTurndown();
-        const { gfm } = getTurndownGfm();
-
-        const dom = new JSDOM(decoded, { url: getFinalUrl(response) || url });
-        const document = dom.window.document;
-        const reader = new Readability(document);
-        const article = reader.parse();
-
-        const turndownService = new TurndownService({
-          headingStyle: 'atx',
-          codeBlockStyle: 'fenced',
-        });
-        turndownService.use(gfm);
-
-        let html: string;
-        let title: string | undefined;
-        const finalUrl = getFinalUrl(response) || url;
-
-        if (article && article.content) {
-          html = article.content;
-          title = article.title;
-        } else {
-          html = document.body?.innerHTML ?? decoded;
-          title = document.title;
-        }
-
-        markdown = turndownService.turndown(html);
+        const finalUrl = response.finalUrl || url;
+        const converted = await htmlToMarkdown(decoded, finalUrl);
+        const title = converted.title;
+        markdown = converted.markdown;
 
         if (title) {
           markdown = `# ${title}\n${finalUrl}\n\n${markdown}`;

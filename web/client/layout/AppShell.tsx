@@ -6,6 +6,7 @@ import { toggleSidebar } from '@/store/slices/uiSlice';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { Sidebar } from './Sidebar';
 import { MenuIcon } from '../components/icons';
+import { useMcpSync } from '../chat/useMcpSync';
 
 /**
  * Sidebar + content. On wide screens the sidebar is a column (collapsible);
@@ -20,6 +21,8 @@ export function AppShell() {
   const appTitle = useAppSelector((s) => s.settings.appearance.customization?.appTitle) || t('app.name');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const { reload } = useLoadSettingsFromStore();
+  // Tool servers and skills into the shared slices (composer badges, /skills)
+  useMcpSync();
 
   // The user's appearance and preferences into the shared settings slice
   useEffect(() => {

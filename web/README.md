@@ -5,10 +5,30 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 1a** (multi-user chat core): local accounts with admin
-approval, admin-managed LLM connections and model allowlists, server-side
-streaming chats that survive reloads and can be resumed in another tab,
-folders, per-user settings, rate limits, and a responsive UI.
+Status: **Phase 1b** (directory login, tools and files), on top of the
+Phase 1a chat core (local accounts with admin approval, admin-managed LLM
+connections and model allowlists, server-side streaming chats that survive
+reloads and resume in another tab, folders, per-user settings, rate limits,
+a responsive UI). Phase 1b adds:
+
+- **LDAP / Active Directory sign-in** (Admin → Directory), hardened: empty
+  passwords never reach the directory, usernames are escaped in filters,
+  accounts link by entryUUID/objectGUID (never by email), and users removed
+  from the directory lose their sessions at the next token refresh.
+- **Tools (MCP):** admin-managed shared servers (Admin → Tools) and the
+  built-ins (files, Word documents, diagrams, web fetch), each user's copy
+  confined to a private workspace in `DATA_DIR/workspaces/<user>`. Users
+  switch tools on under Settings → Tools. MCP-UI renders only from the sandbox
+  origin, may only call tools of the server that produced it, and asks before
+  tools marked destructive.
+- **Attachments:** uploads are stored in `DATA_DIR/storage`; PDF, Word,
+  Excel, PowerPoint, HTML and text are parsed in a worker pool with size, time
+  and zip-bomb limits, and their text reaches the model. Images are sent as
+  images.
+- **Skills** stored in the database (built-ins plus each user's own;
+  `/skill args` in the composer).
+- **Personal connections** (off by default; Admin → Settings): users add their
+  own API keys, and every request they cause goes through the SSRF guard.
 
 The first account to sign up becomes the admin (or set
 `CLAUDIA_ADMIN_EMAIL` / `CLAUDIA_ADMIN_PASSWORD`). Add a connection under
@@ -28,7 +48,7 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 | Command | What it does |
 |---|---|
 | `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test) and client tests |
-| `npm run test:e2e` | Browser tests of the Phase 1a flow against the production build (run `npm run build` first; `npx playwright install chromium` once) |
+| `npm run test:e2e` | Browser tests of the Phase 1a and 1b flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
 | `npm run type-check` | Client and server, including the shared `../src` code |
 | `npm run build` | Client (`dist/client`) and server bundle (`dist/server/index.cjs`) |
 | `npm start` | Run the production build |
@@ -66,12 +86,31 @@ dependencies.
 | `CLAUDIA_SANDBOX_PORT` | — | Single-host trials: serve the sandbox on this port instead (needs `CLAUDIA_PUBLIC_URL`) |
 | `ENABLE_PASSWORD_AUTH` | `true` | Local email + password sign-in |
 | `CLAUDIA_ADMIN_EMAIL`, `CLAUDIA_ADMIN_PASSWORD` | — | Create the first admin on first boot |
-| `CLAUDIA_ALLOW_STDIO_MCP` | `false` | Allow admins to configure stdio MCP servers |
+| `CLAUDIA_ALLOW_STDIO_MCP` | `false` | Allow admins to configure stdio MCP servers (they run commands on the host, with only their own environment variables) |
+| `ENABLE_LDAP` | — | Directory sign-in on/off; overrides the admin setting |
+| `LDAP_URL`, `LDAP_START_TLS` | — | `ldap://host:389` or `ldaps://host:636`; StartTLS for `ldap://` |
+| `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` | — | Service account that looks users up |
+| `LDAP_USER_SEARCH_BASE`, `LDAP_USER_FILTER` | — | e.g. `ou=people,dc=example,dc=com` and `(uid={{username}})` (AD: `(sAMAccountName={{username}})`) |
+| `LDAP_CA_CERT_FILE` | — | PEM of the CA that signed the directory's certificate |
 | `LOG_LEVEL` | `info` | |
 
 Streaming behind a reverse proxy needs buffering off for `/api` (nginx:
 `proxy_buffering off;` and a read timeout longer than the longest run).
 Session cookies get `Secure` when `CLAUDIA_PUBLIC_URL` is https.
+
+Every `LDAP_*` variable that is set wins over the admin page and shows there
+as read-only; the rest (attribute names, allowed group, role of new accounts,
+re-check interval) are set under **Admin → Directory**. On a directory-only
+install (`ENABLE_PASSWORD_AUTH=false`) nobody can sign in with a password, so
+make the first admin with the CLI after their first directory sign-in:
+`node dist/server/cli.cjs admin promote --email <email>`.
+
+To try LDAP locally, `docker compose -f docker/compose.ldap.yml up -d` starts
+an OpenLDAP with test users (see the file); CI runs the LDAP integration tests
+against it.
+
+`rotate-keys` re-encrypts every stored secret (connection keys, tool server
+headers and environment variables, the LDAP bind password) with the new key.
 
 On a managed PostgreSQL where the app's role can't create extensions, run
 `CREATE EXTENSION vector;` once as an administrator before the first start.

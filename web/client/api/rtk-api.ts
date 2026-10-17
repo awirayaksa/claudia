@@ -6,7 +6,10 @@ import { createApi, type BaseQueryFn } from '@reduxjs/toolkit/query/react';
 import { apiFetchRaw, toApiError, ApiRequestError } from './http';
 import type { AdminUser, PublicUser, SessionInfo, SessionResponse } from '@shared/auth';
 import type { ChatDetail, ChatSummary, CompletionRequest, CompletionResponse, Folder } from '@shared/chats';
-import type { ConnectionInput, ConnectionView, ModelsResponse } from '@shared/models';
+import type { ConnectionInput, ConnectionView, ModelsResponse, UserConnectionsResponse } from '@shared/models';
+import type { AdminMcpServerView, McpServerInput, McpServerView } from '@shared/mcp';
+import type { LdapLookupResult, LdapSettingsResponse, LdapSettingsUpdate, LdapTestResult } from '@shared/ldap';
+import type { FileView } from '@shared/files';
 import type { AppSettingsResponse, UserSettingsInput } from '@shared/settings';
 import type { PublicConfig } from '@shared/api';
 
@@ -40,7 +43,23 @@ const baseQuery: BaseQueryFn<Args | string, unknown, ApiErrorShape> = async (arg
 export const api = createApi({
   reducerPath: 'api',
   baseQuery,
-  tagTypes: ['Session', 'Chats', 'Chat', 'Folders', 'Models', 'AdminUsers', 'Connections', 'AppSettings', 'MySettings', 'Sessions'],
+  tagTypes: [
+    'Session',
+    'Chats',
+    'Chat',
+    'Folders',
+    'Models',
+    'AdminUsers',
+    'Connections',
+    'MyConnections',
+    'AppSettings',
+    'MySettings',
+    'Sessions',
+    'McpServers',
+    'AdminMcpServers',
+    'Ldap',
+    'Files',
+  ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
     publicConfig: b.query<PublicConfig, void>({ query: () => '/public-config' }),
@@ -51,6 +70,10 @@ export const api = createApi({
     }),
     signup: b.mutation<{ user: PublicUser }, { name: string; email: string; password: string }>({
       query: (body) => ({ url: '/auth/signup', method: 'POST', body }),
+      invalidatesTags: ['Session'],
+    }),
+    ldapLogin: b.mutation<{ user: PublicUser }, { username: string; password: string }>({
+      query: (body) => ({ url: '/auth/ldap', method: 'POST', body }),
       invalidatesTags: ['Session'],
     }),
     logout: b.mutation<{ ok: true }, void>({ query: () => ({ url: '/auth/logout', method: 'POST' }) }),
@@ -108,10 +131,43 @@ export const api = createApi({
       query: (id) => ({ url: `/chats/${id}`, method: 'DELETE' }),
       invalidatesTags: ['Chats'],
     }),
-    sendCompletion: b.mutation<CompletionResponse, { chatId: string } & Omit<CompletionRequest, 'fileIds' | 'toolIds' | 'features'>>({
+    sendCompletion: b.mutation<
+      CompletionResponse,
+      { chatId: string } & Omit<CompletionRequest, 'fileIds' | 'toolIds' | 'features'> &
+        Partial<Pick<CompletionRequest, 'fileIds' | 'toolIds'>>
+    >({
       query: ({ chatId, ...body }) => ({ url: `/chats/${chatId}/completions`, method: 'POST', body }),
     }),
     stopRun: b.mutation<{ ok: true }, string>({ query: (runId) => ({ url: `/runs/${runId}/stop`, method: 'POST' }) }),
+
+    // ─── Tools, files and own connections ───────────────────────────────────
+    mcpServers: b.query<{ servers: McpServerView[] }, void>({ query: () => '/mcp/servers', providesTags: ['McpServers'] }),
+    setMcpServerEnabled: b.mutation<{ server: McpServerView }, { id: string; enabled: boolean }>({
+      query: ({ id, enabled }) => ({ url: `/mcp/servers/${encodeURIComponent(id)}/${enabled ? 'enable' : 'disable'}`, method: 'POST' }),
+      invalidatesTags: ['McpServers'],
+    }),
+    files: b.query<{ files: FileView[] }, void>({ query: () => '/files', providesTags: ['Files'] }),
+    deleteFile: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/files/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Files'],
+    }),
+    myConnections: b.query<UserConnectionsResponse, void>({ query: () => '/connections', providesTags: ['MyConnections'] }),
+    createMyConnection: b.mutation<{ connection: ConnectionView }, Partial<ConnectionInput>>({
+      query: (body) => ({ url: '/connections', method: 'POST', body }),
+      invalidatesTags: ['MyConnections', 'Models'],
+    }),
+    updateMyConnection: b.mutation<{ connection: ConnectionView }, { id: string } & Partial<ConnectionInput>>({
+      query: ({ id, ...body }) => ({ url: `/connections/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['MyConnections', 'Models'],
+    }),
+    deleteMyConnection: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/connections/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['MyConnections', 'Models'],
+    }),
+    testMyConnection: b.mutation<{ ok: boolean; error: string | null; models: string[] }, string>({
+      query: (id) => ({ url: `/connections/${id}/test`, method: 'POST' }),
+      invalidatesTags: ['MyConnections', 'Models'],
+    }),
 
     // ─── Folders ────────────────────────────────────────────────────────────
     folders: b.query<{ folders: Folder[] }, void>({ query: () => '/folders', providesTags: ['Folders'] }),
@@ -165,13 +221,42 @@ export const api = createApi({
       query: (id) => ({ url: `/admin/connections/${id}/test`, method: 'POST' }),
       invalidatesTags: ['Connections', 'Models'],
     }),
+    adminMcpServers: b.query<{ servers: AdminMcpServerView[] }, void>({
+      query: () => '/admin/mcp-servers',
+      providesTags: ['AdminMcpServers'],
+    }),
+    createMcpServer: b.mutation<{ server: AdminMcpServerView }, Partial<McpServerInput>>({
+      query: (body) => ({ url: '/admin/mcp-servers', method: 'POST', body }),
+      invalidatesTags: ['AdminMcpServers', 'McpServers'],
+    }),
+    updateMcpServer: b.mutation<{ server: AdminMcpServerView }, { id: string } & Partial<McpServerInput>>({
+      query: ({ id, ...body }) => ({ url: `/admin/mcp-servers/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['AdminMcpServers', 'McpServers'],
+    }),
+    restartMcpServer: b.mutation<{ server: AdminMcpServerView }, string>({
+      query: (id) => ({ url: `/admin/mcp-servers/${id}/restart`, method: 'POST' }),
+      invalidatesTags: ['AdminMcpServers', 'McpServers'],
+    }),
+    deleteMcpServer: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/admin/mcp-servers/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['AdminMcpServers', 'McpServers'],
+    }),
+    ldapSettings: b.query<LdapSettingsResponse, void>({ query: () => '/admin/ldap', providesTags: ['Ldap'] }),
+    updateLdapSettings: b.mutation<LdapSettingsResponse, LdapSettingsUpdate>({
+      query: (body) => ({ url: '/admin/ldap', method: 'PUT', body }),
+      invalidatesTags: ['Ldap', 'Session'],
+    }),
+    testLdap: b.mutation<LdapTestResult, void>({ query: () => ({ url: '/admin/ldap/test', method: 'POST' }) }),
+    lookupLdapUser: b.mutation<LdapLookupResult, string>({
+      query: (username) => ({ url: '/admin/ldap/lookup', method: 'POST', body: { username } }),
+    }),
     appSettings: b.query<{ settings: AppSettingsResponse }, void>({
       query: () => '/admin/settings',
       providesTags: ['AppSettings'],
     }),
     updateAppSetting: b.mutation<unknown, { key: keyof AppSettingsResponse; value: unknown }>({
       query: ({ key, value }) => ({ url: `/admin/settings/${key}`, method: 'PATCH', body: value }),
-      invalidatesTags: ['AppSettings', 'Models', 'Session'],
+      invalidatesTags: ['AppSettings', 'Models', 'Session', 'McpServers', 'MyConnections'],
     }),
   }),
 });
@@ -180,6 +265,7 @@ export const {
   usePublicConfigQuery,
   useSessionQuery,
   useLoginMutation,
+  useLdapLoginMutation,
   useSignupMutation,
   useLogoutMutation,
   useUpdateMeMutation,
@@ -195,6 +281,15 @@ export const {
   useDeleteChatMutation,
   useSendCompletionMutation,
   useStopRunMutation,
+  useMcpServersQuery,
+  useSetMcpServerEnabledMutation,
+  useFilesQuery,
+  useDeleteFileMutation,
+  useMyConnectionsQuery,
+  useCreateMyConnectionMutation,
+  useUpdateMyConnectionMutation,
+  useDeleteMyConnectionMutation,
+  useTestMyConnectionMutation,
   useFoldersQuery,
   useCreateFolderMutation,
   useUpdateFolderMutation,
@@ -208,6 +303,15 @@ export const {
   useUpdateConnectionMutation,
   useDeleteConnectionMutation,
   useTestConnectionMutation,
+  useAdminMcpServersQuery,
+  useCreateMcpServerMutation,
+  useUpdateMcpServerMutation,
+  useRestartMcpServerMutation,
+  useDeleteMcpServerMutation,
+  useLdapSettingsQuery,
+  useUpdateLdapSettingsMutation,
+  useTestLdapMutation,
+  useLookupLdapUserMutation,
   useAppSettingsQuery,
   useUpdateAppSettingMutation,
 } = api;

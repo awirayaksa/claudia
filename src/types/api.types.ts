@@ -19,11 +19,23 @@ export interface ProviderCapabilities {
   toolsFirstTurnOnly?: boolean;
 }
 
+/**
+ * How a provider reaches its endpoint. The desktop uses the defaults; the web
+ * server routes user-owned connections through its SSRF guard.
+ */
+export interface ProviderHttp {
+  fetch?: typeof fetch;
+  /** Node http.Agent / https.Agent for axios requests. */
+  httpAgent?: unknown;
+  httpsAgent?: unknown;
+}
+
 // Provider-specific Configuration Types
 export interface OpenWebUIConfig {
   baseUrl: string;
   apiKey: string;
   selectedModel: string;
+  http?: ProviderHttp;
 }
 
 export interface OpenRouterConfig {
@@ -37,6 +49,7 @@ export interface CustomProviderConfig {
   baseUrl: string;
   apiKey: string;
   selectedModel: string;
+  http?: ProviderHttp;
 }
 
 export interface OpencodeGoConfig {
@@ -44,6 +57,7 @@ export interface OpencodeGoConfig {
   apiKey: string;
   selectedModel: string;
   apiCompatibility: 'openai' | 'anthropic';
+  http?: ProviderHttp;
 }
 
 // Union type for all provider configs

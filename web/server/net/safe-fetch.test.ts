@@ -2,7 +2,8 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type dns from 'node:dns';
-import { BlockedRequestError, isBlockedAddress, readBodyLimited, safeFetch, unmapIPv4 } from './safe-fetch';
+import axios from 'axios';
+import { BlockedRequestError, guardedTransport, isBlockedAddress, readBodyLimited, safeFetch, unmapIPv4 } from './safe-fetch';
 
 describe('isBlockedAddress', () => {
   it.each([
@@ -119,5 +120,37 @@ describe('safeFetch', () => {
   it('caps the body size', async () => {
     const res = await safeFetch(`http://127.0.0.1:${port}/big`, { policy: { allow: ['127.0.0.1'] } });
     await expect(readBodyLimited(res, 1000)).rejects.toThrow(/larger than 1000 bytes/);
+  });
+
+  describe('guardedTransport (library clients)', () => {
+    const axiosGet = (t: ReturnType<typeof guardedTransport>, url: string) =>
+      axios.get(url, { httpAgent: t.httpAgent, httpsAgent: t.httpsAgent, proxy: false, responseType: 'text' });
+
+    it('blocks private IP literals for axios and fetch', async () => {
+      const t = guardedTransport({});
+      await expect(axiosGet(t, `http://127.0.0.1:${port}/`)).rejects.toThrow(/not a public address/);
+      await expect(axiosGet(t, `http://[::ffff:127.0.0.1]:${port}/`)).rejects.toThrow(/not a public address/);
+      await expect(t.fetch(`http://127.0.0.1:${port}/`)).rejects.toThrow(/not a public address/);
+    });
+
+    it('blocks names that resolve to private addresses, including after a redirect', async () => {
+      const lookup = fakeDns({ 'evil.test': ['127.0.0.1'], 'ok.test': ['127.0.0.1'] });
+      const t = guardedTransport(() => ({ allow: ['ok.test'] }), { lookup });
+      await expect(axiosGet(t, `http://evil.test:${port}/`)).rejects.toThrow(/non-public address/);
+      const hop = `http://ok.test:${port}/redirect?to=${encodeURIComponent(`http://evil.test:${port}/`)}`;
+      await expect(axiosGet(t, hop)).rejects.toThrow(/non-public address/);
+      await expect(t.fetch(hop)).rejects.toThrow(/non-public address/);
+      expect((await axiosGet(t, `http://ok.test:${port}/`)).data).toBe('hello GET');
+    });
+
+    it('reads the allowlist on every connection', async () => {
+      let allow: string[] = [];
+      const t = guardedTransport(() => ({ allow }));
+      await expect(axiosGet(t, `http://127.0.0.1:${port}/`)).rejects.toThrow(/not a public address/);
+      allow = ['127.0.0.0/8'];
+      expect((await axiosGet(t, `http://127.0.0.1:${port}/`)).data).toBe('hello GET');
+      expect(await (await t.fetch(`http://127.0.0.1:${port}/`, { method: 'POST' })).text()).toBe('hello POST');
+      t.httpAgent.destroy();
+    });
   });
 });

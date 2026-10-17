@@ -41,7 +41,7 @@ export function toDisplayMessage(node: MessageNode): Message {
           id: p.fileId,
           type: p.mime.startsWith('image/') ? ('image' as const) : ('file' as const),
           name: p.name,
-          size: 0,
+          size: p.size ?? 0,
           mimeType: p.mime,
         })),
       ...(node.effort ? { effort: node.effort } : {}),

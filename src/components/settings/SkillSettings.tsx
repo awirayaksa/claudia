@@ -194,6 +194,8 @@ export function SkillSettings() {
     [dispatch]
   );
 
+  // Skills live in a folder on the desktop; on the web they're stored on the server
+  const hasSkillsFolder = !!getPlatform().skills.openDir;
   const handleOpenDir = async () => {
     await getPlatform().skills.openDir?.();
   };
@@ -266,17 +268,21 @@ export function SkillSettings() {
           <h4 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
             Your Skills
           </h4>
-          <button
-            className="text-xs text-text-secondary hover:text-text-primary"
-            onClick={handleOpenDir}
-          >
-            Open Skills Folder
-          </button>
+          {hasSkillsFolder && (
+            <button
+              className="text-xs text-text-secondary hover:text-text-primary"
+              onClick={handleOpenDir}
+            >
+              Open Skills Folder
+            </button>
+          )}
         </div>
 
         {userSkills.length === 0 ? (
           <p className="text-xs text-text-secondary py-2">
-            No custom skills yet. Click "New Skill" to create one, or add .md files to the skills folder.
+            {hasSkillsFolder
+              ? 'No custom skills yet. Click "New Skill" to create one, or add .md files to the skills folder.'
+              : 'No custom skills yet. Click "New Skill" to create one.'}
           </p>
         ) : (
           <div className="space-y-1">

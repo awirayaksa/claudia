@@ -242,7 +242,7 @@ export async function llmRoutes(app: FastifyInstance, ctx: ServerContext): Promi
   app.post('/complete', { config: completionRateLimit(ctx) }, async (req) => {
     const me = currentUser(req);
     const body = LlmCompleteRequest.parse(req.body);
-    const target = await ctx.models.resolve(body.model, me.role);
+    const target = await ctx.models.resolve(body.model, me.role, me.id);
     const response = await target.provider.chatCompletion({
       model: target.providerModelId,
       messages: body.messages,

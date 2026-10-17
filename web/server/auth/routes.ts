@@ -3,9 +3,9 @@ import { eq } from 'drizzle-orm';
 import type { ServerContext } from '../context';
 import { sessions, users } from '../db/schema';
 import { hashToken, parseRefreshToken, safeEqualHex } from './tokens';
-import { HttpError, forbidden, tooManyRequests, unauthorized } from '../lib/errors';
+import { HttpError, conflict, forbidden, tooManyRequests, unauthorized } from '../lib/errors';
 import { normalizeEmail, signupLocalUser, toPublicUser } from '../modules/users/service';
-import { LoginRequest, SignupRequest, type SessionResponse } from '../../shared/auth';
+import { LdapLoginRequest, LoginRequest, SignupRequest, type SessionResponse } from '../../shared/auth';
 import { LocalAuthProvider } from './providers/local';
 import {
   REFRESH_COOKIE,
@@ -27,8 +27,19 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     return {
       passwordLogin: ctx.config.ENABLE_PASSWORD_AUTH,
       signup: ctx.config.ENABLE_PASSWORD_AUTH && signup.enabled,
-      ldap: false,
+      ldap: await ctx.ldap.isActive(),
     };
+  }
+
+  function checkLocked(key: string, reply: { header(k: string, v: unknown): unknown }) {
+    const locked = ctx.loginGuard.lockedFor(key);
+    if (locked > 0) {
+      reply.header('Retry-After', Math.ceil(locked / 1000));
+      throw tooManyRequests(
+        `Too many failed sign-in attempts. Try again in ${Math.ceil(locked / 1000)} seconds.`,
+        'login_locked'
+      );
+    }
   }
 
   // Who am I, and how can I sign in? Also hands out the CSRF cookie.
@@ -45,20 +56,39 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {
     const body = LoginRequest.parse(req.body);
     const key = `local:${normalizeEmail(body.email)}`;
-    const locked = ctx.loginGuard.lockedFor(key);
-    if (locked > 0) {
-      reply.header('Retry-After', Math.ceil(locked / 1000));
-      throw tooManyRequests(
-        `Too many failed sign-in attempts. Try again in ${Math.ceil(locked / 1000)} seconds.`,
-        'login_locked'
-      );
-    }
+    checkLocked(key, reply);
 
     const result = await local.authenticate(body.email, body.password);
     if (!result.ok) {
       if (result.reason === 'disabled') throw forbidden('Password sign-in is turned off.', 'password_login_disabled');
       ctx.loginGuard.recordFailure(key);
       throw unauthorized('Wrong email or password.', 'invalid_credentials');
+    }
+    ctx.loginGuard.recordSuccess(key);
+    await startSession(ctx, req, reply, result.userId);
+    const [row] = await ctx.db.select().from(users).where(eq(users.id, result.userId));
+    return { user: toPublicUser(row) };
+  });
+
+  // Directory (LDAP / Active Directory) sign-in
+  app.post('/ldap', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {
+    const body = LdapLoginRequest.parse(req.body);
+    const key = `ldap:${body.username.trim().toLowerCase()}`;
+    checkLocked(key, reply);
+
+    const result = await ctx.ldap.login(body.username, body.password);
+    if (!result.ok) {
+      switch (result.reason) {
+        case 'disabled':
+          throw forbidden('Directory sign-in is turned off.', 'ldap_disabled');
+        case 'unavailable':
+          throw new HttpError(503, 'ldap_unavailable', "The directory can't be reached right now. Try again later.");
+        case 'email_conflict':
+          throw conflict(result.message ?? 'An account with this email already exists.', 'email_conflict');
+        default:
+          ctx.loginGuard.recordFailure(key);
+          throw unauthorized('Wrong username or password.', 'invalid_credentials');
+      }
     }
     ctx.loginGuard.recordSuccess(key);
     await startSession(ctx, req, reply, result.userId);

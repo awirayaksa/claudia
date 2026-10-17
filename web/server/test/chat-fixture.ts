@@ -9,9 +9,9 @@ import type { RunEventEnvelope } from '../../shared/run-events';
  * An app with an admin, a connection to the mock OpenAI endpoint and a
  * listening port (SSE is read over real HTTP).
  */
-export async function chatFixture(opts: { orchestrator?: AppDeps['orchestrator'] } = {}) {
+export async function chatFixture(opts: { orchestrator?: AppDeps['orchestrator']; env?: Record<string, string> } = {}) {
   const mock = await startMockOpenAI();
-  const t = await buildTestApp({ orchestrator: opts.orchestrator });
+  const t = await buildTestApp({ orchestrator: opts.orchestrator, env: opts.env });
   await t.app.listen({ port: 0, host: '127.0.0.1' });
   const base = `http://127.0.0.1:${(t.app.server.address() as AddressInfo).port}`;
 
@@ -25,6 +25,16 @@ export async function chatFixture(opts: { orchestrator?: AppDeps['orchestrator']
     apiKey: 'sk-mock-secret-key-1234',
   });
   if (conn.statusCode !== 201) throw new Error(`connection: ${conn.body}`);
+
+  /** A signed-in regular user. */
+  async function newUser(email: string): Promise<TestClient> {
+    const created = await admin.post('/api/admin/users', { email, name: email.split('@')[0], password: 'user-password-1' });
+    if (created.statusCode !== 201) throw new Error(`user: ${created.body}`);
+    const client = new TestClient(t.app);
+    const login = await client.login(email, 'user-password-1');
+    if (login.statusCode !== 200) throw new Error(`login: ${login.body}`);
+    return client;
+  }
 
   async function newChat(client: TestClient): Promise<string> {
     const res = await client.post('/api/chats', {});
@@ -72,6 +82,7 @@ export async function chatFixture(opts: { orchestrator?: AppDeps['orchestrator']
     mock,
     admin,
     base,
+    newUser,
     newChat,
     readRun,
     async close() {

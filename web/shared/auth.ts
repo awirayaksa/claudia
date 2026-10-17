@@ -39,6 +39,13 @@ export const LoginRequest = z.object({
 });
 export type LoginRequest = z.infer<typeof LoginRequest>;
 
+/** Directory sign-in. An empty password is refused (and never sent to the directory). */
+export const LdapLoginRequest = z.object({
+  username: z.string().trim().min(1, 'Enter your username').max(256),
+  password: z.string().min(1, 'Enter your password').max(256),
+});
+export type LdapLoginRequest = z.infer<typeof LdapLoginRequest>;
+
 export const SignupRequest = z.object({
   name: z.string().trim().min(1, 'Enter your name').max(100),
   email,

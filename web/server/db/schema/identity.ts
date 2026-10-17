@@ -9,6 +9,8 @@ export interface UserSettings {
   preferences?: Record<string, unknown>;
   /** Last model the user picked, used for new chats. */
   defaultModel?: string;
+  /** Tool servers this user switched on or off (default: global on, built-ins off). */
+  mcp?: { enabled: Record<string, boolean> };
 }
 
 export const users = pgTable(

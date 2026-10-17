@@ -7,6 +7,8 @@
     "paths": {
       "@shared/*": ["./shared/*"],
       // Shared files under ../src and ../electron pick up web's packages
+      // Subpath exports aren't applied through "*" (it maps to plain files)
+      "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/*"],
       "*": ["./node_modules/@types/*", "./node_modules/*"]
     }
   },

@@ -352,8 +352,10 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return;
 
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
-    const otherFiles = files.filter((f) => !f.type.startsWith('image/'));
+    // Hosts that keep attachments themselves (web) take images too
+    const inlineImages = !getPlatform().files.handlesImages;
+    const imageFiles = inlineImages ? files.filter((f) => f.type.startsWith('image/')) : [];
+    const otherFiles = inlineImages ? files.filter((f) => !f.type.startsWith('image/')) : files;
 
     // Read images as base64 locally (no server upload needed)
     const imageAttachments: Attachment[] = [];
@@ -494,7 +496,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,.pdf,.docx,.txt,.csv"
+        accept="image/*,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json"
         onChange={(e) => {
           if (e.target.files) {
             handleFilesSelected(Array.from(e.target.files));

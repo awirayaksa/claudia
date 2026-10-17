@@ -99,6 +99,12 @@ export async function refreshSession(
 
   const presented = hashToken(parsed.secret);
   if (safeEqualHex(session.refreshHash, presented)) {
+    // Directory users are re-checked now and then; gone or disabled ends every session
+    if (!(await stillVerified(ctx, session))) {
+      await revokeAllSessions(ctx, session.userId);
+      ctx.log.info({ userId: session.userId }, 'directory account gone or disabled; sessions revoked');
+      return { ok: false, reason: 'invalid' };
+    }
     const secret = newRefreshSecret();
     // Only the request that still sees the old hash may rotate (another tab may have just done it)
     const updated = await ctx.db
@@ -130,6 +136,23 @@ export async function refreshSession(
   await revokeSession(ctx, session.id);
   ctx.log.warn({ sessionId: session.id, userId: session.userId }, 'refresh token reuse; session revoked');
   return { ok: false, reason: 'reused' };
+}
+
+/**
+ * False when the user's directory account no longer exists or is disabled.
+ * Checked at most every `verifyIntervalMinutes`; an unreachable directory
+ * keeps the session and is tried again at the next refresh.
+ */
+async function stillVerified(ctx: ServerContext, session: typeof sessions.$inferSelect): Promise<boolean> {
+  const { verifyIntervalMinutes } = await ctx.ldap.effective();
+  const last = session.lastVerifiedAt?.getTime() ?? 0;
+  if (Date.now() - last < verifyIntervalMinutes * 60_000) return true;
+  const result = await ctx.ldap.verifyUser(session.userId);
+  if (result === 'gone') return false;
+  if (result !== 'unavailable') {
+    await ctx.db.update(sessions).set({ lastVerifiedAt: new Date() }).where(eq(sessions.id, session.id));
+  }
+  return true;
 }
 
 export async function revokeSession(ctx: ServerContext, sessionId: string): Promise<void> {

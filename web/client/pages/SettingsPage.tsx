@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ThemeSettings } from '@/components/settings/ThemeSettings';
 import { PreferencesSettings } from '@/components/settings/PreferencesSettings';
+import { SkillSettings } from '@/components/settings/SkillSettings';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import {
@@ -13,8 +14,11 @@ import {
   useUpdateMeMutation,
 } from '../api/rtk-api';
 import { PageFrame, Tabs } from '../components/PageFrame';
+import { ToolsSettings } from './settings/ToolsSettings';
+import { FilesSettings } from './settings/FilesSettings';
+import { ConnectionsManager } from './admin/ConnectionsPage';
 
-type Tab = 'appearance' | 'preferences' | 'account';
+type Tab = 'appearance' | 'preferences' | 'tools' | 'skills' | 'files' | 'connections' | 'account';
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -27,12 +31,24 @@ export function SettingsPage() {
         tabs={[
           { id: 'appearance', label: t('settings.appearance') },
           { id: 'preferences', label: t('settings.preferences') },
+          { id: 'tools', label: t('settings.tools') },
+          { id: 'skills', label: t('settings.skills') },
+          { id: 'files', label: t('settings.files') },
+          { id: 'connections', label: t('settings.connections') },
           { id: 'account', label: t('settings.account') },
         ]}
       />
       <div className="mt-4 rounded-lg border border-border bg-surface">
         {tab === 'appearance' && <ThemeSettings />}
         {tab === 'preferences' && <PreferencesSettings />}
+        {tab === 'tools' && <ToolsSettings />}
+        {tab === 'skills' && <SkillSettings />}
+        {tab === 'files' && <FilesSettings />}
+        {tab === 'connections' && (
+          <div className="p-5">
+            <ConnectionsManager scope="own" />
+          </div>
+        )}
         {tab === 'account' && <AccountSettings />}
       </div>
     </PageFrame>

@@ -10,6 +10,8 @@
       "@web/*": ["./client/*"],
       "@shared/*": ["./shared/*"],
       // Shared files under ../src pick up web's packages and type packages
+      // Subpath exports aren't applied through "*" (it maps to plain files)
+      "@modelcontextprotocol/sdk/*": ["./node_modules/@modelcontextprotocol/sdk/dist/esm/*"],
       "*": ["./node_modules/@types/*", "./node_modules/*"]
     }
   },

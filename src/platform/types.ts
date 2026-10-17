@@ -138,6 +138,11 @@ export interface PlatformLLM {
 export interface PlatformFiles {
   /** Turn a picked file into an attachment the model can read. */
   upload(file: File, onProgress?: (percent: number) => void): Promise<Attachment>;
+  /**
+   * Images go through `upload` as well (web: the server keeps every
+   * attachment). Otherwise they're inlined as base64 by the composer.
+   */
+  handlesImages?: boolean;
   /** Native file picker, where the host has one. */
   pick?(): Promise<File[]>;
 }

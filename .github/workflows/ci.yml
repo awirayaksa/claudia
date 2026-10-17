@@ -103,6 +103,43 @@ jobs:
             web/playwright-report
             web/test-results
 
+  web-ldap:
+    name: Web (LDAP against OpenLDAP)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start OpenLDAP
+        run: docker compose -f docker/compose.ldap.yml up -d --wait --wait-timeout 180
+
+      # The certificate is issued for ldap.claudia.test, so connect by that name
+      - name: Trust the test CA
+        run: |
+          echo "127.0.0.1 ldap.claudia.test" | sudo tee -a /etc/hosts
+          docker compose -f docker/compose.ldap.yml cp ldap:/container/service/slapd/assets/certs/ca.crt "$RUNNER_TEMP/ldap-ca.crt"
+
+      - name: LDAP integration tests
+        run: npx vitest run server/auth/ldap.integration.test.ts
+        env:
+          TEST_LDAP_HOST: ldap.claudia.test
+          TEST_LDAP_CA_FILE: ${{ runner.temp }}/ldap-ca.crt
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker/compose.ldap.yml logs
+
   web-docker:
     name: Web (Docker image)
     runs-on: ubuntu-latest

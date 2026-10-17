@@ -6,7 +6,8 @@ import '@/styles/globals.css';
 import './i18n';
 import { PublicConfig } from '@shared/api';
 import { createWebPlatform } from './platform/web.platform';
-import { createWebStore } from './store';
+import { createWebStore, type WebStore } from './store';
+import { api } from './api/rtk-api';
 import { App } from './App.web';
 
 async function start() {
@@ -18,8 +19,16 @@ async function start() {
   } catch {
     sandboxOrigin = undefined;
   }
-  setPlatform(createWebPlatform({ sandboxOrigin }));
-  const store = createWebStore();
+  // The platform reports server-side changes; the store is created right after
+  let store: WebStore | null = null;
+  setPlatform(
+    createWebPlatform({
+      sandboxOrigin,
+      onMcpChanged: () => store?.dispatch(api.util.invalidateTags(['McpServers'])),
+      onToolResultChanged: () => store?.dispatch(api.util.invalidateTags(['Chat'])),
+    })
+  );
+  store = createWebStore();
 
   ReactDOM.createRoot(document.getElementById('root')!).render(
     <React.StrictMode>

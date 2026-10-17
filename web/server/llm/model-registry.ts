@@ -1,9 +1,11 @@
 /**
- * The models users can pick, aggregated across enabled global connections.
+ * The models users can pick, aggregated across enabled global connections
+ * and — when the admin allows it — the user's own (ids "@<prefix>/<model>",
+ * requests through the SSRF guard).
  * Listing an endpoint is slow, so results are cached briefly; a connection
  * whose listing fails keeps its last good list and reports the error.
  */
-import { asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { IAPIProvider } from '../../../src/services/api/provider.interface';
 import type { Database } from '../db/client';
@@ -13,6 +15,7 @@ import type { AppSettings } from '../modules/settings/app-settings';
 import { forbidden, notFound } from '../lib/errors';
 import type { ModelInfo } from '../../shared/models';
 import { createProvider } from './provider-registry';
+import { guardedTransport, type GuardedTransport } from '../net/safe-fetch';
 
 export type ConnectionRow = typeof providerConnections.$inferSelect;
 
@@ -50,10 +53,14 @@ export class ModelRegistry {
   private states = new Map<string, ConnectionState>();
   private providers = new Map<string, { stamp: number; provider: IAPIProvider }>();
   private inflight: Promise<void> | null = null;
+  /** Transport of user-owned connections. */
+  private readonly guarded: GuardedTransport;
 
   constructor(
     private readonly deps: { db: Database; secrets: SecretBox; settings: AppSettings; log: FastifyBaseLogger }
-  ) {}
+  ) {
+    this.guarded = guardedTransport(() => ({ allow: deps.settings.peek('net.allowlist').hosts }));
+  }
 
   /** Enabled global connections, in display order. */
   async connections(): Promise<ConnectionRow[]> {
@@ -62,6 +69,33 @@ export class ModelRegistry {
       .from(providerConnections)
       .where(isNull(providerConnections.ownerId))
       .orderBy(asc(providerConnections.position), asc(providerConnections.createdAt));
+  }
+
+  /** A user's own connections, in display order. */
+  async ownConnections(userId: string): Promise<ConnectionRow[]> {
+    return this.deps.db
+      .select()
+      .from(providerConnections)
+      .where(eq(providerConnections.ownerId, userId))
+      .orderBy(asc(providerConnections.position), asc(providerConnections.createdAt));
+  }
+
+  /** Models of the user's own enabled connections (none while the admin doesn't allow them). */
+  async own(userId: string, opts: { refresh?: boolean } = {}): Promise<ModelInfo[]> {
+    if (!(await this.deps.settings.get('connections.user')).enabled) return [];
+    const conns = (await this.ownConnections(userId)).filter((c) => c.enabled);
+    const stale = conns.filter((c) => {
+      const s = this.states.get(c.id);
+      return opts.refresh || !s || Date.now() - s.fetchedAt > CACHE_MS;
+    });
+    await Promise.all(stale.map((c) => this.refresh(c)));
+    return conns.flatMap((c) => this.states.get(c.id)?.models ?? []);
+  }
+
+  /** What this user may pick: the role's global models, then their own. */
+  async forUser(user: { id: string; role: UserRole }): Promise<ModelInfo[]> {
+    if (user.role === 'pending') return [];
+    return [...(await this.forRole(user.role)), ...(await this.own(user.id))];
   }
 
   /** The provider instance for a connection (rebuilt when the row changes). */
@@ -74,6 +108,7 @@ export class ModelRegistry {
       baseUrl: conn.baseUrl,
       apiKey: conn.keyCipher ? this.deps.secrets.decrypt(conn.keyCipher) : '',
       quirks: conn.quirks,
+      ...(conn.ownerId ? { http: this.guarded } : {}),
     });
     this.providers.set(conn.id, { stamp, provider });
     return provider;
@@ -122,11 +157,14 @@ export class ModelRegistry {
     return models.filter((m) => allowed.has(m.id));
   }
 
-  /** Find a model the role may use, with a provider ready to call. */
-  async resolve(key: string, role: UserRole): Promise<ResolvedModel> {
+  /**
+   * Find a model the role may use, with a provider ready to call. With a user
+   * id, that user's own connections count too.
+   */
+  async resolve(key: string, role: UserRole, userId?: string): Promise<ResolvedModel> {
     const split = splitModelKey(key);
     if (!split) throw notFound('Model');
-    const available = await this.forRole(role);
+    const available = userId ? await this.forUser({ id: userId, role }) : await this.forRole(role);
     const model = available.find((m) => m.id === key);
     if (!model) {
       const exists = (await this.all()).some((m) => m.id === key);
@@ -135,7 +173,11 @@ export class ModelRegistry {
     const [connection] = await this.deps.db
       .select()
       .from(providerConnections)
-      .where(eq(providerConnections.id, model.connectionId));
+      .where(
+        model.own && userId
+          ? and(eq(providerConnections.id, model.connectionId), eq(providerConnections.ownerId, userId))
+          : and(eq(providerConnections.id, model.connectionId), isNull(providerConnections.ownerId))
+      );
     if (!connection || !connection.enabled) throw notFound('Model');
     return { model, providerModelId: split.modelId, connection, provider: this.providerFor(connection) };
   }
@@ -175,11 +217,13 @@ export class ModelRegistry {
 
   private toInfo(conn: ConnectionRow, m: { id: string; name: string; contextLength: number | null }): ModelInfo {
     return {
-      id: `${conn.prefix}/${m.id}`,
+      // Own connections live in their own namespace, so they never shadow global ones
+      id: `${conn.ownerId ? '@' : ''}${conn.prefix}/${m.id}`,
       name: m.name,
       connectionId: conn.id,
       connectionName: conn.name,
       contextLength: m.contextLength,
+      ...(conn.ownerId ? { own: true } : {}),
     };
   }
 }

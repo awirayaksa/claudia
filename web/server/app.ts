@@ -5,6 +5,7 @@ import fastifyStatic from '@fastify/static';
 import fastifyCookie from '@fastify/cookie';
 import fastifyRateLimit from '@fastify/rate-limit';
 import fastifyHelmet from '@fastify/helmet';
+import fastifyMultipart from '@fastify/multipart';
 import type { AppConfig } from './config';
 import type { DbHandle } from './db/client';
 import type { ServerContext } from './context';
@@ -18,13 +19,24 @@ import { registerAuthHooks } from './auth/rbac';
 import { authRoutes } from './auth/routes';
 import { bootstrapAdmin } from './auth/bootstrap';
 import { adminUserRoutes, meRoutes } from './modules/users/routes';
-import { adminConnectionRoutes, modelRoutes } from './modules/connections/routes';
+import { adminConnectionRoutes, modelRoutes, userConnectionRoutes } from './modules/connections/routes';
 import { adminSettingsRoutes } from './modules/settings/routes';
 import { chatRoutes, folderRoutes, llmRoutes, runRoutes } from './modules/chats/routes';
 import { ModelRegistry } from './llm/model-registry';
 import { RunHub } from './llm/run-hub';
 import { ChatOrchestrator, type OrchestratorDeps } from './llm/chat-orchestrator';
 import { registerSandboxHost, sandboxOriginFor } from './sandbox';
+import { LocalStorage } from './storage/local';
+import { ExtractPool } from './extract/pool';
+import { FileService } from './modules/files/service';
+import { fileRoutes } from './modules/files/routes';
+import { SkillService } from './modules/skills/service';
+import { skillRoutes } from './modules/skills/routes';
+import { McpPools } from './mcp/mcp-pool';
+import { LdapService } from './auth/ldap';
+import { adminLdapRoutes } from './auth/ldap-routes';
+import { adminMcpRoutes, mcpUserRoutes, toolRoutes } from './mcp/routes';
+import { MAX_UPLOAD_BYTES } from '../shared/files';
 import type { HealthResponse, PublicConfig, ReadyResponse } from '../shared/api';
 
 export interface AppDeps {
@@ -42,6 +54,8 @@ export interface AppDeps {
   orchestrator?: Partial<OrchestratorDeps>;
   /** Create the env admin on startup (default true). */
   bootstrap?: boolean;
+  /** Start the enabled global MCP servers on startup (default true). */
+  startMcp?: boolean;
 }
 
 declare module 'fastify' {
@@ -97,6 +111,20 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   const settings = new AppSettings(deps.db.db);
   const runs = new RunHub();
   const models = new ModelRegistry({ db: deps.db.db, secrets, settings, log: app.log });
+  const storage = new LocalStorage(path.join(deps.config.dataDir, 'storage'));
+  const extract = new ExtractPool();
+  const files = new FileService({ db: deps.db.db, storage, extract, log: app.log });
+  const skills = new SkillService(deps.db.db);
+  const mcp = new McpPools({
+    db: deps.db.db,
+    secrets,
+    settings,
+    allowStdio: deps.config.CLAUDIA_ALLOW_STDIO_MCP,
+    log: app.log,
+    dataDir: deps.config.dataDir,
+    extract,
+    netPolicy: () => ({ allow: settings.peek('net.allowlist').hosts }),
+  });
   const ctx: ServerContext = {
     config: deps.config,
     dbHandle: deps.db,
@@ -107,16 +135,37 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     loginGuard: new LoginGuard(),
     models,
     runs,
-    orchestrator: new ChatOrchestrator({ db: deps.db.db, models, runs, settings, log: app.log, ...deps.orchestrator }),
+    orchestrator: new ChatOrchestrator({
+      db: deps.db.db,
+      models,
+      runs,
+      settings,
+      log: app.log,
+      files,
+      skills,
+      toolsFor: (user, toolIds) => mcp.toolset(user.id, toolIds),
+      ...deps.orchestrator,
+    }),
+    storage,
+    extract,
+    files,
+    skills,
+    mcp,
+    ldap: new LdapService({ db: deps.db.db, secrets, config: deps.config, log: app.log }),
     log: app.log,
   };
   app.decorate('ctx', ctx);
-  app.addHook('onClose', async () => runs.close());
+  app.addHook('onClose', async () => {
+    runs.close();
+    await mcp.close();
+    await extract.close();
+  });
 
   if (deps.sandboxDir) registerSandboxHost(app, deps.config, deps.sandboxDir);
   registerErrorHandler(app);
   await app.register(fastifyCookie);
   await app.register(fastifyRateLimit, { global: false });
+  await app.register(fastifyMultipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5, parts: 6 } });
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: { directives: cspDirectives(deps.config) },
     // Allow the sandbox origin to load its own resources cross-origin
@@ -161,9 +210,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => folderRoutes(a, ctx), { prefix: '/folders' });
       await api.register((a) => runRoutes(a, ctx), { prefix: '/runs' });
       await api.register((a) => llmRoutes(a, ctx), { prefix: '/llm' });
+      await api.register((a) => userConnectionRoutes(a, ctx), { prefix: '/connections' });
+      await api.register((a) => fileRoutes(a, ctx), { prefix: '/files' });
+      await api.register((a) => skillRoutes(a, ctx), { prefix: '/skills' });
+      await api.register((a) => mcpUserRoutes(a, ctx), { prefix: '/mcp' });
+      await api.register((a) => toolRoutes(a, ctx), { prefix: '/tools' });
+      await api.register((a) => adminMcpRoutes(a, ctx), { prefix: '/admin/mcp-servers' });
       await api.register((a) => adminUserRoutes(a, ctx), { prefix: '/admin/users' });
       await api.register((a) => adminConnectionRoutes(a, ctx), { prefix: '/admin/connections' });
       await api.register((a) => adminSettingsRoutes(a, ctx), { prefix: '/admin/settings' });
+      await api.register((a) => adminLdapRoutes(a, ctx), { prefix: '/admin/ldap' });
       api.setNotFoundHandler((req, reply) => {
         reply.code(404).send({ error: { code: 'not_found', message: `No route for ${req.method} ${req.url}` } });
       });
@@ -192,6 +248,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     });
   }
 
+  // Fails only when the database isn't migrated yet (/readyz reports that)
+  await skills.seedBuiltins().catch((err) => app.log.warn({ err: String(err) }, 'seeding built-in skills failed'));
   if (deps.bootstrap !== false) await bootstrapAdmin(ctx);
+  if (deps.startMcp !== false) void mcp.startAll().catch((err) => app.log.warn({ err: String(err) }, 'starting MCP servers failed'));
   return app;
 }

@@ -562,6 +562,13 @@ Changes no desktop behaviour.
   - MCP-UI renders only from the sandbox origin;
   - PDF, DOCX and XLSX attachments reach the model;
   - parser limits are enforced.
+- **Decisions made while building it:**
+  - Directory-only installs get their first admin with `claudia admin promote --email …` after that person's first directory sign-in; password sign-in stays fully off.
+  - `allowedGroupDn` is checked with `memberOf` (OpenLDAP needs the memberof overlay).
+  - LDAP tests run against an in-process fake directory (ldapjs) on every run, and against OpenLDAP (`docker/compose.ldap.yml`, ldaps and StartTLS with a test CA) in a CI job, instead of testcontainers.
+  - Personal connections' models are named `@<prefix>/<model>`, so they never shadow global ones.
+  - Built-in tool results show paths relative to the user's workspace; HTML→markdown (fetch) and SVG→PNG (diagrams) run in the worker pool too.
+  - Shared code's `console.*` output goes through the logger, with `log`/`info`/`debug` only at debug level (some of it contains request bodies).
 
 ### Phase 2 — Rich chat UX
 - **Rendering:** LaTeX (`remark-math` + `rehype-katex`) and lazy-loaded Mermaid (`securityLevel: 'strict'`) in the shared `MarkdownRenderer`. Desktop gets them too.

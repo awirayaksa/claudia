@@ -82,6 +82,8 @@ export class OpencodeGoProvider implements IAPIProvider {
         'Authorization': `Bearer ${config.apiKey}`,
       },
       timeout: 30000,
+      httpAgent: config.http?.httpAgent,
+      httpsAgent: config.http?.httpsAgent,
     });
   }
 
@@ -152,7 +154,7 @@ export class OpencodeGoProvider implements IAPIProvider {
     console.log('[OpencodeGoProvider] Anthropic non-streaming request body:', JSON.stringify(anthropicBody));
 
     const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
-    const response = await fetch(`${baseUrl}/v1/messages`, {
+    const response = await (this.config.http?.fetch ?? fetch)(`${baseUrl}/v1/messages`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -223,6 +225,7 @@ export class OpencodeGoProvider implements IAPIProvider {
         headers: { Authorization: `Bearer ${this.config.apiKey}` },
         body,
         signal: abortSignal,
+        fetchImpl: this.config.http?.fetch,
       },
       {
         ...callbacks,
@@ -266,7 +269,7 @@ export class OpencodeGoProvider implements IAPIProvider {
     const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
 
     try {
-      const response = await fetch(`${baseUrl}/v1/messages`, {
+      const response = await (this.config.http?.fetch ?? fetch)(`${baseUrl}/v1/messages`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -1,0 +1,36 @@
+dn: ou=people,dc=claudia,dc=test
+objectClass: organizationalUnit
+ou: people
+
+dn: ou=groups,dc=claudia,dc=test
+objectClass: organizationalUnit
+ou: groups
+
+dn: uid=alice,ou=people,dc=claudia,dc=test
+objectClass: inetOrgPerson
+uid: alice
+cn: Alice Liddell
+sn: Liddell
+mail: alice@claudia.test
+userPassword: alice-pass
+
+dn: uid=bob,ou=people,dc=claudia,dc=test
+objectClass: inetOrgPerson
+uid: bob
+cn: Bob Builder
+sn: Builder
+mail: bob@claudia.test
+userPassword: bob-pass
+
+dn: uid=carol,ou=people,dc=claudia,dc=test
+objectClass: inetOrgPerson
+uid: carol
+cn: Carol Danvers
+sn: Danvers
+mail: carol@claudia.test
+userPassword: carol-pass
+
+dn: cn=staff,ou=groups,dc=claudia,dc=test
+objectClass: groupOfNames
+cn: staff
+member: uid=alice,ou=people,dc=claudia,dc=test

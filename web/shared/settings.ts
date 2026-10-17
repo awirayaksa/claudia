@@ -45,5 +45,8 @@ export const AppSettingsResponse = z.object({
     maxToolIterations: z.number(),
   }),
   tasks: z.object({ generateTitles: z.boolean(), titleModel: z.string().nullable() }),
+  'mcp.builtins': z.object({ enabled: z.array(z.string()) }),
+  'net.allowlist': z.object({ hosts: z.array(z.string()) }),
+  'connections.user': z.object({ enabled: z.boolean() }),
 });
 export type AppSettingsResponse = z.infer<typeof AppSettingsResponse>;

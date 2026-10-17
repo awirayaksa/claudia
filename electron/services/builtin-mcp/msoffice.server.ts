@@ -6,8 +6,9 @@ import * as crypto from 'crypto';
 import { spawn } from 'child_process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { Document, Packer } from 'docx';
-const mammoth = require('mammoth');
+import { Document as DocxDocument, Packer } from 'docx';
+import mammoth from 'mammoth';
+import { assertPathAllowed, resolveRequestedPath } from './path-guard';
 
 // ============================================================================
 // Constants
@@ -35,8 +36,16 @@ function escapeXml(s: string): string {
     .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
-function resolvePath(filename: string, workingDir: string): string {
-  return path.isAbsolute(filename) ? filename : path.join(workingDir, filename);
+/**
+ * Resolve a file name against the working directory. Confined (the web
+ * server, one workspace per user), the result must stay inside it — absolute
+ * paths, ../ and links out are refused. Unconfined (desktop) any path works.
+ */
+function resolvePath(filename: string, workingDir: string, confine = false): string {
+  if (!confine) return path.isAbsolute(filename) ? filename : path.join(workingDir, filename);
+  const resolved = resolveRequestedPath(filename, [workingDir]);
+  assertPathAllowed(resolved, [workingDir]);
+  return resolved;
 }
 
 function getZipEntry(zip: AdmZip, name: string): string | null {
@@ -252,13 +261,6 @@ function paraText(p: Element): string {
   return t;
 }
 
-function insertBeforeSectPr(body: Element, node: Element): void {
-  const children = directChildren(body);
-  const sp = children.find(c => c.localName === 'sectPr');
-  if (sp) body.insertBefore(node, sp);
-  else body.appendChild(node);
-}
-
 function mkEl(doc: Document, tag: string): Element {
   return (doc as any).createElement(tag);
 }
@@ -461,6 +463,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     { capabilities: { tools: {} } }
   );
   const workingDir = (config?.workingDirectory as string) || process.cwd();
+  // The web server confines every path to the user's workspace
+  const confine = config?.confineToWorkingDirectory === true;
 
   // ══════════════════════════════════════════════════════════════════════════
   // GROUP 1 – Document Management
@@ -476,8 +480,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, title, author }) => {
       const fname = filename.endsWith('.docx') ? filename : `${filename}.docx`;
-      const filepath = resolvePath(fname, workingDir);
-      const doc = new Document({
+      const filepath = resolvePath(fname, workingDir, confine);
+      const doc = new DocxDocument({
         title: title || '',
         creator: author || '',
         sections: [{ children: [] }],
@@ -498,8 +502,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       destination_filename: z.string().describe('Destination file name or path'),
     },
     async ({ source_filename, destination_filename }) => {
-      const src = resolvePath(source_filename, workingDir);
-      const dst = resolvePath(destination_filename, workingDir);
+      const src = resolvePath(source_filename, workingDir, confine);
+      const dst = resolvePath(destination_filename, workingDir, confine);
       return withDocxPairRaw(src, dst, async () => {
         await withRetry(() => fs.copyFile(src, dst), 'copy_document.copyFile');
         return { content: [{ type: 'text' as const, text: `Copied: ${src} → ${dst}` }] };
@@ -512,7 +516,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Retrieve metadata and properties of a .docx document.',
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
         const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
@@ -545,7 +549,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Extract all text content from a .docx document.',
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRawRead(filepath, async () => {
         const result = await mammothExtractRawTextWithRetry(filepath);
         return { content: [{ type: 'text' as const, text: result.value || '(empty document)' }] };
@@ -558,7 +562,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Display the heading structure and outline of a .docx document.',
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml') || '';
         const doc = parseXmlDoc(docXml);
@@ -586,7 +590,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'List all .docx files in a directory.',
     { directory: z.string().optional().describe('Directory path (default: working directory)') },
     async ({ directory }) => {
-      const dir = directory ? resolvePath(directory, workingDir) : workingDir;
+      const dir = directory ? resolvePath(directory, workingDir, confine) : workingDir;
       const entries = await fs.readdir(dir);
       const docs = entries.filter(e => e.toLowerCase().endsWith('.docx'));
       const text = docs.length ? docs.map(d => path.join(dir, d)).join('\n') : 'No .docx files found.';
@@ -599,7 +603,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Get the raw XML content of word/document.xml from a .docx file.',
     { filename: z.string().describe('File name or path') },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const xml = getZipEntry(zip, 'word/document.xml') || '(not found)';
         return { content: [{ type: 'text' as const, text: xml }] };
@@ -623,7 +627,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       target_paragraph_index: z.number().optional().describe('Fallback paragraph index if text not found'),
     },
     async ({ filename, target_text, header_title, position, header_style, target_paragraph_index }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -659,7 +663,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       target_paragraph_index: z.number().optional(),
     },
     async ({ filename, target_text, line_text, position, line_style, target_paragraph_index }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -694,7 +698,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       bullet_type: z.enum(['bullet', 'number']).optional().describe('bullet or number (default: bullet)'),
     },
     async ({ filename, target_text, list_items, position, target_paragraph_index, bullet_type }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -740,7 +744,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       color: z.string().optional().describe('Hex color e.g. "FF0000"'),
     },
     async ({ filename, text, style, font_name, font_size, bold, italic, color }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const fragment = buildParaXml(text, { pStyle: style, fontName: font_name, fontSize: font_size, bold, italic, color });
@@ -764,7 +768,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       border_bottom: z.boolean().optional().describe('Add a bottom border below the heading'),
     },
     async ({ filename, text, level, font_name, font_size, bold, italic, border_bottom }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const fragment = buildParaXml(text, {
@@ -786,8 +790,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       width: z.number().optional().describe('Image width in inches (default: 4)'),
     },
     async ({ filename, image_path, width }) => {
-      const filepath = resolvePath(filename, workingDir);
-      const imgPath = resolvePath(image_path, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
+      const imgPath = resolvePath(image_path, workingDir, confine);
       const imgBuf = await withRetry(() => fs.readFile(imgPath), 'add_picture.readImage');
       const ext = path.extname(imgPath).toLowerCase().replace('.', '') || 'png';
       const dims = getImageDimensions(imgBuf, ext);
@@ -834,7 +838,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       data: z.array(z.array(z.string())).optional().describe('2D array of cell text values'),
     },
     async ({ filename, rows, cols, data }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const colWidth = Math.floor(9360 / cols); // ~6.5 inch table in twips
 
@@ -865,7 +869,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Insert a page break at the end of a document.',
     { filename: z.string() },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const pageBreak = '<w:p><w:r><w:br w:type="page"/></w:r></w:p>';
@@ -883,7 +887,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       paragraph_index: z.number().describe('0-based index of the paragraph to delete'),
     },
     async ({ filename, paragraph_index }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -907,7 +911,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       replace_text: z.string().describe('Replacement text'),
     },
     async ({ filename, find_text, replace_text }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         let docXml = getZipEntry(zip, 'word/document.xml')!;
         // Replace inside <w:t>…</w:t> nodes preserving tags
@@ -942,7 +946,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       base_style: z.string().optional().describe('Base style to inherit from (default: DefaultParagraphFont)'),
     },
     async ({ filename, style_name, bold, italic, font_size, font_name, color, base_style }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const stylesXml = getZipEntry(zip, 'word/styles.xml');
         if (!stylesXml) throw new Error('word/styles.xml not found in document');
@@ -972,7 +976,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       font_name: z.string().optional(),
     },
     async ({ filename, paragraph_index, bold, italic, underline, color, font_size, font_name }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1022,7 +1026,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       shading: z.string().optional().describe('Table background fill color hex (e.g. "EEEEEE")'),
     },
     async ({ filename, table_index, border_style, shading }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1068,7 +1072,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       pattern: z.string().optional().describe('Shading pattern (default: clear)'),
     },
     async ({ filename, table_index, row_index, col_index, fill_color, pattern }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1102,7 +1106,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       color2: z.string().optional().describe('Color for even rows (default: F2F2F2)'),
     },
     async ({ filename, table_index, color1, color2 }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1141,7 +1145,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       text_color: z.string().optional().describe('Header text hex color (default: FFFFFF)'),
     },
     async ({ filename, table_index, header_color, text_color }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1189,7 +1193,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       vertical: z.enum(['top', 'center', 'bottom']).optional().describe('Vertical alignment (default: top)'),
     },
     async ({ filename, table_index, row_index, col_index, horizontal, vertical }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1239,7 +1243,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       end_col: z.number(),
     },
     async ({ filename, table_index, start_row, start_col, end_row, end_col }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1295,7 +1299,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       end_col: z.number(),
     },
     async ({ filename, table_index, row_index, start_col, end_col }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1331,7 +1335,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       end_row: z.number(),
     },
     async ({ filename, table_index, col_index, start_row, end_row }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1364,7 +1368,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       vertical: z.enum(['top', 'center', 'bottom']).optional(),
     },
     async ({ filename, table_index, horizontal, vertical }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1408,7 +1412,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       width_type: z.enum(['dxa', 'pct', 'auto']).optional().describe('Width type: dxa (twips), pct (hundredths of percent), auto (default: dxa)'),
     },
     async ({ filename, table_index, col_index, width, width_type }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1447,7 +1451,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       width_type: z.enum(['dxa', 'pct', 'auto']).optional(),
     },
     async ({ filename, table_index, widths, width_type }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1486,7 +1490,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       width_type: z.enum(['dxa', 'pct', 'auto']).optional(),
     },
     async ({ filename, table_index, width, width_type }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1513,7 +1517,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       table_index: z.number(),
     },
     async ({ filename, table_index }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1552,7 +1556,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       font_name: z.string().optional(),
     },
     async ({ filename, table_index, row_index, col_index, text_content, bold, italic, underline, color, font_size, font_name }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1605,7 +1609,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       unit: z.enum(['dxa', 'nil']).optional().describe('Unit: dxa (twips) or nil (default: dxa)'),
     },
     async ({ filename, table_index, row_index, col_index, top, bottom, left, right, unit }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -1646,7 +1650,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       password: z.string().describe('Protection password'),
     },
     async ({ filename, password }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         let settingsXml = getZipEntry(zip, 'word/settings.xml');
         if (!settingsXml) throw new Error('word/settings.xml not found in document');
@@ -1672,7 +1676,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       password: z.string().optional().describe('Password (informational only, not verified in XML removal)'),
     },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         let settingsXml = getZipEntry(zip, 'word/settings.xml');
         if (!settingsXml) throw new Error('word/settings.xml not found in document');
@@ -1696,7 +1700,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       footnote_text: z.string(),
     },
     async ({ filename, paragraph_index, footnote_text }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         ensureFootnotes(zip);
         let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
@@ -1728,8 +1732,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       output_filename: z.string().optional().describe('Save to different file (default: overwrite)'),
     },
     async ({ filename, search_text, footnote_text, output_filename }) => {
-      const filepath = resolvePath(filename, workingDir);
-      const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
+      const filepath = resolvePath(filename, workingDir, confine);
+      const outPath = output_filename ? resolvePath(output_filename, workingDir, confine) : filepath;
       return withDocxWriteTo(filepath, outPath, (zip) => {
         ensureFootnotes(zip);
         let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
@@ -1761,8 +1765,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       output_filename: z.string().optional(),
     },
     async ({ filename, search_text, footnote_text, output_filename }) => {
-      const filepath = resolvePath(filename, workingDir);
-      const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
+      const filepath = resolvePath(filename, workingDir, confine);
+      const outPath = output_filename ? resolvePath(output_filename, workingDir, confine) : filepath;
       return withDocxWriteTo(filepath, outPath, (zip) => {
         ensureFootnotes(zip);
         let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
@@ -1795,8 +1799,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       output_filename: z.string().optional(),
     },
     async ({ filename, paragraph_index, footnote_text, output_filename }) => {
-      const filepath = resolvePath(filename, workingDir);
-      const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
+      const filepath = resolvePath(filename, workingDir, confine);
+      const outPath = output_filename ? resolvePath(output_filename, workingDir, confine) : filepath;
       return withDocxWriteTo(filepath, outPath, (zip) => {
         ensureFootnotes(zip);
         let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
@@ -1827,7 +1831,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       endnote_text: z.string(),
     },
     async ({ filename, paragraph_index, endnote_text }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         ensureEndnotes(zip);
         let enXml = getZipEntry(zip, 'word/endnotes.xml')!;
@@ -1860,7 +1864,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       font_size: z.number().optional(),
     },
     async ({ filename, numbering_format, start_number, font_name, font_size }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         let settingsXml = getZipEntry(zip, 'word/settings.xml');
         if (!settingsXml) throw new Error('word/settings.xml not found');
@@ -1898,8 +1902,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       output_filename: z.string().optional(),
     },
     async ({ filename, footnote_id, search_text, output_filename }) => {
-      const filepath = resolvePath(filename, workingDir);
-      const outPath = output_filename ? resolvePath(output_filename, workingDir) : filepath;
+      const filepath = resolvePath(filename, workingDir, confine);
+      const outPath = output_filename ? resolvePath(output_filename, workingDir, confine) : filepath;
       return withDocxWriteTo(filepath, outPath, (zip) => {
         let fnXml = getZipEntry(zip, 'word/footnotes.xml');
         if (!fnXml) throw new Error('No footnotes found in document');
@@ -1936,7 +1940,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       auto_repair: z.boolean().optional(),
     },
     async ({ filename, search_text, paragraph_index, footnote_text }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         ensureFootnotes(zip);
         let fnXml = getZipEntry(zip, 'word/footnotes.xml')!;
@@ -1970,7 +1974,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Audit footnotes to verify references in document.xml match definitions in footnotes.xml.',
     { filename: z.string() },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const fnXml = getZipEntry(zip, 'word/footnotes.xml');
         if (!fnXml) return { content: [{ type: 'text' as const, text: 'No footnotes.xml found in document.' }] };
@@ -2005,7 +2009,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       clean_orphans: z.boolean().optional().describe('Also remove any orphaned references'),
     },
     async ({ filename, footnote_id, search_text, clean_orphans }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         let fnXml = getZipEntry(zip, 'word/footnotes.xml');
         if (!fnXml) throw new Error('No footnotes.xml in document');
@@ -2052,7 +2056,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       paragraph_index: z.number().describe('0-based paragraph index'),
     },
     async ({ filename, paragraph_index }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -2075,7 +2079,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       whole_word: z.boolean().optional().describe('Match whole words only (default: false)'),
     },
     async ({ filename, text_to_find, match_case, whole_word }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -2098,7 +2102,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     }
   );
 
-  server.tool(
+  // Word COM automation exists only on Windows; elsewhere the tool isn't offered
+  if (process.platform === 'win32') server.tool(
     'convert_to_pdf',
     'Convert a .docx file to PDF using Microsoft Word COM automation (requires Word installed on Windows).',
     {
@@ -2107,9 +2112,9 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     },
     async ({ filename, output_filename }) => {
       if (process.platform !== 'win32') throw new Error('PDF conversion requires Windows with Microsoft Word installed.');
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       const pdfPath = output_filename
-        ? resolvePath(output_filename, workingDir)
+        ? resolvePath(output_filename, workingDir, confine)
         : filepath.replace(/\.docx$/i, '.pdf');
       return withDocxPairRaw(filepath, pdfPath, async () => {
         const esc = (s: string) => s.replace(/'/g, "''");
@@ -2145,7 +2150,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       new_paragraphs: z.array(z.string()).describe('New paragraph texts to replace the block'),
     },
     async ({ filename, header_text, new_paragraphs }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -2208,7 +2213,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       end_anchor_text: z.string().describe('Text of the end anchor paragraph'),
     },
     async ({ filename, start_anchor_text, new_paragraphs, end_anchor_text }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxWrite(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml')!;
         const doc = parseXmlDoc(docXml);
@@ -2246,7 +2251,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Extract all comments from a .docx document.',
     { filename: z.string() },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const commentsXml = getZipEntry(zip, 'word/comments.xml');
         if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found in document.' }] };
@@ -2276,7 +2281,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       author: z.string().describe('Author name to filter by'),
     },
     async ({ filename, author }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const commentsXml = getZipEntry(zip, 'word/comments.xml');
         if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found.' }] };
@@ -2307,7 +2312,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       paragraph_index: z.number().describe('0-based paragraph index'),
     },
     async ({ filename, paragraph_index }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const commentsXml = getZipEntry(zip, 'word/comments.xml');
         if (!commentsXml) return { content: [{ type: 'text' as const, text: 'No comments found.' }] };
@@ -2371,13 +2376,13 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       author: z.string().optional().describe('Optional author to write into core.xml'),
     },
     async ({ template_filename, output_filename, title, author }) => {
-      const srcPath = resolvePath(template_filename, workingDir);
+      const srcPath = resolvePath(template_filename, workingDir, confine);
       const srcExt = path.extname(srcPath).toLowerCase();
       if (srcExt !== '.dotx' && srcExt !== '.dotm') {
         throw new Error(`Source must be a .dotx or .dotm template, got "${srcExt}"`);
       }
       const outName = /\.docx?$|\.docm$/i.test(output_filename) ? output_filename : `${output_filename}.docx`;
-      const outPath = resolvePath(outName, workingDir);
+      const outPath = resolvePath(outName, workingDir, confine);
       const outExt = path.extname(outPath).toLowerCase();
 
       return withDocxPairRaw(srcPath, outPath, async () => {
@@ -2415,7 +2420,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Extract all text content from a Word template (.dotx or .dotm).',
     { filename: z.string().describe('Path to the .dotx or .dotm template') },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRawRead(filepath, async () => {
         const result = await mammothExtractRawTextWithRetry(filepath);
         return { content: [{ type: 'text' as const, text: result.value || '(empty template)' }] };
@@ -2428,7 +2433,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Retrieve metadata and properties of a Word template (.dotx or .dotm).',
     { filename: z.string().describe('Path to the .dotx or .dotm template') },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const coreXml = getZipEntry(zip, 'docProps/core.xml') || '';
         const appXml = getZipEntry(zip, 'docProps/app.xml') || '';
@@ -2465,7 +2470,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'Display the heading structure of a Word template (.dotx or .dotm).',
     { filename: z.string().describe('Path to the .dotx or .dotm template') },
     async ({ filename }) => {
-      const filepath = resolvePath(filename, workingDir);
+      const filepath = resolvePath(filename, workingDir, confine);
       return withDocxRead(filepath, (zip) => {
         const docXml = getZipEntry(zip, 'word/document.xml') || '';
         const doc = parseXmlDoc(docXml);
@@ -2493,7 +2498,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     'List all Word template files (.dotx, .dotm) in a directory.',
     { directory: z.string().optional().describe('Directory path (default: working directory)') },
     async ({ directory }) => {
-      const dir = directory ? resolvePath(directory, workingDir) : workingDir;
+      const dir = directory ? resolvePath(directory, workingDir, confine) : workingDir;
       const entries = await fs.readdir(dir);
       const tpls = entries.filter(e => {
         const lo = e.toLowerCase();
@@ -2512,13 +2517,13 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       output_filename: z.string().describe('Destination template file name, e.g. "MyTemplate.dotx". Extension determines output format.'),
     },
     async ({ source_filename, output_filename }) => {
-      const srcPath = resolvePath(source_filename, workingDir);
+      const srcPath = resolvePath(source_filename, workingDir, confine);
       const srcExt = path.extname(srcPath).toLowerCase();
       if (srcExt !== '.docx' && srcExt !== '.docm') {
         throw new Error(`Source must be a .docx or .docm, got "${srcExt}"`);
       }
       const outName = /\.dotx$|\.dotm$/i.test(output_filename) ? output_filename : `${output_filename}.dotx`;
-      const outPath = resolvePath(outName, workingDir);
+      const outPath = resolvePath(outName, workingDir, confine);
       const outExt = path.extname(outPath).toLowerCase();
 
       return withDocxPairRaw(srcPath, outPath, async () => {

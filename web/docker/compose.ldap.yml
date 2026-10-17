@@ -1,0 +1,35 @@
+# OpenLDAP for the directory sign-in integration tests (CI) and for trying
+# LDAP locally:
+#
+#   docker compose -f compose.ldap.yml up -d --wait
+#
+# Base DN dc=claudia,dc=test; service account cn=readonly,dc=claudia,dc=test
+# (password "readonly-secret"); users alice / bob / carol (passwords
+# "<name>-pass") in ou=people; alice is in cn=staff,ou=groups.
+# ldap:// on 389 (StartTLS available) and ldaps:// on 636. The certificate is
+# issued for ldap.claudia.test by a generated CA:
+#   docker compose -f compose.ldap.yml cp ldap:/container/service/slapd/assets/certs/ca.crt ./ldap-ca.crt
+services:
+  ldap:
+    image: osixia/openldap:1.5.0
+    hostname: ldap.claudia.test
+    command: --copy-service --loglevel info
+    environment:
+      LDAP_ORGANISATION: Claudia Test
+      LDAP_DOMAIN: claudia.test
+      LDAP_ADMIN_PASSWORD: admin-secret
+      LDAP_READONLY_USER: 'true'
+      LDAP_READONLY_USER_USERNAME: readonly
+      LDAP_READONLY_USER_PASSWORD: readonly-secret
+      LDAP_TLS: 'true'
+      LDAP_TLS_VERIFY_CLIENT: never
+    volumes:
+      - ./ldap/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-seed.ldif:ro
+    ports:
+      - '389:389'
+      - '636:636'
+    healthcheck:
+      test: ['CMD', 'ldapsearch', '-x', '-H', 'ldap://localhost', '-b', 'ou=people,dc=claudia,dc=test', '-D', 'cn=readonly,dc=claudia,dc=test', '-w', 'readonly-secret', '(uid=alice)']
+      interval: 3s
+      timeout: 5s
+      retries: 40

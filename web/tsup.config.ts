@@ -9,7 +9,7 @@ import { defineConfig } from 'tsup';
  * CommonJS, because the built-in MCP servers call require().
  */
 export default defineConfig({
-  entry: { index: 'server/index.ts', cli: 'server/cli.ts' },
+  entry: { index: 'server/index.ts', cli: 'server/cli.ts', 'extract-worker': 'server/extract/worker.ts' },
   outDir: 'dist/server',
   format: ['cjs'],
   platform: 'node',

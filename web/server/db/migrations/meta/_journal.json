@@ -15,6 +15,13 @@
       "when": 1792218790160,
       "tag": "0001_identity_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792234030805,
+      "tag": "0002_files_tools",
+      "breakpoints": true
     }
   ]
 }

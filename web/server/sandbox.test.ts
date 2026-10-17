@@ -63,6 +63,25 @@ describe('sandbox origin', () => {
     expect((await a.inject({ url: '/api/public-config' })).json()).toMatchObject({ sandboxOrigin: 'https://sandbox.example.net' });
   });
 
+  it('serves the MCP-UI proxy from the sandbox origin only', async () => {
+    const a = await app({
+      CLAUDIA_PUBLIC_URL: 'https://claudia.example.com',
+      CLAUDIA_SANDBOX_ORIGIN: 'https://sandbox.example.net',
+    });
+    for (const file of ['/mcp-ui-proxy.html', '/mcp-ui-proxy.js']) {
+      const res = await a.inject({ url: file, headers: { host: 'sandbox.example.net' } });
+      expect(res.statusCode, file).toBe(200);
+      expect(res.headers['content-security-policy']).toBe('frame-ancestors https://claudia.example.com');
+      expect(res.headers['x-content-type-options']).toBe('nosniff');
+    }
+    // The tool's HTML gets an opaque origin: no allow-same-origin on the inner frame
+    const script = (await a.inject({ url: '/mcp-ui-proxy.js', headers: { host: 'sandbox.example.net' } })).body;
+    expect(script).toContain("inner.setAttribute('sandbox', 'allow-scripts allow-forms');");
+    // Not on the app origin
+    const onApp = await a.inject({ url: '/mcp-ui-proxy.html', headers: { host: 'claudia.example.com' } });
+    expect(onApp.statusCode).toBe(404);
+  });
+
   it('frames nothing when no sandbox is configured', async () => {
     const a = await app({});
     const res = await a.inject({ url: '/api/public-config' });

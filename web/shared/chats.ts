@@ -62,6 +62,8 @@ export const CompletionRequest = z.object({
     })
     .default({}),
   toolIds: z.array(z.string()).default([]),
+  /** A `/skill args` invocation; content holds what the user sees. */
+  skill: z.object({ id: z.string().min(1).max(64), args: z.string().max(100_000).default('') }).optional(),
   features: z.record(z.string(), z.boolean()).default({}),
 });
 export type CompletionRequest = z.infer<typeof CompletionRequest>;

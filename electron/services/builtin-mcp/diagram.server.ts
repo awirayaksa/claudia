@@ -97,9 +97,22 @@ async function svgToPng(svgContent: string, scale: number): Promise<Buffer> {
 // Server Factory
 // ============================================================================
 
+/** DOT source → SVG. The web server injects one that runs in a worker with a timeout. */
+export type RenderSvg = (source: string, engine: string) => Promise<string>;
+
+/** SVG → PNG at a scale. The web server injects one that runs in a worker. */
+export type SvgToPng = (svg: string, scale: number) => Promise<Buffer>;
+
+const renderInProcess: RenderSvg = async (source, engine) => {
+  const viz = await getViz();
+  return viz.renderString(source, { format: 'svg', engine });
+};
+
 export function createDiagramServer(config?: Record<string, unknown>): McpServer {
   const allowedDirs: string[] =
     (config?.allowedDirectories as string[]) || [];
+  const renderSvg: RenderSvg = (config?.renderSvg as RenderSvg | undefined) ?? renderInProcess;
+  const toPng: SvgToPng = (config?.svgToPng as SvgToPng | undefined) ?? svgToPng;
 
   const server = new McpServer(
     { name: 'Claudia Diagram', version: '1.0.0' },
@@ -155,16 +168,12 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
         };
       }
 
-      const viz = await getViz();
       const layoutEngine = engine || 'dot';
 
       // Always render SVG first (needed for both SVG output and PNG conversion)
       let svgContent: string;
       try {
-        svgContent = viz.renderString(source, {
-          format: 'svg',
-          engine: layoutEngine,
-        });
+        svgContent = await renderSvg(source, layoutEngine);
       } catch (err: any) {
         return {
           content: [{
@@ -194,7 +203,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
       // PNG output
       const pngScale = scale || 2;
       try {
-        const pngBuffer = await svgToPng(svgContent, pngScale);
+        const pngBuffer = await toPng(svgContent, pngScale);
         await fs.promises.writeFile(resolvedPath, pngBuffer);
 
         const sizeMB = (pngBuffer.length / (1024 * 1024)).toFixed(2);
@@ -310,15 +319,11 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
         };
       }
 
-      const viz = await getViz();
       const layoutEngine = engine || 'dot';
 
       let svgContent: string;
       try {
-        svgContent = viz.renderString(source, {
-          format: 'svg',
-          engine: layoutEngine,
-        });
+        svgContent = await renderSvg(source, layoutEngine);
       } catch (err: any) {
         return {
           content: [{
@@ -344,7 +349,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
 
       const pngScale = scale || 2;
       try {
-        const pngBuffer = await svgToPng(svgContent, pngScale);
+        const pngBuffer = await toPng(svgContent, pngScale);
         await fs.promises.writeFile(resolvedOutput, pngBuffer);
 
         const sizeMB = (pngBuffer.length / (1024 * 1024)).toFixed(2);

@@ -40,6 +40,19 @@ const EnvSchema = z.object({
   /** Local email + password login. Off for directory-only installs. */
   ENABLE_PASSWORD_AUTH: bool.default(true),
   /**
+   * LDAP / Active Directory login. Each of these, when set, overrides the
+   * admin UI's value and locks it there. LDAP_BIND_PASSWORD is never stored.
+   */
+  ENABLE_LDAP: bool.optional(),
+  LDAP_URL: z.string().regex(/^ldaps?:\/\//, 'LDAP_URL must start with ldap:// or ldaps://').optional(),
+  LDAP_START_TLS: bool.optional(),
+  LDAP_BIND_DN: z.string().optional(),
+  LDAP_BIND_PASSWORD: z.string().optional(),
+  LDAP_USER_SEARCH_BASE: z.string().optional(),
+  LDAP_USER_FILTER: z.string().optional(),
+  /** PEM file with the CA that signed the directory's certificate. */
+  LDAP_CA_CERT_FILE: z.string().optional(),
+  /**
    * Single-host trials: serve the sandbox pages on this port of the same host
    * (a different port is a different origin). Ignored when
    * CLAUDIA_SANDBOX_ORIGIN points elsewhere.

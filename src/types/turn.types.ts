@@ -25,7 +25,7 @@ export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
   /** User attachments, images included. */
-  | { type: 'file'; fileId: string; name: string; mime: string }
+  | { type: 'file'; fileId: string; name: string; mime: string; size?: number }
   /**
    * `alias` is the name the model saw and called; `serverId` + `tool` is where
    * it ran. Stored so history replays and UI actions resolve the same way.

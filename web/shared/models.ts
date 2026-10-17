@@ -10,6 +10,8 @@ export const ModelInfo = z.object({
   connectionId: z.string(),
   connectionName: z.string(),
   contextLength: z.number().nullable(),
+  /** From one of the user's own connections (id starts with "@"). */
+  own: z.boolean().optional(),
 });
 export type ModelInfo = z.infer<typeof ModelInfo>;
 
@@ -65,3 +67,9 @@ export const ConnectionView = z.object({
   error: z.string().nullable(),
 });
 export type ConnectionView = z.infer<typeof ConnectionView>;
+
+export interface UserConnectionsResponse {
+  /** Whether the administrator lets users add connections. */
+  enabled: boolean;
+  connections: ConnectionView[];
+}

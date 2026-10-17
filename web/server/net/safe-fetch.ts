@@ -13,6 +13,8 @@
  * an internal Ollama). For user URLs the only exception is the admin allowlist.
  */
 import dns from 'node:dns';
+import http from 'node:http';
+import https from 'node:https';
 import net from 'node:net';
 import { Agent, fetch as undiciFetch, type RequestInit as UndiciRequestInit, type Response as UndiciResponse } from 'undici';
 
@@ -138,8 +140,12 @@ export interface SafeFetchOptions extends Omit<UndiciRequestInit, 'redirect' | '
 
 type LookupCallback = (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void;
 
-function guardedLookup(policy: SafeFetchPolicy, base: typeof dns.lookup) {
+type PolicySource = SafeFetchPolicy | (() => SafeFetchPolicy);
+const current = (p: PolicySource): SafeFetchPolicy => (typeof p === 'function' ? p() : p);
+
+function guardedLookup(source: PolicySource, base: typeof dns.lookup) {
   return (hostname: string, options: dns.LookupOptions, callback: LookupCallback) => {
+    const policy = current(source);
     base(hostname, { ...options, all: true }, (err, addresses) => {
       if (err) return callback(err, []);
       const list = addresses as dns.LookupAddress[];
@@ -210,6 +216,66 @@ export async function safeFetch(input: string | URL, opts: SafeFetchOptions = {}
     if (cause instanceof BlockedRequestError) throw cause;
     throw err;
   }
+}
+
+// ─── Transport for library clients ───────────────────────────────────────────
+
+/** A literal IP host never reaches the resolver, so agents check it here. */
+function literalHostError(host: string | undefined, policy: SafeFetchPolicy): BlockedRequestError | null {
+  const h = (host ?? '').replace(/^\[|\]$/g, '');
+  if (!net.isIP(h)) return null;
+  return isBlockedAddress(h) && !addressAllowed(h, policy) && !hostAllowed(h, policy)
+    ? new BlockedRequestError(`${h} is not a public address`)
+    : null;
+}
+
+type CreateConnection = (options: Record<string, unknown>, cb: (err: Error | null, socket?: net.Socket) => void) => net.Socket | undefined;
+
+function guardAgent<A extends http.Agent>(agent: A, source: PolicySource, lookup: typeof dns.lookup): A {
+  const original = (agent as unknown as { createConnection: CreateConnection }).createConnection.bind(agent);
+  (agent as unknown as { createConnection: CreateConnection }).createConnection = (options, cb) => {
+    const err = literalHostError(options.host as string | undefined, current(source));
+    if (err) {
+      process.nextTick(() => cb(err));
+      return undefined;
+    }
+    return original({ ...options, lookup: guardedLookup(source, lookup) }, cb);
+  };
+  return agent;
+}
+
+export interface GuardedTransport {
+  /** fetch() through safeFetch (streams may last `timeoutMs`). */
+  fetch: typeof fetch;
+  /** For axios (`httpAgent` / `httpsAgent`); redirects followed by axios use them too. */
+  httpAgent: http.Agent;
+  httpsAgent: https.Agent;
+}
+
+/**
+ * The SSRF guard for libraries that bring their own HTTP client (the shared
+ * LLM providers). The policy is read on every connection, so allowlist
+ * changes apply at once.
+ */
+export function guardedTransport(
+  policy: PolicySource,
+  opts: { timeoutMs?: number; lookup?: typeof dns.lookup } = {}
+): GuardedTransport {
+  const lookup = opts.lookup ?? dns.lookup;
+  const guarded = (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' || input instanceof URL ? input : input.url;
+    return safeFetch(url, {
+      ...(init as SafeFetchOptions),
+      policy: current(policy),
+      timeoutMs: opts.timeoutMs ?? 10 * 60_000,
+      lookup,
+    });
+  };
+  return {
+    fetch: guarded as unknown as typeof fetch,
+    httpAgent: guardAgent(new http.Agent({ keepAlive: true }), policy, lookup),
+    httpsAgent: guardAgent(new https.Agent({ keepAlive: true }), policy, lookup),
+  };
 }
 
 /** Read a response body, failing once it grows past `maxBytes`. */

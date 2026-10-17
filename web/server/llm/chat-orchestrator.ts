@@ -15,12 +15,12 @@ import { uuidv7 } from '../lib/ids';
 import type { AuthUser } from '../auth/sessions';
 import type { AppSettings } from '../modules/settings/app-settings';
 import { ChatRepo, pathTo, toNode, type ChatRow } from '../modules/chats/repo';
-import { toOpenAIMessages } from '../../../src/services/chat/message-builder';
+import { toOpenAIMessages, type ResolvedFile, type ToOpenAIOptions } from '../../../src/services/chat/message-builder';
 import { fitToContext } from '../../../src/services/chat/context-budget';
 import { coerceEffort, resolveEffort, type ReasoningEffort } from '../../../src/utils/effort-utils';
 import type { ChatCompletionRequest, ChatMessage } from '../../../src/types/api.types';
 import type { ToolCall } from '../../../src/types/message.types';
-import type { MessageNode } from '../../../src/types/turn.types';
+import type { MessageNode, MessagePart } from '../../../src/types/turn.types';
 import type { MessageUsage } from '../../../src/types/statistics.types';
 import type { StreamEndReason } from '../../../src/services/api/sse-parser';
 import type { CompletionRequest, CompletionResponse } from '../../shared/chats';
@@ -30,6 +30,8 @@ import type { Run, RunHub } from './run-hub';
 import { PartsBuilder } from './parts-builder';
 import { NO_TOOLS, type RunToolset } from './tools';
 import { fallbackTitle, generateTitle } from './tasks';
+import type { FileService } from '../modules/files/service';
+import type { SkillService } from '../modules/skills/service';
 
 /** Streaming replies are written to the database at most this often. */
 const PERSIST_INTERVAL_MS = 500;
@@ -40,8 +42,12 @@ export interface OrchestratorDeps {
   runs: RunHub;
   settings: AppSettings;
   log: FastifyBaseLogger;
-  /** Phase 1b: tools from the user's MCP pools. */
+  /** Tools from the user's MCP pools. */
   toolsFor?: (user: AuthUser, toolIds: string[]) => Promise<RunToolset>;
+  /** Attachments (without it, fileIds are rejected). */
+  files?: FileService;
+  /** `/skill` invocations (without it, a skill in the request is rejected). */
+  skills?: SkillService;
 }
 
 interface RunPlan {
@@ -51,6 +57,8 @@ interface RunPlan {
   req: CompletionRequest;
   history: MessageNode[];
   userNode: MessageNode;
+  /** The invoked skill's prompt, sent as a system message. */
+  skillPrompt: string | null;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
 }
 
@@ -77,7 +85,7 @@ export class ChatOrchestrator {
     if (!req.content.trim() && req.fileIds.length === 0) throw badRequest('The message is empty.', 'empty_message');
 
     const chat = await this.repo.getOwned(user.id, chatId);
-    const targetsResolved = await Promise.all(req.modelIds.map((id) => models.resolve(id, user.role)));
+    const targetsResolved = await Promise.all(req.modelIds.map((id) => models.resolve(id, user.role, user.id)));
     const limits = await settings.get('limits');
 
     const all = (await this.repo.messages(chat.id)).map(toNode);
@@ -85,6 +93,25 @@ export class ChatOrchestrator {
       throw badRequest('The message to reply to is not part of this chat.', 'invalid_parent');
     }
     const history = pathTo(all, req.parentId);
+
+    // Attachments must be the user's own and ready
+    const fileParts: MessagePart[] = [];
+    if (req.fileIds.length > 0) {
+      const rows = this.deps.files ? await this.deps.files.ownedByIds(user.id, req.fileIds) : [];
+      const byId = new Map(rows.map((r) => [r.id, r]));
+      for (const id of req.fileIds) {
+        const row = byId.get(id);
+        if (!row) throw badRequest('An attached file was not found.', 'file_not_found');
+        if (row.status !== 'ready') throw badRequest(`"${row.name}" can't be read: ${row.error ?? 'still processing'}.`, 'file_not_ready');
+        fileParts.push({ type: 'file', fileId: row.id, name: row.name, mime: row.mime, size: row.size });
+      }
+    }
+
+    let skillPrompt: string | null = null;
+    if (req.skill) {
+      skillPrompt = this.deps.skills ? await this.deps.skills.resolve(user.id, req.skill.id, req.skill.args) : null;
+      if (skillPrompt === null) throw badRequest(`There is no skill called /${req.skill.id}.`, 'skill_not_found');
+    }
 
     const run = runs.start({
       userId: user.id,
@@ -100,7 +127,7 @@ export class ChatOrchestrator {
         chatId: chat.id,
         parentId: req.parentId,
         role: 'user',
-        parts: [{ type: 'text', text: req.content }],
+        parts: [...(req.content ? [{ type: 'text' as const, text: req.content }] : []), ...fileParts],
         ...(req.params.effort ? { effort: req.params.effort } : {}),
         status: 'completed',
         createdAt: now.toISOString(),
@@ -157,7 +184,7 @@ export class ChatOrchestrator {
         });
       }
 
-      const plan: RunPlan = { run, user, chat, req, history, userNode, targets };
+      const plan: RunPlan = { run, user, chat, req, history, userNode, skillPrompt, targets };
       void this.execute(plan).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
         runs.finish(run, 'error');
@@ -180,12 +207,15 @@ export class ChatOrchestrator {
     if (typeof prefs.systemPrompt === 'string' && prefs.systemPrompt.trim()) {
       system.push({ role: 'system', content: prefs.systemPrompt });
     }
+    // Like the desktop: the skill follows the global prompt
+    if (plan.skillPrompt) system.push({ role: 'system', content: plan.skillPrompt });
     for (const f of await this.repo.folderChain(user.id, chat.folderId)) {
       if (f.systemPrompt?.trim()) system.push({ role: 'system', content: f.systemPrompt });
     }
     if (chat.params.systemPrompt?.trim()) system.push({ role: 'system', content: chat.params.systemPrompt });
 
     const toolset = this.deps.toolsFor ? await this.deps.toolsFor(user, req.toolIds) : NO_TOOLS;
+    const fileOpts = await this.fileOptions(user, [...plan.history, plan.userNode]);
 
     const results = await Promise.all(
       plan.targets.map((t, i) =>
@@ -193,6 +223,7 @@ export class ChatOrchestrator {
           system,
           prefs,
           toolset,
+          fileOpts,
           reportTrim: i === 0,
         })
       )
@@ -218,7 +249,13 @@ export class ChatOrchestrator {
     plan: RunPlan,
     assistantId: string,
     target: ResolvedModel,
-    opts: { system: ChatMessage[]; prefs: Record<string, any>; toolset: RunToolset; reportTrim: boolean }
+    opts: {
+      system: ChatMessage[];
+      prefs: Record<string, any>;
+      toolset: RunToolset;
+      fileOpts: ToOpenAIOptions;
+      reportTrim: boolean;
+    }
   ): Promise<RunStatus> {
     const { run, chat, req } = plan;
     const { runs, db, settings } = this.deps;
@@ -241,8 +278,8 @@ export class ChatOrchestrator {
       contextWindow: target.model.contextLength,
       outputReserve: typeof opts.prefs.maxTokens === 'number' ? opts.prefs.maxTokens : undefined,
       system: opts.system,
-      history: toOpenAIMessages(plan.history),
-      current: toOpenAIMessages([plan.userNode]),
+      history: toOpenAIMessages(plan.history, opts.fileOpts),
+      current: toOpenAIMessages([plan.userNode], opts.fileOpts),
     });
     if (opts.reportTrim) {
       if (budget.overflow) {
@@ -276,8 +313,9 @@ export class ChatOrchestrator {
 
     try {
       const tools = opts.toolset.definitions;
+      const firstTurnOnly = opts.toolset.firstTurnOnly || !!target.connection.quirks.toolsFirstTurnOnly;
       for (let iteration = 0; ; iteration++) {
-        const offerTools = tools.length > 0 && (iteration === 0 || !opts.toolset.firstTurnOnly);
+        const offerTools = tools.length > 0 && (iteration === 0 || !firstTurnOnly);
         // The turn so far, expanded into assistant(tool_calls) → tool rounds
         const turnSoFar = toOpenAIMessages([
           { id: assistantId, chatId: chat.id, parentId: null, role: 'assistant', parts: builder.parts, status: 'streaming', createdAt: '' },
@@ -380,6 +418,21 @@ export class ChatOrchestrator {
         .catch((err) => this.deps.log.warn({ err: String(err) }, 'recording usage failed'));
     }
     return status;
+  }
+
+  /**
+   * Load what the model sees of every attachment on the path up front, so
+   * message building stays synchronous. Files deleted since are left out.
+   */
+  private async fileOptions(user: AuthUser, nodes: MessageNode[]): Promise<ToOpenAIOptions> {
+    const ids = [...new Set(nodes.flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' ? [p.fileId] : []))))];
+    if (ids.length === 0 || !this.deps.files) return {};
+    const resolved = new Map<string, ResolvedFile>();
+    for (const row of await this.deps.files.ownedByIds(user.id, ids)) {
+      const view = await this.deps.files.forModel(row).catch(() => null);
+      if (view) resolved.set(row.id, view);
+    }
+    return { resolveFile: (part) => resolved.get(part.fileId) ?? null };
   }
 
   /** One provider call as a promise of its end reason. */

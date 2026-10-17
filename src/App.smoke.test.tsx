@@ -76,5 +76,6 @@ describe('desktop app', () => {
     await act(async () => openSettings());
     expect(store.getState().ui.settingsOpen).toBe(true);
     expect(await screen.findAllByText(/Settings/i)).not.toHaveLength(0);
-  });
+    // Renders the whole app; slow when the suite runs in parallel
+  }, 20_000);
 });

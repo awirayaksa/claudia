@@ -11,8 +11,13 @@ import type {
   PlatformPlugins,
   PlatformResult,
   PlatformSkills,
+  UIActionRequest,
 } from '@/platform';
-import { apiFetch } from '../api/http';
+import type { Attachment, ToolResult } from '@/types/message.types';
+import type { SkillOperationResult } from '@/types/skill.types';
+import type { FileView } from '@shared/files';
+import type { McpServerView, UIActionResponse } from '@shared/mcp';
+import { apiFetch, apiFetchRaw, csrfToken, refreshSession, toApiError } from '../api/http';
 
 const notAvailable = (what: string) => async (): Promise<PlatformResult> => ({
   success: false,
@@ -47,16 +52,94 @@ export interface WebPlatformOptions {
   /** Origin that serves the sandbox pages (CLAUDIA_SANDBOX_ORIGIN). */
   sandboxOrigin?: string;
   events?: PlatformEventBus;
+  /** A tool server was switched on or off. */
+  onMcpChanged?: () => void;
+  /** An MCP-UI action replaced a stored tool result. */
+  onToolResultChanged?: () => void;
+  /** Ask before a destructive tool runs (default: window.confirm). */
+  confirm?: (message: string) => Promise<boolean>;
+}
+
+/**
+ * Upload one file (multipart, with progress) and wait for its text to be
+ * extracted. Files the server can't read are refused with its reason.
+ */
+export function uploadFile(file: File, onProgress?: (percent: number) => void): Promise<Attachment> {
+  const attempt = () =>
+    new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', '/api/files');
+      xhr.withCredentials = true;
+      const token = csrfToken();
+      if (token) xhr.setRequestHeader('X-Claudia-CSRF', token);
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable) onProgress?.(Math.round((e.loaded / e.total) * 100));
+      };
+      xhr.onload = () => resolve({ status: xhr.status, body: xhr.responseText });
+      xhr.onerror = () => reject(new Error('Upload failed: network error.'));
+      const form = new FormData();
+      form.append('file', file, file.name);
+      xhr.send(form);
+    });
+
+  return (async () => {
+    let res = await attempt();
+    // Expired access token: refresh once and retry, like apiFetch
+    if (res.status === 401 && (await refreshSession())) res = await attempt();
+    let parsed: { file?: FileView; error?: { message?: string } } = {};
+    try {
+      parsed = JSON.parse(res.body);
+    } catch {
+      /* not JSON */
+    }
+    if (res.status !== 201 || !parsed.file) throw new Error(parsed.error?.message ?? `Upload failed (HTTP ${res.status}).`);
+    const f = parsed.file;
+    if (f.status !== 'ready') throw new Error(`${f.name}: ${f.error ?? 'the file could not be read.'}`);
+    return {
+      id: f.id,
+      type: f.mime.startsWith('image/') ? 'image' : 'file',
+      name: f.name,
+      size: f.size,
+      mimeType: f.mime,
+      ...(f.textTruncated ? { textTruncated: true } : {}),
+    };
+  })();
 }
 
 export function createWebPlatform(opts: WebPlatformOptions = {}): ClaudiaPlatform {
   const events = opts.events ?? new PlatformEventBus();
 
+  /**
+   * Tool servers run on the server. "Start"/"stop" here switch a server on or
+   * off for this user; useMcpSync mirrors the server's list into the mcp slice.
+   */
+  const setServer = async (serverId: string, enabled: boolean): Promise<PlatformResult> => {
+    try {
+      const { server } = await apiFetch<{ server: McpServerView }>(
+        `/api/mcp/servers/${encodeURIComponent(serverId)}/${enabled ? 'enable' : 'disable'}`,
+        { method: 'POST' }
+      );
+      events.emit('mcp.statusChanged', {
+        serverId,
+        status: server.enabled ? server.status : 'stopped',
+        ...(server.error ? { error: server.error } : {}),
+      });
+      events.emit('mcp.toolsUpdated', { serverId, tools: server.enabled ? server.tools : [] });
+      opts.onMcpChanged?.();
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  };
+
   const mcp: PlatformMCP = {
-    startServer: notAvailable('MCP'),
-    stopServer: notAvailable('MCP'),
-    restartServer: notAvailable('MCP'),
-    restartWithBuiltinConfig: notAvailable('MCP'),
+    startServer: (id) => setServer(id, true),
+    stopServer: (id) => setServer(id, false),
+    restartServer: async (id) => {
+      const off = await setServer(id, false);
+      return off.success ? setServer(id, true) : off;
+    },
+    restartWithBuiltinConfig: notAvailable('Built-in server settings'),
     getServerStatus: notAvailable('MCP'),
     getLogs: notAvailable('MCP'),
     clearLogs: notAvailable('MCP'),
@@ -89,12 +172,43 @@ export function createWebPlatform(opts: WebPlatformOptions = {}): ClaudiaPlatfor
     getActiveReplacement: async () => ({ success: true, replacement: null }),
   };
 
+  // The server answers in the desktop's `{ success, skill(s) }` shape
+  const skillCall = async (path: string, init: { method?: string; json?: unknown } = {}): Promise<SkillOperationResult> => {
+    try {
+      const result = await apiFetch<SkillOperationResult>(`/api/skills${path}`, init);
+      if (init.method && init.method !== 'GET') {
+        const list = await apiFetch<SkillOperationResult>('/api/skills');
+        if (list.skills) events.emit('skill.changed', list.skills);
+      }
+      return result;
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  };
   const skills: PlatformSkills = {
-    list: async () => ({ success: true, skills: [] }),
-    get: notAvailable('Skills'),
-    create: notAvailable('Skills'),
-    update: notAvailable('Skills'),
-    delete: notAvailable('Skills'),
+    list: () => skillCall(''),
+    get: (id) => skillCall(`/${encodeURIComponent(id)}`),
+    create: (payload) => skillCall('', { method: 'POST', json: payload }),
+    update: (payload) => skillCall(`/${encodeURIComponent(payload.id)}`, { method: 'PUT', json: payload }),
+    delete: (id) => skillCall(`/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  };
+
+  /** Run a tool for an MCP-UI resource; destructive tools ask first. */
+  const uiAction = async (req: UIActionRequest): Promise<ToolResult> => {
+    const send = (confirmed: boolean) =>
+      apiFetchRaw('/api/tools/ui-action', { method: 'POST', json: { ...req, params: req.params ?? {}, confirmed } });
+    let res = await send(false);
+    if (res.status === 409) {
+      const err = await toApiError(res);
+      if (err.code !== 'confirmation_required') throw err;
+      const ok = await (opts.confirm ?? ((m: string) => Promise.resolve(window.confirm(m))))(err.message);
+      if (!ok) throw new Error('Cancelled.');
+      res = await send(true);
+    }
+    if (!res.ok) throw await toApiError(res);
+    const { result } = (await res.json()) as UIActionResponse;
+    opts.onToolResultChanged?.();
+    return result;
   };
 
   return {
@@ -131,11 +245,7 @@ export function createWebPlatform(opts: WebPlatformOptions = {}): ClaudiaPlatfor
     mcp,
     plugins,
     skills,
-    tools: {
-      uiAction: async () => {
-        throw new Error('MCP-UI actions are not available in Claudia Web yet.');
-      },
-    },
+    tools: { uiAction },
     llm: {
       complete: async (req) => {
         const res = await apiFetch<{ text: string }>('/api/llm/complete', {
@@ -148,9 +258,9 @@ export function createWebPlatform(opts: WebPlatformOptions = {}): ClaudiaPlatfor
       },
     },
     files: {
-      upload: async () => {
-        throw new Error('Uploads are not available in Claudia Web yet.');
-      },
+      // Images go to the server too: the model reads every attachment from there
+      handlesImages: true,
+      upload: uploadFile,
     },
     events: { on: (event, cb) => events.on(event, cb) },
     uiSandbox: {

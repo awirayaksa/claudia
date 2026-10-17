@@ -31,6 +31,15 @@ export const AppSettingsSchema = {
     /** Model for titles and other background tasks; null = the chat's model. */
     titleModel: z.string().nullable(),
   }),
+  /** Built-in tool servers users may switch on. */
+  'mcp.builtins': z.object({ enabled: z.array(z.string()) }),
+  /**
+   * Hosts (exact or "*.example.com") and CIDRs that user-controlled URLs may
+   * reach although they are private (e.g. an internal wiki for the fetch tool).
+   */
+  'net.allowlist': z.object({ hosts: z.array(z.string().trim().min(1).max(253)) }),
+  /** Users may add their own LLM connections (requests go through the SSRF guard). */
+  'connections.user': z.object({ enabled: z.boolean() }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -42,6 +51,11 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   'models.default': { model: null },
   limits: { completionsPerMinute: 30, concurrentRuns: 3, maxToolIterations: 10 },
   tasks: { generateTitles: true, titleModel: null },
+  'mcp.builtins': {
+    enabled: ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'],
+  },
+  'net.allowlist': { hosts: [] },
+  'connections.user': { enabled: false },
 };
 
 export class AppSettings {
@@ -57,6 +71,12 @@ export class AppSettings {
     const value = (parsed.success ? parsed.data : APP_SETTING_DEFAULTS[key]) as AppSettingValue<K>;
     this.cache.set(key, value);
     return value;
+  }
+
+  /** The last known value without waiting (defaults until first loaded); refreshes in the background. */
+  peek<K extends AppSettingKey>(key: K): AppSettingValue<K> {
+    if (!this.cache.has(key)) void this.get(key).catch(() => {});
+    return (this.cache.get(key) as AppSettingValue<K> | undefined) ?? APP_SETTING_DEFAULTS[key];
   }
 
   async set<K extends AppSettingKey>(key: K, value: unknown): Promise<AppSettingValue<K>> {

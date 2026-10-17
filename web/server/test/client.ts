@@ -46,6 +46,19 @@ export class TestClient {
     return this.request({ method: 'DELETE', url });
   }
 
+  /** Upload one file as multipart/form-data, like the browser does. */
+  async upload(name: string, data: Buffer | string, mime = 'application/octet-stream') {
+    const form = new FormData();
+    form.append('file', new Blob([typeof data === 'string' ? Buffer.from(data) : new Uint8Array(data)], { type: mime }), name);
+    const encoded = new Request('http://localhost/', { method: 'POST', body: form });
+    return this.request({
+      method: 'POST',
+      url: '/api/files',
+      headers: { 'content-type': encoded.headers.get('content-type')! },
+      payload: Buffer.from(await encoded.arrayBuffer()),
+    });
+  }
+
   /** Fetch the session first (hands out the CSRF cookie), then sign up. */
   async signup(email: string, password = 'correct-horse-battery', name = email.split('@')[0]) {
     await this.get('/api/auth/session');

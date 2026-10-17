@@ -7,6 +7,8 @@ import { AdminLayout } from './pages/admin/AdminLayout';
 import { UsersPage } from './pages/admin/UsersPage';
 import { ConnectionsPage } from './pages/admin/ConnectionsPage';
 import { AdminSettingsPage } from './pages/admin/AdminSettingsPage';
+import { ToolServersPage } from './pages/admin/ToolServersPage';
+import { DirectoryPage } from './pages/admin/DirectoryPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 
 /**
@@ -31,6 +33,8 @@ export const routes: RouteObject[] = [
           { index: true, element: <Navigate to="/admin/users" replace /> },
           { path: 'users', element: <UsersPage /> },
           { path: 'connections', element: <ConnectionsPage /> },
+          { path: 'tools', element: <ToolServersPage /> },
+          { path: 'directory', element: <DirectoryPage /> },
           { path: 'settings', element: <AdminSettingsPage /> },
         ],
       },

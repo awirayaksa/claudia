@@ -5,6 +5,7 @@ import { openDatabase } from './db/client';
 import { resolveRootSecret } from './crypto/keys';
 import { buildSandboxApp, sandboxOriginFor } from './sandbox';
 import { defaultClientDir, defaultMigrationsDir, defaultSandboxDir } from './paths';
+import { routeConsoleToLogger } from './lib/console';
 
 async function main() {
   const config = loadConfig();
@@ -29,6 +30,8 @@ async function main() {
     clientDir: config.isProduction ? clientDir : undefined,
     sandboxDir,
   });
+  // Shared desktop code logs with console.*; keep users' content out of normal logs
+  routeConsoleToLogger(app.log);
   app.log.info({ database: db.kind, migrations: status }, 'database ready');
 
   if (db.kind === 'pglite') {

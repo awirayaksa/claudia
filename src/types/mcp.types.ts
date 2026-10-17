@@ -32,9 +32,19 @@ export interface MCPServerConfig {
 // MCP Tool Definition
 // ============================================================================
 
+/** MCP tool annotations (hints from the server; not guarantees). */
+export interface MCPToolAnnotations {
+  title?: string;
+  readOnlyHint?: boolean;
+  destructiveHint?: boolean;
+  idempotentHint?: boolean;
+  openWorldHint?: boolean;
+}
+
 export interface MCPTool {
   name: string;
   description?: string;
+  annotations?: MCPToolAnnotations;
   inputSchema: {
     type: 'object';
     properties?: Record<string, unknown>;

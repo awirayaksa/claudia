@@ -9,20 +9,44 @@ import {
   errorMessage,
   useConnectionsQuery,
   useCreateConnectionMutation,
+  useCreateMyConnectionMutation,
   useDeleteConnectionMutation,
+  useDeleteMyConnectionMutation,
+  useMyConnectionsQuery,
   useTestConnectionMutation,
+  useTestMyConnectionMutation,
   useUpdateConnectionMutation,
+  useUpdateMyConnectionMutation,
 } from '../../api/rtk-api';
 
 const TYPES: ConnectionType[] = ['openai', 'openrouter', 'openwebui', 'opencode-go'];
 
+/** Global connections (admin) or the signed-in user's own ("@prefix/…" models). */
+type Scope = 'global' | 'own';
+
+const useListFor = (scope: Scope) => {
+  const global = useConnectionsQuery(undefined, { skip: scope !== 'global' });
+  const own = useMyConnectionsQuery(undefined, { skip: scope !== 'own' });
+  return scope === 'global'
+    ? { connections: global.data?.connections, isLoading: global.isLoading, allowed: true }
+    : { connections: own.data?.connections, isLoading: own.isLoading, allowed: own.data?.enabled ?? true };
+};
+
 export function ConnectionsPage() {
+  return <ConnectionsManager scope="global" />;
+}
+
+export function ConnectionsManager({ scope }: { scope: Scope }) {
   const { t } = useTranslation();
-  const { data, isLoading } = useConnectionsQuery();
+  const { connections, isLoading, allowed } = useListFor(scope);
   const [editing, setEditing] = useState<ConnectionView | 'new' | null>(null);
   const [toDelete, setToDelete] = useState<ConnectionView | null>(null);
-  const [deleteConnection] = useDeleteConnectionMutation();
-  const [testConnection] = useTestConnectionMutation();
+  const [deleteGlobal] = useDeleteConnectionMutation();
+  const [deleteOwn] = useDeleteMyConnectionMutation();
+  const [testGlobal] = useTestConnectionMutation();
+  const [testOwn] = useTestMyConnectionMutation();
+  const deleteConnection = scope === 'global' ? deleteGlobal : deleteOwn;
+  const testConnection = scope === 'global' ? testGlobal : testOwn;
   const [testResult, setTestResult] = useState<Record<string, string>>({});
 
   const test = async (c: ConnectionView) => {
@@ -41,21 +65,27 @@ export function ConnectionsPage() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <Button size="sm" onClick={() => setEditing('new')} data-testid="new-connection">
-          {t('admin.newConnection')}
-        </Button>
-      </div>
+      {scope === 'own' && (
+        <p className="text-sm text-text-secondary">{allowed ? t('settings.ownConnectionsHelp') : t('settings.ownConnectionsOff')}</p>
+      )}
+      {allowed && (
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => setEditing('new')} data-testid="new-connection">
+            {t('admin.newConnection')}
+          </Button>
+        </div>
+      )}
       <ul className="space-y-3">
         {isLoading && <li className="text-sm text-text-secondary">{t('app.loading')}</li>}
-        {data?.connections.map((c) => (
+        {connections?.map((c) => (
           <li key={c.id} className="rounded-lg border border-border bg-surface p-4">
             <div className="flex flex-wrap items-start gap-3">
               <div className="min-w-0 flex-1">
                 <div className="font-medium">
                   {c.name}{' '}
                   <span className="text-xs text-text-secondary">
-                    {t(`admin.types.${c.type}`)} · {c.prefix}/…
+                    {t(`admin.types.${c.type}`)} · {scope === 'own' ? '@' : ''}
+                    {c.prefix}/…
                   </span>
                   {!c.enabled && <span className="ml-2 text-xs text-text-secondary">(off)</span>}
                 </div>
@@ -67,12 +97,16 @@ export function ConnectionsPage() {
                 {testResult[c.id] && <div className="mt-1 text-xs">{testResult[c.id]}</div>}
               </div>
               <div className="flex gap-2">
-                <Button size="sm" variant="secondary" onClick={() => void test(c)}>
-                  {t('admin.test')}
-                </Button>
-                <Button size="sm" variant="secondary" onClick={() => setEditing(c)}>
-                  {t('app.edit')}
-                </Button>
+                {allowed && (
+                  <>
+                    <Button size="sm" variant="secondary" onClick={() => void test(c)}>
+                      {t('admin.test')}
+                    </Button>
+                    <Button size="sm" variant="secondary" onClick={() => setEditing(c)}>
+                      {t('app.edit')}
+                    </Button>
+                  </>
+                )}
                 <Button size="sm" variant="ghost" className="text-error" onClick={() => setToDelete(c)}>
                   {t('app.delete')}
                 </Button>
@@ -82,7 +116,7 @@ export function ConnectionsPage() {
         ))}
       </ul>
 
-      {editing && <ConnectionForm connection={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
+      {editing && <ConnectionForm scope={scope} connection={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       <ConfirmDialog
         isOpen={!!toDelete}
         onClose={() => setToDelete(null)}
@@ -100,10 +134,14 @@ export function ConnectionsPage() {
   );
 }
 
-function ConnectionForm({ connection, onClose }: { connection: ConnectionView | null; onClose: () => void }) {
+function ConnectionForm({ scope, connection, onClose }: { scope: Scope; connection: ConnectionView | null; onClose: () => void }) {
   const { t } = useTranslation();
-  const [create, createState] = useCreateConnectionMutation();
-  const [update, updateState] = useUpdateConnectionMutation();
+  const [createGlobal, createGlobalState] = useCreateConnectionMutation();
+  const [updateGlobal, updateGlobalState] = useUpdateConnectionMutation();
+  const [createOwn, createOwnState] = useCreateMyConnectionMutation();
+  const [updateOwn, updateOwnState] = useUpdateMyConnectionMutation();
+  const [create, createState] = scope === 'global' ? [createGlobal, createGlobalState] : [createOwn, createOwnState];
+  const [update, updateState] = scope === 'global' ? [updateGlobal, updateGlobalState] : [updateOwn, updateOwnState];
   const [name, setName] = useState(connection?.name ?? '');
   const [prefix, setPrefix] = useState(connection?.prefix ?? '');
   const [type, setType] = useState<ConnectionType>(connection?.type ?? 'openai');

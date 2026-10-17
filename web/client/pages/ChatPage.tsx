@@ -9,10 +9,13 @@ import { useAppDispatch, useAppSelector } from '@/store';
 import { setEffortLevel } from '@/store/slices/composerSlice';
 import { parseEffortDirective } from '@/utils/effort-utils';
 import type { MessageNode } from '@/types/turn.types';
+import type { Attachment } from '@/types/message.types';
+import { resolveSkillCommand } from '@/utils/skill-utils';
 import {
   errorMessage,
   useChatQuery,
   useCreateChatMutation,
+  useMcpServersQuery,
   useModelsQuery,
   useSendCompletionMutation,
   useSessionQuery,
@@ -23,6 +26,7 @@ import {
 import { useWebSelector } from '../hooks';
 import { nodeText, toDisplayMessage, visiblePath } from '../chat/to-display';
 import { useResumeActiveRuns, useRunFollower } from '../chat/useRunFollower';
+import { enabledServerIds } from '../chat/useMcpSync';
 
 /** The model last picked by this user (per browser), for new chats. */
 const LAST_MODEL_KEY = 'claudia.lastModel';
@@ -48,6 +52,8 @@ export function ChatPage() {
   const chat = chatId ? chatData?.chat : undefined;
   const live = useWebSelector((s) => (chatId ? s.runs[chatId] : undefined));
   const sessionEffort = useAppSelector((s) => s.composer.effortLevel);
+  const skills = useAppSelector((s) => s.skills.skills);
+  const { data: mcpData } = useMcpServersQuery();
 
   const [createChat] = useCreateChatMutation();
   const [sendCompletion] = useSendCompletionMutation();
@@ -96,15 +102,20 @@ export function ChatPage() {
     else setPendingModel(model);
   };
 
-  const handleSend = async (raw: string) => {
+  const handleSend = async (raw: string, attachments: Attachment[] = []) => {
     setSendError(null);
-    const { content, effort, directiveOnly } = parseEffortDirective(raw);
+    const parsed = parseEffortDirective(raw);
+    const { effort, directiveOnly } = parsed;
     // "/effort high" on its own sets the effort for the rest of the session
     if (directiveOnly) {
       dispatch(setEffortLevel(effort ?? null));
       return;
     }
     if (!selectedModel) return;
+    // "/skill args": the server adds the skill's prompt; the chat shows the args
+    const skillCall = resolveSkillCommand(parsed.content, skills);
+    const content = skillCall ? skillCall.userContent : parsed.content;
+    const skill = skillCall ? { id: skillCall.skillId, args: parsed.content.replace(/^\/\S+/, '').trim() } : undefined;
     try {
       let id = chatId;
       if (!id) {
@@ -116,6 +127,9 @@ export function ChatPage() {
         content,
         modelIds: [selectedModel],
         params: { effort: effort !== undefined ? effort : (sessionEffort ?? undefined) },
+        fileIds: attachments.map((a) => a.id),
+        toolIds: enabledServerIds(mcpData?.servers),
+        ...(skill ? { skill } : {}),
       }).unwrap();
       follow(id, res.runId);
       if (!chatId) navigate(`/c/${id}`);

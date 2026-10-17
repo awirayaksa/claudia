@@ -12,7 +12,8 @@ export async function streamChatCompletion(
   request: ChatCompletionRequest,
   callbacks: StreamCallbacks,
   abortSignal?: AbortSignal,
-  _traceId?: string
+  _traceId?: string,
+  fetchImpl?: typeof fetch
 ): Promise<void> {
   // Normalize baseUrl - remove trailing slash and /api suffix to prevent duplication
   const normalizedBaseUrl = baseUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
@@ -23,6 +24,7 @@ export async function streamChatCompletion(
       headers: { Authorization: `Bearer ${apiKey}` },
       body: { ...request, stream: true, stream_options: { include_usage: true } },
       signal: abortSignal,
+      fetchImpl,
     },
     callbacks
   );

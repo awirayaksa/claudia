@@ -37,6 +37,8 @@ export class CustomProvider implements IAPIProvider {
         'Authorization': `Bearer ${config.apiKey}`,
       },
       timeout: 30000, // 30 seconds
+      httpAgent: config.http?.httpAgent,
+      httpsAgent: config.http?.httpsAgent,
     });
   }
 
@@ -101,6 +103,7 @@ export class CustomProvider implements IAPIProvider {
         headers: { Authorization: `Bearer ${this.config.apiKey}` },
         body: { ...request, stream: true, stream_options: { include_usage: true } },
         signal: abortSignal,
+        fetchImpl: this.config.http?.fetch,
       },
       callbacks
     );

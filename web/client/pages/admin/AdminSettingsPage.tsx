@@ -4,6 +4,9 @@ import { Button } from '@/components/common/Button';
 import type { AppSettingsResponse } from '@shared/settings';
 import { errorMessage, useAppSettingsQuery, useModelsQuery, useUpdateAppSettingMutation } from '../../api/rtk-api';
 
+/** The built-in tool servers (each user gets their own, confined to their workspace). */
+const BUILTIN_IDS = ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'] as const;
+
 export function AdminSettingsPage() {
   const { t } = useTranslation();
   const { data } = useAppSettingsQuery();
@@ -11,9 +14,13 @@ export function AdminSettingsPage() {
   const [save, saveState] = useUpdateAppSettingMutation();
   const [draft, setDraft] = useState<AppSettingsResponse | null>(null);
   const [saved, setSaved] = useState(false);
+  const [allowlistText, setAllowlistText] = useState('');
 
   useEffect(() => {
-    if (data) setDraft(structuredClone(data.settings));
+    if (data) {
+      setDraft(structuredClone(data.settings));
+      setAllowlistText(data.settings['net.allowlist'].hosts.join('\n'));
+    }
   }, [data]);
 
   if (!draft) return <p className="text-sm text-text-secondary">{t('app.loading')}</p>;
@@ -135,6 +142,58 @@ export function AdminSettingsPage() {
             models={allModels.map((m) => m.id)}
             emptyLabel={t('admin.sameAsChat')}
           />
+        </label>
+      </Card>
+
+      <Card title={t('admin.builtinTools')}>
+        <p className="mb-2 text-sm text-text-secondary">{t('admin.builtinToolsHelp')}</p>
+        <div className="grid gap-1 sm:grid-cols-2">
+          {BUILTIN_IDS.map((id) => (
+            <label key={id} className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={draft['mcp.builtins'].enabled.includes(id)}
+                onChange={(e) =>
+                  set('mcp.builtins', {
+                    enabled: e.target.checked
+                      ? [...draft['mcp.builtins'].enabled, id]
+                      : draft['mcp.builtins'].enabled.filter((x) => x !== id),
+                  })
+                }
+              />
+              {t(`admin.builtins.${id}`)}
+            </label>
+          ))}
+        </div>
+      </Card>
+
+      <Card title={t('admin.network')}>
+        <label className="block text-sm">
+          <span className="mb-1 block">{t('admin.netAllowlist')}</span>
+          <textarea
+            className="w-full rounded border border-border bg-background px-2 py-1 font-mono text-xs"
+            rows={4}
+            placeholder={'wiki.internal.example.com\n*.corp.example.com\n10.20.0.0/16'}
+            value={allowlistText}
+            onChange={(e) => {
+              setAllowlistText(e.target.value);
+              set('net.allowlist', {
+                hosts: e.target.value
+                  .split('\n')
+                  .map((s) => s.trim())
+                  .filter(Boolean),
+              });
+            }}
+          />
+          <span className="mt-1 block text-xs text-text-secondary">{t('admin.netAllowlistHelp')}</span>
+        </label>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft['connections.user'].enabled}
+            onChange={(e) => set('connections.user', { enabled: e.target.checked })}
+          />
+          {t('admin.userConnections')}
         </label>
       </Card>
 

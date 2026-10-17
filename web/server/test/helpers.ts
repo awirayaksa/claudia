@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildApp, type AppDeps } from '../app';
@@ -9,7 +11,8 @@ export const TEST_SECRET = 'test-secret-key-test-secret-key-0123456789';
 export const MIGRATIONS_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'db', 'migrations');
 
 export function testConfig(env: Record<string, string> = {}) {
-  return loadConfig({ NODE_ENV: 'test', DATA_DIR: './data-test', ...env });
+  // Apps built without a DATA_DIR of their own write here (never into the repo)
+  return loadConfig({ NODE_ENV: 'test', DATA_DIR: path.join(os.tmpdir(), 'claudia-test-data'), ...env });
 }
 
 /**
@@ -41,8 +44,10 @@ export async function buildTestApp(
 ) {
   const db = opts.db ?? (await openTestDatabase());
   if (opts.migrate !== false) await db.migrate(MIGRATIONS_DIR);
+  // Each app gets its own data directory (uploads, workspaces)
+  const dataDir = opts.env?.DATA_DIR ?? fs.mkdtempSync(path.join(os.tmpdir(), 'claudia-test-'));
   const app = await buildApp({
-    config: testConfig(opts.env),
+    config: testConfig({ ...opts.env, DATA_DIR: dataDir }),
     db,
     migrationsDir: MIGRATIONS_DIR,
     rootSecret: TEST_SECRET,
@@ -53,9 +58,11 @@ export async function buildTestApp(
   return {
     app,
     db,
+    dataDir,
     async close() {
       await app.close();
       await db.close();
+      if (!opts.env?.DATA_DIR) fs.rmSync(dataDir, { recursive: true, force: true });
     },
   };
 }

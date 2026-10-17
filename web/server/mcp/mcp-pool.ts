@@ -1,0 +1,327 @@
+/**
+ * MCP clients on the server.
+ * - global: one manager for the admin's servers, shared by everyone;
+ * - user:<id>: one manager per user for the built-ins (sandboxed to the
+ *   user's workspace), started on demand and stopped after 10 idle minutes.
+ *
+ * stdio servers get only the SDK's safe environment plus their configured
+ * variables (never DATABASE_URL or the secret key), and exist only when
+ * CLAUDIA_ALLOW_STDIO_MCP is on.
+ */
+import { and, eq, isNull } from 'drizzle-orm';
+import type { FastifyBaseLogger } from 'fastify';
+import { MCPClientManager } from '../../../electron/services/mcp.service';
+import { aliasesToOpenAI, buildToolAliases, normalizeToolResult, resolveToolAlias, type ToolSource } from '../../../src/services/mcp/tool-format';
+import { uiResourceConfirmation } from '../../../src/services/chat/message-builder';
+import type { MCPServerConfig, MCPServerStatus, MCPTool } from '../../../src/types/mcp.types';
+import type { Database } from '../db/client';
+import { mcpServers, users, type McpTransport, type UserSettings } from '../db/schema';
+import type { SecretBox } from '../crypto/secrets';
+import type { AppSettings } from '../modules/settings/app-settings';
+import type { RunToolset, ToolExecution } from '../llm/tools';
+import { builtinConfigFor, builtinServers, isBuiltinId, redactWorkspacePath, userWorkspace, type BuiltinDeps } from './builtin';
+import { forbidden, notFound } from '../lib/errors';
+
+const USER_IDLE_MS = 10 * 60_000;
+const TOOL_TIMEOUT_MS = 120_000;
+
+/** What is stored (encrypted) for a configured server. */
+export interface StoredMcpConfig {
+  url?: string;
+  headers?: Record<string, string>;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+export type McpServerRow = typeof mcpServers.$inferSelect;
+
+export interface ServerView {
+  id: string;
+  name: string;
+  description: string | null;
+  scope: 'global' | 'builtin';
+  transport: McpTransport | 'builtin';
+  /** The server's own status (global) or this user's instance (built-in). */
+  status: MCPServerStatus;
+  /** Whether this user has the server switched on. */
+  enabled: boolean;
+  error: string | null;
+  tools: MCPTool[];
+}
+
+interface UserPool {
+  manager: MCPClientManager;
+  lastUsed: number;
+}
+
+export interface McpPoolDeps extends BuiltinDeps {
+  db: Database;
+  secrets: SecretBox;
+  settings: AppSettings;
+  allowStdio: boolean;
+  log: FastifyBaseLogger;
+}
+
+export class McpPools {
+  readonly global = new MCPClientManager({ inheritEnv: false });
+  private readonly users = new Map<string, UserPool>();
+  private readonly reaper: NodeJS.Timeout;
+
+  constructor(private readonly deps: McpPoolDeps) {
+    this.reaper = setInterval(() => void this.reapIdle(), 60_000);
+    this.reaper.unref();
+  }
+
+  // ─── Global servers ────────────────────────────────────────────────────────
+
+  decrypt(row: McpServerRow): StoredMcpConfig {
+    return JSON.parse(this.deps.secrets.decrypt(row.configCipher)) as StoredMcpConfig;
+  }
+
+  private toConfig(row: McpServerRow, stored: StoredMcpConfig): MCPServerConfig {
+    return {
+      id: row.id,
+      name: row.name,
+      transport: row.transport,
+      url: stored.url,
+      command: stored.command,
+      args: stored.args,
+      env: stored.env,
+      enabled: row.enabled,
+      metadata: row.description ? { description: row.description } : undefined,
+    };
+  }
+
+  async globalRows(): Promise<McpServerRow[]> {
+    return this.deps.db.select().from(mcpServers).where(isNull(mcpServers.ownerId));
+  }
+
+  /** Start every enabled global server (startup). Failures are logged, not fatal. */
+  async startAll(): Promise<void> {
+    for (const row of await this.globalRows()) {
+      if (row.enabled) await this.startGlobal(row).catch(() => {});
+    }
+  }
+
+  async startGlobal(row: McpServerRow): Promise<void> {
+    if (row.transport === 'stdio' && !this.deps.allowStdio) {
+      this.deps.log.warn({ server: row.name }, 'stdio MCP server not started: CLAUDIA_ALLOW_STDIO_MCP is off');
+      return;
+    }
+    const stored = this.decrypt(row);
+    try {
+      await this.global.startServer(this.toConfig(row, stored), stored.headers ? { headers: stored.headers } : {});
+      this.deps.log.info({ server: row.name, tools: this.global.getServerTools(row.id).length }, 'MCP server ready');
+    } catch (err) {
+      this.deps.log.warn({ server: row.name, err: err instanceof Error ? err.message : String(err) }, 'MCP server failed to start');
+      throw err;
+    }
+  }
+
+  async stopGlobal(id: string): Promise<void> {
+    await this.global.stopServer(id);
+  }
+
+  // ─── Per-user built-ins ────────────────────────────────────────────────────
+
+  private userPool(userId: string): UserPool {
+    let pool = this.users.get(userId);
+    if (!pool) {
+      pool = { manager: new MCPClientManager({ inheritEnv: false }), lastUsed: Date.now() };
+      this.users.set(userId, pool);
+    }
+    pool.lastUsed = Date.now();
+    return pool;
+  }
+
+  /** Built-ins the admin offers. */
+  async allowedBuiltins(): Promise<string[]> {
+    const { enabled } = await this.deps.settings.get('mcp.builtins');
+    return enabled.filter(isBuiltinId);
+  }
+
+  /** Start one of the user's built-ins if it isn't running. */
+  async ensureBuiltin(userId: string, builtinId: string): Promise<void> {
+    if (!(await this.allowedBuiltins()).includes(builtinId)) throw forbidden('This tool server is turned off by the administrator.');
+    const pool = this.userPool(userId);
+    const status = pool.manager.getServerStatus(builtinId);
+    if (status === 'ready' || status === 'starting' || status === 'initializing') return;
+    const config = builtinConfigFor(userId, builtinId, this.deps);
+    const { builtinContext, ...serverConfig } = config;
+    await pool.manager.startServer(serverConfig, { builtinContext });
+  }
+
+  async stopUser(userId: string): Promise<void> {
+    const pool = this.users.get(userId);
+    if (pool) {
+      this.users.delete(userId);
+      await pool.manager.stopAll();
+    }
+  }
+
+  private async reapIdle(): Promise<void> {
+    const now = Date.now();
+    for (const [userId, pool] of this.users) {
+      if (now - pool.lastUsed > USER_IDLE_MS) await this.stopUser(userId).catch(() => {});
+    }
+  }
+
+  // ─── What a user sees ──────────────────────────────────────────────────────
+
+  async userPrefs(userId: string): Promise<Record<string, boolean>> {
+    const [row] = await this.deps.db.select({ settings: users.settings }).from(users).where(eq(users.id, userId));
+    return ((row?.settings as UserSettings | undefined)?.mcp?.enabled ?? {}) as Record<string, boolean>;
+  }
+
+  /** Global servers are on by default; built-ins are off until the user turns them on. */
+  private isOn(prefs: Record<string, boolean>, id: string, scope: 'global' | 'builtin'): boolean {
+    return prefs[id] ?? scope === 'global';
+  }
+
+  async serversFor(userId: string): Promise<ServerView[]> {
+    const prefs = await this.userPrefs(userId);
+    const views: ServerView[] = [];
+    for (const row of await this.globalRows()) {
+      if (!row.enabled) continue;
+      views.push({
+        id: row.id,
+        name: row.name,
+        description: row.description,
+        scope: 'global',
+        transport: row.transport,
+        status: this.global.getServerStatus(row.id),
+        enabled: this.isOn(prefs, row.id, 'global'),
+        error: this.global.getServerError(row.id) ?? null,
+        tools: this.global.getServerTools(row.id),
+      });
+    }
+    const pool = this.users.get(userId);
+    const allowed = new Set(await this.allowedBuiltins());
+    for (const b of builtinServers()) {
+      if (!allowed.has(b.id)) continue;
+      views.push({
+        id: b.id,
+        name: b.name,
+        description: b.description,
+        scope: 'builtin',
+        transport: 'builtin',
+        status: pool?.manager.getServerStatus(b.id) ?? 'stopped',
+        enabled: this.isOn(prefs, b.id, 'builtin'),
+        error: pool?.manager.getServerError(b.id) ?? null,
+        tools: pool?.manager.getServerTools(b.id) ?? [],
+      });
+    }
+    return views;
+  }
+
+  /** Switch a server on or off for this user (built-ins start or stop with it). */
+  async setEnabled(userId: string, serverId: string, enabled: boolean): Promise<ServerView> {
+    const view = (await this.serversFor(userId)).find((s) => s.id === serverId);
+    if (!view) throw notFound('Tool server');
+    const [row] = await this.deps.db.select({ settings: users.settings }).from(users).where(eq(users.id, userId));
+    const settings = (row?.settings ?? {}) as UserSettings;
+    const next: UserSettings = { ...settings, mcp: { enabled: { ...(settings.mcp?.enabled ?? {}), [serverId]: enabled } } };
+    await this.deps.db.update(users).set({ settings: next }).where(eq(users.id, userId));
+    if (view.scope === 'builtin') {
+      if (enabled) await this.ensureBuiltin(userId, serverId).catch(() => {});
+      else await this.users.get(userId)?.manager.stopServer(serverId);
+    }
+    return (await this.serversFor(userId)).find((s) => s.id === serverId)!;
+  }
+
+  /** The manager that runs a server for this user, if the user may use it. */
+  private async managerFor(userId: string, serverId: string): Promise<MCPClientManager> {
+    if (isBuiltinId(serverId)) {
+      await this.ensureBuiltin(userId, serverId);
+      return this.userPool(userId).manager;
+    }
+    const [row] = await this.deps.db
+      .select()
+      .from(mcpServers)
+      .where(and(eq(mcpServers.id, serverId), isNull(mcpServers.ownerId)));
+    if (!row || !row.enabled) throw notFound('Tool server');
+    return this.global;
+  }
+
+  /** Call a tool on a server this user may use. */
+  async callTool(userId: string, serverId: string, tool: string, args: Record<string, unknown>) {
+    const manager = await this.managerFor(userId, serverId);
+    const result = await manager.callTool(serverId, tool, args);
+    return isBuiltinId(serverId) ? redactWorkspacePath(result, userWorkspace(this.deps.dataDir, userId)) : result;
+  }
+
+  /** Tool definitions of a server for this user (for UI-action checks). */
+  async toolsOf(userId: string, serverId: string): Promise<MCPTool[]> {
+    const manager = await this.managerFor(userId, serverId);
+    return manager.getServerTools(serverId);
+  }
+
+  /**
+   * The tools of a run: the requested servers this user has switched on and
+   * that are ready, named by alias so same-named tools on two servers both work.
+   */
+  async toolset(userId: string, serverIds: string[], firstTurnOnly = false): Promise<RunToolset> {
+    const wanted = new Set(serverIds);
+    const views = (await this.serversFor(userId)).filter((s) => wanted.has(s.id) && s.enabled);
+    for (const v of views) {
+      if (v.scope === 'builtin') await this.ensureBuiltin(userId, v.id).catch(() => {});
+    }
+    const ready = (await this.serversFor(userId)).filter((s) => wanted.has(s.id) && s.enabled && s.status === 'ready');
+    const sources: ToolSource[] = ready.map((s) => ({ id: s.id, name: s.name, tools: s.tools }));
+    const aliases = buildToolAliases(sources);
+
+    return {
+      definitions: aliasesToOpenAI(aliases),
+      firstTurnOnly,
+      locate: (alias) => {
+        const a = resolveToolAlias(alias, aliases);
+        return a ? { serverId: a.serverId, tool: a.tool } : null;
+      },
+      execute: async (call, signal): Promise<ToolExecution> => {
+        const a = resolveToolAlias(call.function.name, aliases);
+        const fail = (message: string): ToolExecution => ({
+          serverId: a?.serverId ?? '',
+          tool: a?.tool ?? call.function.name,
+          result: { type: 'tool_result', callId: call.id, content: JSON.stringify({ error: message }), isError: true },
+        });
+        if (!a) return fail(`Tool "${call.function.name}" is not available.`);
+        let args: Record<string, unknown>;
+        try {
+          args = call.function.arguments ? JSON.parse(call.function.arguments) : {};
+        } catch (err) {
+          return fail(`Invalid tool arguments: ${err instanceof Error ? err.message : 'not JSON'}. Expected valid JSON.`);
+        }
+        try {
+          const timeout = new Promise<never>((_, reject) => {
+            const t = setTimeout(() => reject(new Error(`Tool timed out after ${TOOL_TIMEOUT_MS / 1000} seconds.`)), TOOL_TIMEOUT_MS);
+            t.unref?.();
+            signal.addEventListener('abort', () => reject(new Error('Stopped.')), { once: true });
+          });
+          const raw = await Promise.race([this.callTool(userId, a.serverId, a.tool, args), timeout]);
+          const normalized = normalizeToolResult(raw as Parameters<typeof normalizeToolResult>[0]);
+          return {
+            serverId: a.serverId,
+            tool: a.tool,
+            result: {
+              type: 'tool_result',
+              callId: call.id,
+              // The model is told a UI was shown instead of getting its markup
+              content: normalized.uiResource ? uiResourceConfirmation(a.tool) : normalized.content,
+              ...(normalized.isError ? { isError: true } : {}),
+              ...(normalized.uiResource ? { uiResource: normalized.uiResource } : {}),
+            },
+          };
+        } catch (err) {
+          return fail(err instanceof Error ? err.message : String(err));
+        }
+      },
+    };
+  }
+
+  async close(): Promise<void> {
+    clearInterval(this.reaper);
+    await Promise.all([...this.users.keys()].map((id) => this.stopUser(id)));
+    await this.global.stopAll();
+  }
+}
