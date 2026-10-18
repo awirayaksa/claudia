@@ -76,6 +76,20 @@ test.describe.serial('Claudia Web, Phase 1a', () => {
     await shot(admin, 'admin-connections');
     // The key is never shown again
     await expect(admin.locator('body')).not.toContainText('sk-e2e-key-0000');
+
+    // Skipping certificate verification warns, is saved, and shows on the list
+    await admin.getByRole('button', { name: 'Edit' }).click();
+    await admin.getByTestId('connection-insecure-tls').check();
+    await expect(admin.getByText("the server's identity isn't checked")).toBeVisible();
+    await shot(admin, 'admin-connection-insecure-tls');
+    await admin.getByRole('button', { name: 'Save' }).click();
+    await expect(admin.getByText('certificate not verified')).toBeVisible();
+    await shot(admin, 'admin-connections-insecure-tls');
+    await admin.getByRole('button', { name: 'Edit' }).click();
+    await expect(admin.getByTestId('connection-insecure-tls')).toBeChecked();
+    await admin.getByTestId('connection-insecure-tls').uncheck();
+    await admin.getByRole('button', { name: 'Save' }).click();
+    await expect(admin.getByText('certificate not verified')).toHaveCount(0);
   });
 
   test('a new user signs up, waits, and is approved', async () => {
@@ -144,7 +158,8 @@ test.describe.serial('Claudia Web, Phase 1a', () => {
     // The user already sent 3 messages this minute
     await send(user, 'one more');
     await expect(user.getByRole('alert')).toContainText(/rate limit/i);
-    await api(admin, 'PATCH', '/api/admin/settings/limits', { completionsPerMinute: 30, concurrentRuns: 3, maxToolIterations: 10 });
+    // Every later spec shares the admin's per-minute budget, so keep it out of their way
+    await api(admin, 'PATCH', '/api/admin/settings/limits', { completionsPerMinute: 1000, concurrentRuns: 3, maxToolIterations: 10 });
   });
 
   test('works at phone width', async ({ browser }) => {

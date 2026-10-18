@@ -153,7 +153,7 @@ export async function adminConnectionRoutes(app: FastifyInstance, ctx: ServerCon
   });
 }
 
-/** Users may only set the quirks that describe their endpoint. */
+/** Users may only set the quirks that describe their endpoint; never insecureTls (theirs always verify). */
 function userQuirks(q: ConnectionInput['quirks']): ConnectionInput['quirks'] {
   return {
     ...(q.apiCompatibility ? { apiCompatibility: q.apiCompatibility } : {}),

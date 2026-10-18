@@ -1,0 +1,25 @@
+/**
+ * A self-signed certificate for 127.0.0.1 / localhost (valid to 2126), for
+ * tests of endpoints whose certificate isn't trusted. Test use only: the key
+ * is public.
+ */
+export const SELF_SIGNED_KEY = `-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgDBQngJprfIiD/z2a
+Pc3fwIYpAD9fwEXdBjX7zyXyA4KhRANCAAQO6vkaA0OOlmynkeCf3E9e6mlZFkX+
+M/Xy84k7m6uzAnl2Sm8RnujYND/WqC9iI2AHwNTHfJ4I4prq4NQHnYyd
+-----END PRIVATE KEY-----
+`;
+
+export const SELF_SIGNED_CERT = `-----BEGIN CERTIFICATE-----
+MIIBuTCCAV+gAwIBAgIUVEdV0pFtdxi9GO4OCaMGE7pg1pcwCgYIKoZIzj0EAwIw
+IzEhMB8GA1UEAwwYY2xhdWRpYS10ZXN0LXNlbGYtc2lnbmVkMCAXDTI2MTAxODEy
+MzUwMFoYDzIxMjYwOTI0MTIzNTAwWjAjMSEwHwYDVQQDDBhjbGF1ZGlhLXRlc3Qt
+c2VsZi1zaWduZWQwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQO6vkaA0OOlmyn
+keCf3E9e6mlZFkX+M/Xy84k7m6uzAnl2Sm8RnujYND/WqC9iI2AHwNTHfJ4I4prq
+4NQHnYydo28wbTAdBgNVHQ4EFgQUlfVRyvq5KD+Rb/HR3jvR1584srgwHwYDVR0j
+BBgwFoAUlfVRyvq5KD+Rb/HR3jvR1584srgwDwYDVR0TAQH/BAUwAwEB/zAaBgNV
+HREEEzARhwR/AAABgglsb2NhbGhvc3QwCgYIKoZIzj0EAwIDSAAwRQIhAJfnvUo6
+uLurenwJqpSw1wkH4d+hQkkwCEdKYUA0lHl5AiAmuE1J3ZmvC5HWJcsM6ZZe2yJ0
+1gN9DNY9IDe/mr/UDw==
+-----END CERTIFICATE-----
+`;

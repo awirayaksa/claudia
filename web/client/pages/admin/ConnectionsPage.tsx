@@ -89,7 +89,10 @@ export function ConnectionsManager({ scope }: { scope: Scope }) {
                   </span>
                   {!c.enabled && <span className="ml-2 text-xs text-text-secondary">(off)</span>}
                 </div>
-                <div className="truncate text-sm text-text-secondary">{c.baseUrl || '—'}</div>
+                <div className="truncate text-sm text-text-secondary">
+                  {c.baseUrl || '—'}
+                  {c.quirks.insecureTls && <span className="text-error"> · {t('admin.insecureTlsBadge')}</span>}
+                </div>
                 <div className="text-xs text-text-secondary">
                   {t('admin.models', { count: c.modelCount })}
                   {c.error && <span className="text-error"> · {c.error}</span>}
@@ -151,6 +154,9 @@ function ConnectionForm({ scope, connection, onClose }: { scope: Scope; connecti
   const [modelFilter, setModelFilter] = useState((connection?.modelFilter ?? []).join(', '));
   const [toolsFirstTurnOnly, setToolsFirstTurnOnly] = useState(connection?.quirks.toolsFirstTurnOnly ?? false);
   const [apiCompatibility, setApiCompatibility] = useState(connection?.quirks.apiCompatibility ?? 'openai');
+  const [insecureTls, setInsecureTls] = useState(connection?.quirks.insecureTls ?? false);
+  // Only admins' connections may skip certificate checks; OpenRouter is a fixed public endpoint
+  const canSkipTls = scope === 'global' && type !== 'openrouter';
   const [enabled, setEnabled] = useState(connection?.enabled ?? true);
   const error = errorMessage(createState.error ?? updateState.error);
 
@@ -174,6 +180,7 @@ function ConnectionForm({ scope, connection, onClose }: { scope: Scope; connecti
       quirks: {
         toolsFirstTurnOnly,
         ...(type === 'opencode-go' ? { apiCompatibility } : {}),
+        ...(canSkipTls && insecureTls ? { insecureTls } : {}),
       },
       enabled,
       ...(apiKey ? { apiKey } : removeKey ? { apiKey: '' } : {}),
@@ -215,6 +222,20 @@ function ConnectionForm({ scope, connection, onClose }: { scope: Scope; connecti
             onChange={(e) => setBaseUrl(e.target.value)}
             placeholder={type === 'openai' ? 'https://api.openai.com/v1' : 'https://…'}
           />
+        )}
+        {canSkipTls && (
+          <div className="text-sm">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={insecureTls}
+                onChange={(e) => setInsecureTls(e.target.checked)}
+                data-testid="connection-insecure-tls"
+              />
+              {t('admin.insecureTls')}
+            </label>
+            {insecureTls && <p className="mt-1 text-xs text-error">{t('admin.insecureTlsHelp')}</p>}
+          </div>
         )}
         <Input
           label={t('admin.apiKey')}

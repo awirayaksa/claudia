@@ -67,9 +67,12 @@ export class CustomProvider implements IAPIProvider {
         created: model.created || Date.now(),
         owned_by: model.owned_by || 'custom',
       }));
-    } catch {
-      // Custom endpoints may not support /models; return empty array
-      return [];
+    } catch (error) {
+      // Custom endpoints may not support /models; anything else (unreachable,
+      // untrusted certificate, bad key) is a real failure and says so
+      const status = axios.isAxiosError(error) ? error.response?.status : undefined;
+      if (status === 404 || status === 405 || status === 501) return [];
+      throw this.handleError(error);
     }
   }
 
@@ -149,6 +152,10 @@ export class CustomProvider implements IAPIProvider {
 
         return new Error(`API Error: ${message}`);
       } else if (axiosError.request) {
+        // An untrusted certificate says so, rather than "could not connect"
+        if (/CERT|SELF_SIGNED/.test(axiosError.code ?? '')) {
+          return new Error(`TLS Error: the endpoint's certificate is not trusted (${axiosError.message}).`);
+        }
         // Request was made but no response
         return new Error(
           'Network Error: Could not connect to the API endpoint. Please check your URL and internet connection.'

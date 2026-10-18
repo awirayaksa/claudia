@@ -18,6 +18,7 @@ import { forbidden, notFound } from '../lib/errors';
 import type { ModelInfo } from '../../shared/models';
 import { createProvider } from './provider-registry';
 import { guardedTransport, type GuardedTransport } from '../net/safe-fetch';
+import { insecureTlsTransport } from '../net/insecure-tls';
 import type { AccessService, Principal } from '../auth/access';
 import { CUSTOM_MODEL_PREFIX, customModelKey } from '../../shared/workspace';
 
@@ -182,7 +183,7 @@ export class ModelRegistry {
       baseUrl: conn.baseUrl,
       apiKey: conn.keyCipher ? this.deps.secrets.decrypt(conn.keyCipher) : '',
       quirks: conn.quirks,
-      ...(conn.ownerId ? { http: this.guarded } : {}),
+      ...(conn.ownerId ? { http: this.guarded } : conn.quirks.insecureTls ? { http: insecureTlsTransport() } : {}),
     });
     this.providers.set(conn.id, { stamp, provider });
     return provider;
