@@ -13,6 +13,7 @@ import { Message } from '../../types/message.types';
 import { normalizeMath } from '../../utils/math-delimiters';
 import { citationIndex, linkCitations } from '../../utils/citations';
 import { MermaidDiagram } from './MermaidDiagram';
+import { useT } from '../../i18n';
 
 // Single-dollar math is off so prices stay text; normalizeMath turns $x$, \(x\) and \[x\] into $$
 const MATH_OPTIONS = { singleDollarTextMath: false };
@@ -29,6 +30,7 @@ interface MarkdownRendererProps {
 }
 
 export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ content, isUser = false, message, citations, onCitation }) => {
+  const t = useT();
   const { theme } = useAppSelector((state) => state.settings.appearance);
   const { activeExtensions, activeReplacement } = useAppSelector((state) => state.plugins);
 
@@ -91,7 +93,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
                   }}
                   className="text-xs text-text-secondary hover:text-text-primary transition-colors"
                 >
-                  Copy
+                  {t('common.copy', 'Copy')}
                 </button>
               </div>
               <SyntaxHighlighter
@@ -189,7 +191,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
                 type="button"
                 className="mx-0.5 inline-flex h-4 min-w-4 -translate-y-0.5 items-center justify-center rounded-full bg-accent/15 px-1 align-baseline text-[10px] font-semibold leading-none text-accent hover:bg-accent hover:text-white"
                 onClick={() => onCitation?.(cite)}
-                aria-label={`Source ${cite}`}
+                aria-label={t('citations.source', 'Source {{n}}', { n: cite })}
                 data-testid="citation-link"
               >
                 {cite}

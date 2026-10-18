@@ -14,6 +14,9 @@ export const ReadyResponse = z.object({
   status: z.enum(['ready', 'not_ready']),
   database: z.enum(['postgres', 'pglite']),
   migrations: z.object({ applied: z.number().int(), pending: z.number().int() }),
+  /** Redis, when configured (several instances): it must answer too. */
+  redis: z.enum(['ok', 'off', 'error']).optional(),
+  storage: z.enum(['local', 's3']).optional(),
   error: z.string().optional(),
 });
 export type ReadyResponse = z.infer<typeof ReadyResponse>;

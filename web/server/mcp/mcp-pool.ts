@@ -133,6 +133,13 @@ export class McpPools {
     await this.global.stopServer(id);
   }
 
+  /** Another instance changed this global server: restart it here (or stop it if it's gone). */
+  async reloadGlobal(id: string): Promise<void> {
+    await this.stopGlobal(id);
+    const [row] = await this.deps.db.select().from(mcpServers).where(and(eq(mcpServers.id, id), isNull(mcpServers.ownerId)));
+    if (row?.enabled) await this.startGlobal(row).catch(() => {});
+  }
+
   // ─── Per-user built-ins ────────────────────────────────────────────────────
 
   private userPool(userId: string): UserPool {

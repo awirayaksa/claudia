@@ -19,6 +19,9 @@ import { KnowledgePage } from './pages/workspace/KnowledgePage';
 import { RagSettingsPage } from './pages/admin/RagSettingsPage';
 import { MediaSettingsPage } from './pages/admin/MediaSettingsPage';
 import { PluginsPage } from './pages/admin/PluginsPage';
+import { AnalyticsPage } from './pages/admin/AnalyticsPage';
+import { AuditPage } from './pages/admin/AuditPage';
+import { WebhooksPage } from './pages/admin/WebhooksPage';
 
 /** Routes. Share links (/s/:token) are outside the sign-in gate. */
 export const routes: RouteObject[] = [
@@ -57,6 +60,9 @@ export const routes: RouteObject[] = [
           { path: 'knowledge', element: <RagSettingsPage /> },
           { path: 'media', element: <MediaSettingsPage /> },
           { path: 'plugins', element: <PluginsPage /> },
+          { path: 'analytics', element: <AnalyticsPage /> },
+          { path: 'webhooks', element: <WebhooksPage /> },
+          { path: 'audit', element: <AuditPage /> },
           { path: 'settings', element: <AdminSettingsPage /> },
         ],
       },

@@ -5,6 +5,7 @@ import { useLoadSettingsFromStore } from '@/hooks/useLoadSettingsFromStore';
 import { toggleSidebar } from '@/store/slices/uiSlice';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { Sidebar } from './Sidebar';
+import { BannerBar } from './BannerBar';
 import { MenuIcon } from '../components/icons';
 import { useMcpSync } from '../chat/useMcpSync';
 import { usePlugins } from '../plugins/loader';
@@ -105,6 +106,7 @@ export function AppShell() {
             <MenuIcon />
           </button>
         )}
+        <BannerBar />
         <main className="min-h-0 flex-1 overflow-hidden">
           <Outlet />
         </main>

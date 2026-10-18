@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { useT } from '../../i18n';
 
 type MermaidApi = typeof import('mermaid').default;
 
@@ -39,6 +40,7 @@ interface MermaidDiagramProps {
 }
 
 export function MermaidDiagram({ code, isDark, fallback }: MermaidDiagramProps) {
+  const t = useT();
   const id = `mermaid-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const [svg, setSvg] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
@@ -70,7 +72,7 @@ export function MermaidDiagram({ code, isDark, fallback }: MermaidDiagramProps) 
             className="mt-1 text-xs text-text-secondary hover:text-text-primary"
             onClick={() => setShowSource(false)}
           >
-            Show diagram
+            {t('mermaid.showDiagram', 'Show diagram')}
           </button>
         )}
       </div>
@@ -86,7 +88,7 @@ export function MermaidDiagram({ code, isDark, fallback }: MermaidDiagramProps) 
       {/* mermaid's own output in strict mode (sanitized labels, no scripts or click handlers) */}
       <div className="flex justify-center [&_svg]:max-w-full" dangerouslySetInnerHTML={{ __html: svg }} />
       <button className="mt-1 text-xs text-text-secondary hover:text-text-primary" onClick={() => setShowSource(true)}>
-        Show source
+        {t('mermaid.showSource', 'Show source')}
       </button>
     </figure>
   );

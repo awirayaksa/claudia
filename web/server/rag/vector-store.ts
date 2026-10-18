@@ -26,17 +26,36 @@ export class VectorStore {
     return { name: sql.raw(`embeddings_${dims}`), type: dims > HALFVEC_ABOVE ? 'halfvec' : 'vector' };
   }
 
+  private creating = new Map<number, Promise<void>>();
+
+  /**
+   * Create the table for this size once. "if not exists" alone races on
+   * PostgreSQL when two jobs (or instances) get there together, so creation
+   * is serialized with an advisory lock, and here by one shared promise.
+   */
   async ensure(dims: number): Promise<void> {
     if (this.ready.has(dims)) return;
-    const { name, type } = this.table(dims);
-    await this.db.execute(sql`create table if not exists ${name} (
-      chunk_id uuid primary key references chunks(id) on delete cascade,
-      embedding ${sql.raw(`${type}(${dims})`)} not null
-    )`);
-    await this.db.execute(
-      sql`create index if not exists ${sql.raw(`embeddings_${dims}_hnsw`)} on ${name} using hnsw (embedding ${sql.raw(`${type}_cosine_ops`)})`
-    );
-    this.ready.add(dims);
+    let pending = this.creating.get(dims);
+    if (!pending) {
+      const { name, type } = this.table(dims);
+      pending = this.db
+        .transaction(async (tx) => {
+          await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`claudia:embeddings_${dims}`}))`);
+          await tx.execute(sql`create table if not exists ${name} (
+            chunk_id uuid primary key references chunks(id) on delete cascade,
+            embedding ${sql.raw(`${type}(${dims})`)} not null
+          )`);
+          await tx.execute(
+            sql`create index if not exists ${sql.raw(`embeddings_${dims}_hnsw`)} on ${name} using hnsw (embedding ${sql.raw(`${type}_cosine_ops`)})`
+          );
+        })
+        .then(() => {
+          this.ready.add(dims);
+        })
+        .finally(() => this.creating.delete(dims));
+      this.creating.set(dims, pending);
+    }
+    await pending;
   }
 
   async insert(rows: Array<{ chunkId: string; vector: number[] }>): Promise<void> {

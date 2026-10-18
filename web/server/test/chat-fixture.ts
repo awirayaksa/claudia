@@ -44,40 +44,8 @@ export async function chatFixture(
   }
 
   /** Read a run's SSE stream to the end (or until `until` returns true). */
-  async function readRun(
-    client: TestClient,
-    runId: string,
-    after = 0,
-    until?: (e: RunEventEnvelope) => boolean
-  ): Promise<RunEventEnvelope[]> {
-    const cookie = [...client.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
-    const controller = new AbortController();
-    const res = await fetch(`${base}/api/runs/${runId}/events?after=${after}`, { headers: { cookie }, signal: controller.signal });
-    if (!res.ok) throw new Error(`events: ${res.status} ${await res.text()}`);
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    const out: RunEventEnvelope[] = [];
-    let buf = '';
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buf += decoder.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n\n')) >= 0) {
-        const frame = buf.slice(0, idx);
-        buf = buf.slice(idx + 2);
-        const data = frame.split('\n').find((l) => l.startsWith('data: '));
-        if (!data) continue;
-        const env = JSON.parse(data.slice(6)) as RunEventEnvelope;
-        out.push(env);
-        if (until?.(env)) {
-          controller.abort();
-          return out;
-        }
-      }
-    }
-    return out;
-  }
+  const readRun = (client: TestClient, runId: string, after = 0, until?: (e: RunEventEnvelope) => boolean) =>
+    readRunFrom(base, client, runId, after, until);
 
   return {
     ...t,
@@ -92,6 +60,43 @@ export async function chatFixture(
       await mock.close();
     },
   } as const;
+}
+
+/** Read a run's SSE stream from the app at `base` (another instance, say) with `client`'s cookies. */
+export async function readRunFrom(
+  base: string,
+  client: TestClient,
+  runId: string,
+  after = 0,
+  until?: (e: RunEventEnvelope) => boolean
+): Promise<RunEventEnvelope[]> {
+  const cookie = [...client.cookies].map(([k, v]) => `${k}=${v}`).join('; ');
+  const controller = new AbortController();
+  const res = await fetch(`${base}/api/runs/${runId}/events?after=${after}`, { headers: { cookie }, signal: controller.signal });
+  if (!res.ok) throw new Error(`events: ${res.status} ${await res.text()}`);
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  const out: RunEventEnvelope[] = [];
+  let buf = '';
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    let idx;
+    while ((idx = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, idx);
+      buf = buf.slice(idx + 2);
+      const data = frame.split('\n').find((l) => l.startsWith('data: '));
+      if (!data) continue;
+      const env = JSON.parse(data.slice(6)) as RunEventEnvelope;
+      out.push(env);
+      if (until?.(env)) {
+        controller.abort();
+        return out;
+      }
+    }
+  }
+  return out;
 }
 
 export type ChatFixture = Awaited<ReturnType<typeof chatFixture>>;

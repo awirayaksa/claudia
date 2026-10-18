@@ -231,6 +231,7 @@ export async function adminMcpRoutes(app: FastifyInstance, ctx: ServerContext): 
   const restart = async (row: McpServerRow) => {
     await ctx.mcp.stopGlobal(row.id);
     if (row.enabled) await ctx.mcp.startGlobal(row).catch(() => {});
+    ctx.cluster.signal('mcp.global', { id: row.id });
   };
 
   app.get('/', async () => ({ servers: (await ctx.mcp.globalRows()).map(view) }));
@@ -319,6 +320,7 @@ export async function adminMcpRoutes(app: FastifyInstance, ctx: ServerContext): 
     await getRow(id);
     await ctx.mcp.stopGlobal(id);
     await ctx.db.delete(mcpServers).where(eq(mcpServers.id, id));
+    ctx.cluster.signal('mcp.global', { id });
     return { ok: true };
   });
 }

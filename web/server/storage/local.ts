@@ -1,6 +1,6 @@
 /**
- * File storage on the local disk (DATA_DIR/storage). S3 arrives in Phase 6
- * behind the same interface.
+ * File storage on the local disk (DATA_DIR/storage). With S3_BUCKET set,
+ * S3Storage (./s3.ts) takes its place behind the same interface.
  */
 import fs from 'node:fs';
 import path from 'node:path';

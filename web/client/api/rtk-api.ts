@@ -26,6 +26,16 @@ import type { AppSettingsResponse, UserSettingsInput } from '@shared/settings';
 import type { PublicConfig } from '@shared/api';
 import type { MediaSettingsResponse, MediaSettingsUpdate } from '@shared/media';
 import type { PluginView } from '@shared/plugins';
+import type {
+  AnalyticsResponse,
+  AuditPage,
+  AuditQuery,
+  Banner,
+  WebhookInput,
+  WebhookTestResult,
+  WebhookView,
+  WebhookWithSecret,
+} from '@shared/admin';
 import type { KnowledgeDetail, KnowledgeInput, KnowledgeView, RagSettingsResponse, RagSettingsUpdate, SearchHit } from '@shared/knowledge';
 import type {
   GrantInput,
@@ -114,6 +124,9 @@ export const api = createApi({
     'Media',
     'ToolServers',
     'Plugins',
+    'Webhooks',
+    'Audit',
+    'Banners',
   ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
@@ -403,6 +416,35 @@ export const api = createApi({
       invalidatesTags: ['ToolServers', 'McpServers'],
     }),
     adminPlugins: b.query<{ plugins: PluginView[] }, void>({ query: () => '/admin/plugins', providesTags: ['Plugins'] }),
+
+    // Phase 6: admin operations
+    analytics: b.query<AnalyticsResponse, number>({ query: (days) => `/admin/analytics?days=${days}` }),
+    auditLog: b.query<AuditPage, AuditQuery>({
+      query: (q) => `/admin/audit?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`,
+      providesTags: ['Audit'],
+    }),
+    webhooks: b.query<{ webhooks: WebhookView[] }, void>({ query: () => '/admin/webhooks', providesTags: ['Webhooks'] }),
+    createWebhook: b.mutation<WebhookWithSecret, WebhookInput>({
+      query: (body) => ({ url: '/admin/webhooks', method: 'POST', body }),
+      invalidatesTags: ['Webhooks', 'Audit'],
+    }),
+    updateWebhook: b.mutation<{ webhook: WebhookView }, Partial<WebhookInput> & { id: string }>({
+      query: ({ id, ...body }) => ({ url: `/admin/webhooks/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Webhooks', 'Audit'],
+    }),
+    rotateWebhookSecret: b.mutation<WebhookWithSecret, string>({
+      query: (id) => ({ url: `/admin/webhooks/${id}/rotate-secret`, method: 'POST' }),
+      invalidatesTags: ['Webhooks', 'Audit'],
+    }),
+    testWebhook: b.mutation<{ result: WebhookTestResult }, string>({
+      query: (id) => ({ url: `/admin/webhooks/${id}/test`, method: 'POST' }),
+      invalidatesTags: ['Webhooks'],
+    }),
+    deleteWebhook: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/admin/webhooks/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Webhooks', 'Audit'],
+    }),
+    banners: b.query<{ banners: Banner[] }, void>({ query: () => '/banners', providesTags: ['Banners'] }),
     updatePlugin: b.mutation<{ plugin: PluginView }, { id: string; enabled?: boolean; settings?: Record<string, unknown> }>({
       query: ({ id, ...body }) => ({ url: `/admin/plugins/${encodeURIComponent(id)}`, method: 'PATCH', body }),
       invalidatesTags: ['Plugins'],
@@ -591,7 +633,7 @@ export const api = createApi({
     }),
     updateAppSetting: b.mutation<unknown, { key: keyof AppSettingsResponse; value: unknown }>({
       query: ({ key, value }) => ({ url: `/admin/settings/${key}`, method: 'PATCH', body: value }),
-      invalidatesTags: ['AppSettings', 'Models', 'Session', 'McpServers', 'MyConnections', 'Usage', 'ApiKeys', 'OwnMcp'],
+      invalidatesTags: ['AppSettings', 'Models', 'Session', 'McpServers', 'MyConnections', 'Usage', 'ApiKeys', 'OwnMcp', 'Banners', 'MySettings', 'Audit'],
     }),
   }),
 });
@@ -715,6 +757,15 @@ export const {
   useAdminPluginsQuery,
   useUpdatePluginMutation,
   useDeletePluginMutation,
+  useAnalyticsQuery,
+  useAuditLogQuery,
+  useWebhooksQuery,
+  useCreateWebhookMutation,
+  useUpdateWebhookMutation,
+  useRotateWebhookSecretMutation,
+  useTestWebhookMutation,
+  useDeleteWebhookMutation,
+  useBannersQuery,
 } = api;
 
 export interface ToolServerView {

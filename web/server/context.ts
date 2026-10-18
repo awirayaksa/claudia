@@ -22,6 +22,9 @@ import type { KnowledgeService } from './rag/knowledge';
 import type { JobQueue } from './jobs/queue';
 import type { EventHub } from './ws/gateway';
 import type { MediaConfig } from './media/config';
+import type { Cluster } from './cluster/cluster';
+import type { AuditLog } from './admin/audit';
+import type { Webhooks } from './admin/webhooks';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -49,5 +52,9 @@ export interface ServerContext {
   jobs: JobQueue;
   events: EventHub;
   media: MediaConfig;
+  /** Other instances: pub/sub, shared state and change signals. */
+  cluster: Cluster;
+  audit: AuditLog;
+  webhooks: Webhooks;
   log: FastifyBaseLogger;
 }

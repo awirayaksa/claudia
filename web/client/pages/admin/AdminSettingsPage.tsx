@@ -4,6 +4,7 @@ import { Button } from '@/components/common/Button';
 import type { AppSettingsResponse } from '@shared/settings';
 import { errorMessage, useAppSettingsQuery, useModelsQuery, useUpdateAppSettingMutation } from '../../api/rtk-api';
 import { CapsFields, PermissionChecks } from '../../components/AccessFields';
+import { BannersEditor, DefaultsEditor } from './OpsSettings';
 
 /** The built-in tool servers (each user gets their own, confined to their workspace). */
 const BUILTIN_IDS = ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'] as const;
@@ -214,6 +215,28 @@ export function AdminSettingsPage() {
           onChange={(c) => set('caps.default', { ...draft['caps.default'], ...c })}
           emptyLabel={t('access.noLimit')}
         />
+      </Card>
+
+      <Card title={t('banners.title')}>
+        <BannersEditor value={draft['ui.banners']} onChange={(v) => set('ui.banners', v)} />
+      </Card>
+
+      <Card title={t('defaults.title')}>
+        <DefaultsEditor value={draft['users.defaults']} onChange={(v) => set('users.defaults', v)} />
+      </Card>
+
+      <Card title={t('audit.title')}>
+        <label className="block text-sm">
+          <span className="mb-1 block">{t('audit.retentionDays')}</span>
+          <input
+            type="number"
+            min={1}
+            max={3650}
+            className="w-40 rounded border border-border bg-background px-2 py-1"
+            value={draft.audit.retentionDays}
+            onChange={(e) => set('audit', { retentionDays: Math.min(3650, Math.max(1, Number(e.target.value) || 1)) })}
+          />
+        </label>
       </Card>
 
       <div className="flex items-center gap-3">

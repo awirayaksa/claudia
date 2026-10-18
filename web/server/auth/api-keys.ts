@@ -90,6 +90,7 @@ export async function apiKeyRoutes(app: FastifyInstance, ctx: ServerContext): Pr
         expiresAt: body.expiresInDays ? new Date(Date.now() + body.expiresInDays * 86_400_000) : null,
       })
       .returning();
+    void ctx.audit.fromRequest(req, 'api_key.created', { targetType: 'api_key', targetId: row.id, details: { name: row.name, prefix: row.prefix } });
     reply.code(201);
     return { key: toView(row), secret };
   });
@@ -102,6 +103,7 @@ export async function apiKeyRoutes(app: FastifyInstance, ctx: ServerContext): Pr
       .where(and(eq(apiKeys.id, id), eq(apiKeys.userId, currentUser(req).id)))
       .returning({ id: apiKeys.id });
     if (deleted.length === 0) throw notFound('API key');
+    void ctx.audit.fromRequest(req, 'api_key.revoked', { targetType: 'api_key', targetId: id });
     return { ok: true };
   });
 }

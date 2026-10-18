@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { createKeyring } from '../crypto/keys';
 import { SecretBox, maskSecret } from '../crypto/secrets';
 import { uuidv7, isUuid } from '../lib/ids';
-import { LoginGuard } from './login-guard';
+import { MemoryLoginGuard } from './login-guard';
 import { signAccessToken, verifyAccessToken, parseRefreshToken, ACCESS_TTL_SECONDS } from './tokens';
 import { RunHub } from '../llm/run-hub';
 import { cleanTitle, fallbackTitle } from '../llm/tasks';
@@ -76,51 +76,51 @@ describe('uuidv7', () => {
 });
 
 describe('LoginGuard', () => {
-  it('allows five failures, then locks with doubling waits', () => {
+  it('allows five failures, then locks with doubling waits', async () => {
     let now = 0;
-    const g = new LoginGuard(() => now);
-    for (let i = 0; i < 5; i++) g.recordFailure('a');
-    expect(g.lockedFor('a')).toBe(0);
-    g.recordFailure('a');
-    expect(g.lockedFor('a')).toBe(30_000);
+    const g = new MemoryLoginGuard(() => now);
+    for (let i = 0; i < 5; i++) await g.recordFailure('a');
+    expect(await g.lockedFor('a')).toBe(0);
+    await g.recordFailure('a');
+    expect(await g.lockedFor('a')).toBe(30_000);
     now += 30_000;
-    g.recordFailure('a');
-    expect(g.lockedFor('a')).toBe(60_000);
-    g.recordSuccess('a');
-    expect(g.lockedFor('a')).toBe(0);
+    await g.recordFailure('a');
+    expect(await g.lockedFor('a')).toBe(60_000);
+    await g.recordSuccess('a');
+    expect(await g.lockedFor('a')).toBe(0);
   });
 });
 
 describe('RunHub', () => {
-  it('locks a branch point, caps concurrent runs and replays events', () => {
+  it('locks a branch point, caps concurrent runs and replays events', async () => {
     const hub = new RunHub();
-    const run = hub.start({ userId: 'u', chatId: 'c', lockKey: 'c:root', maxConcurrent: 2 });
-    expect(() => hub.start({ userId: 'u', chatId: 'c', lockKey: 'c:root', maxConcurrent: 2 })).toThrow(/already being written/);
-    hub.start({ userId: 'u', chatId: 'c', lockKey: 'c:x', maxConcurrent: 2 });
-    expect(() => hub.start({ userId: 'u', chatId: 'd', lockKey: 'd:root', maxConcurrent: 2 })).toThrow(/already have 2/);
+    const run = await hub.start({ userId: 'u', chatId: 'c', lockKey: 'c:root', maxConcurrent: 2 });
+    await expect(hub.start({ userId: 'u', chatId: 'c', lockKey: 'c:root', maxConcurrent: 2 })).rejects.toThrow(/already being written/);
+    await hub.start({ userId: 'u', chatId: 'c', lockKey: 'c:x', maxConcurrent: 2 });
+    await expect(hub.start({ userId: 'u', chatId: 'd', lockKey: 'd:root', maxConcurrent: 2 })).rejects.toThrow(/already have 2/);
 
     hub.emit(run, { type: 'message.delta', messageId: 'm', text: 'a' });
     hub.emit(run, { type: 'message.delta', messageId: 'm', text: 'b' });
     const seen: number[] = [];
-    const unsub = hub.subscribe(run, 1, (e) => seen.push(e.seq));
+    const unsub = await hub.subscribe(run, 1, (e) => seen.push(e.seq));
     hub.emit(run, { type: 'message.delta', messageId: 'm', text: 'c' });
     unsub();
     hub.finish(run, 'completed');
     expect(seen).toEqual([2, 3]);
     // Lock released
-    expect(() => hub.start({ userId: 'v', chatId: 'c', lockKey: 'c:root', maxConcurrent: 2 })).not.toThrow();
+    await expect(hub.start({ userId: 'v', chatId: 'c', lockKey: 'c:root', maxConcurrent: 2 })).resolves.toBeTruthy();
     hub.close();
   });
 
   it('times out a browser tool and resolves a submitted one', async () => {
     const hub = new RunHub();
-    const run = hub.start({ userId: 'u', chatId: 'c', lockKey: 'k', maxConcurrent: 1 });
+    const run = await hub.start({ userId: 'u', chatId: 'c', lockKey: 'k', maxConcurrent: 1 });
     const timedOut = await hub.awaitClientTool(run, 'call-1', 10);
     expect(timedOut.isError).toBe(true);
     const pending = hub.awaitClientTool(run, 'call-2', 5_000);
-    expect(hub.submitClientTool(run, 'call-2', { content: 'done' })).toBe(true);
+    expect(await hub.submitClientTool(run, 'call-2', { content: 'done' })).toBe(true);
     expect(await pending).toEqual({ content: 'done' });
-    expect(hub.submitClientTool(run, 'call-2', { content: 'again' })).toBe(false);
+    expect(await hub.submitClientTool(run, 'call-2', { content: 'again' })).toBe(false);
     hub.close();
   });
 });

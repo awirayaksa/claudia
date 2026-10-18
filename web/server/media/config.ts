@@ -6,6 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { appConfig } from '../db/schema';
 import type { SecretBox } from '../crypto/secrets';
+import type { Cluster } from '../cluster/cluster';
 import { badRequest } from '../lib/errors';
 import { MediaSettings, type MediaSettingsResponse, type MediaSettingsUpdate } from '../../shared/media';
 
@@ -23,7 +24,14 @@ interface Secrets {
 export class MediaConfig {
   private cached: { settings: MediaSettings; secrets: Secrets } | null = null;
 
-  constructor(private readonly deps: { db: Database; secrets: SecretBox }) {}
+  constructor(private readonly deps: { db: Database; secrets: SecretBox; cluster?: Cluster }) {
+    deps.cluster?.on('media', () => this.reset());
+  }
+
+  /** Forget the cached settings (another instance changed them). */
+  reset(): void {
+    this.cached = null;
+  }
 
   private async load() {
     if (this.cached) return this.cached;
@@ -87,6 +95,7 @@ export class MediaConfig {
         .onConflictDoUpdate({ target: appConfig.key, set: { value, updatedAt: new Date() } });
     }
     this.cached = null;
+    this.deps.cluster?.signal('media');
     return this.view();
   }
 }

@@ -1,12 +1,16 @@
 /**
  * Admin-editable settings in `app_config`, typed and validated. Values given
- * by environment variables win and are reported as locked.
+ * by environment variables win and are reported as locked. Each instance
+ * caches them; a change tells the other instances to read them again.
  */
 import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { Database } from '../../db/client';
+import type { Cluster } from '../../cluster/cluster';
 import { appConfig } from '../../db/schema';
 import { DEFAULT_PERMISSIONS, DefaultCapsSchema, PermissionsSchema } from '../../../shared/access';
+import { Banner } from '../../../shared/admin';
+import { UserDefaultsSchema } from '../../../shared/settings';
 
 export const AppSettingsSchema = {
   'auth.signup': z.object({
@@ -45,6 +49,11 @@ export const AppSettingsSchema = {
   'permissions.default': PermissionsSchema,
   /** Token and cost caps for everyone (null = no limit); groups can raise them. */
   'caps.default': DefaultCapsSchema,
+  /** Notices at the top of every signed-in page. */
+  'ui.banners': z.object({ items: z.array(Banner).max(20) }),
+  /** Appearance and preferences a user has until they change them. */
+  'users.defaults': UserDefaultsSchema,
+  audit: z.object({ retentionDays: z.number().int().min(1).max(3650) }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -62,12 +71,22 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   'net.allowlist': { hosts: [] },
   'permissions.default': DEFAULT_PERMISSIONS,
   'caps.default': { tokensPerDay: null, tokensPerMonth: null, costPerDay: null, costPerMonth: null },
+  'ui.banners': { items: [] },
+  'users.defaults': { appearance: {}, preferences: {} },
+  audit: { retentionDays: 365 },
 };
 
 export class AppSettings {
   private cache = new Map<AppSettingKey, unknown>();
 
-  constructor(private readonly db: Database) {}
+  constructor(
+    private readonly db: Database,
+    private readonly cluster?: Cluster
+  ) {
+    cluster?.on('settings', ({ key }) => {
+      this.cache.delete(key as AppSettingKey);
+    });
+  }
 
   async get<K extends AppSettingKey>(key: K): Promise<AppSettingValue<K>> {
     if (this.cache.has(key)) return this.cache.get(key) as AppSettingValue<K>;
@@ -92,6 +111,7 @@ export class AppSettings {
       .values({ key, value: parsed })
       .onConflictDoUpdate({ target: appConfig.key, set: { value: parsed, updatedAt: new Date() } });
     this.cache.set(key, parsed);
+    this.cluster?.signal('settings', { key });
     return parsed;
   }
 

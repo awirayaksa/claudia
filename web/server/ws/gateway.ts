@@ -5,13 +5,15 @@
  * this app's own origin (browsers send cookies with cross-site WebSocket
  * handshakes, so the Origin check is the CSRF protection here).
  *
- * In-process for now; Phase 6 fans events out across instances via Redis.
+ * With Redis (several instances) an event goes out on one channel and every
+ * instance hands it to its own subscribed sockets.
  */
 import type { FastifyInstance } from 'fastify';
 import fastifyWebsocket from '@fastify/websocket';
 import type { WebSocket } from 'ws';
 import type { ServerContext } from '../context';
 import type { AuthUser } from '../auth/sessions';
+import type { Cluster } from '../cluster/cluster';
 
 export type TopicGuard = (user: AuthUser, id: string) => Promise<boolean>;
 
@@ -20,6 +22,23 @@ const PING_MS = 25_000;
 export class EventHub {
   private subs = new Map<string, Set<WebSocket>>();
   private guards = new Map<string, TopicGuard>();
+  private unsubscribeBus: (() => void) | null = null;
+
+  constructor(private readonly cluster?: Cluster) {}
+
+  /** Start receiving other instances' events (several instances). */
+  async listen(): Promise<void> {
+    if (!this.cluster?.distributed || this.unsubscribeBus) return;
+    this.unsubscribeBus = await this.cluster.bus.subscribe(this.cluster.key('events'), (raw) => {
+      const { topic, event } = JSON.parse(raw) as { topic: string; event: object };
+      this.deliver(topic, event);
+    });
+  }
+
+  close(): void {
+    this.unsubscribeBus?.();
+    this.unsubscribeBus = null;
+  }
 
   /** Who may subscribe to "<kind>:<id>". */
   guard(kind: string, check: TopicGuard): void {
@@ -45,6 +64,15 @@ export class EventHub {
   }
 
   publish(topic: string, event: object): void {
+    if (this.unsubscribeBus && this.cluster) {
+      void this.cluster.bus.publish(this.cluster.key('events'), JSON.stringify({ topic, event })).catch(() => this.deliver(topic, event));
+      return;
+    }
+    this.deliver(topic, event);
+  }
+
+  /** Send to this instance's sockets on `topic`. */
+  private deliver(topic: string, event: object): void {
     const set = this.subs.get(topic);
     if (!set) return;
     const data = JSON.stringify({ topic, event });

@@ -31,7 +31,7 @@ describe('health endpoints', () => {
 
     const after = await t.app.inject({ method: 'GET', url: '/readyz' });
     expect(after.statusCode).toBe(200);
-    expect(after.json()).toMatchObject({ status: 'ready', database: 'pglite', migrations: { pending: 0 } });
+    expect(after.json()).toMatchObject({ status: 'ready', database: t.db.kind, migrations: { pending: 0 } });
   });
 
   it('/readyz is 503 when the database is gone', async () => {

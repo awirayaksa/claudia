@@ -7,6 +7,7 @@ import { eq } from 'drizzle-orm';
 import type { Database } from '../db/client';
 import { appConfig } from '../db/schema';
 import type { SecretBox } from '../crypto/secrets';
+import type { Cluster } from '../cluster/cluster';
 import { RagSettings, type RagSettingsResponse, type RagSettingsUpdate } from '../../shared/knowledge';
 import { createEmbedder, localEngineAvailable, type Embedder } from './embed';
 
@@ -30,7 +31,9 @@ export class RagConfig {
   private cached: { settings: RagSettings; secrets: Secrets } | null = null;
   private embedderCache: { stamp: string; embedder: Embedder | null } | null = null;
 
-  constructor(private readonly deps: { db: Database; secrets: SecretBox }) {}
+  constructor(private readonly deps: { db: Database; secrets: SecretBox; cluster?: Cluster }) {
+    deps.cluster?.on('rag', () => this.reset());
+  }
 
   private async load(): Promise<{ settings: RagSettings; secrets: Secrets }> {
     if (this.cached) return this.cached;
@@ -103,6 +106,7 @@ export class RagConfig {
     }
     this.cached = null;
     this.embedderCache = null;
+    this.deps.cluster?.signal('rag');
     return { view: await this.view(), embeddingChanged: before !== (await this.embedderKey()) };
   }
 
@@ -125,7 +129,7 @@ export class RagConfig {
     return embedder;
   }
 
-  /** Forget the cached settings (tests that write app_config directly). */
+  /** Forget the cached settings (another instance changed them, or a test wrote app_config). */
   reset(): void {
     this.cached = null;
     this.embedderCache = null;

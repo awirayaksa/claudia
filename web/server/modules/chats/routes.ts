@@ -99,7 +99,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
         currentLeafId: chat.currentLeafId,
         params: chat.params,
         messages: nodes,
-        activeRuns: ctx.runs.activeForChat(chat.id).map((r) => ({ runId: r.id, lastSeq: r.events.length })),
+        activeRuns: (await ctx.runs.activeForChat(chat.id)).map((r) => ({ runId: r.id, lastSeq: r.lastSeq })),
         share: share ? toShareView(share) : null,
       },
     };
@@ -139,7 +139,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     const me = currentUser(req);
     const { id } = IdParams.parse(req.params);
     const chat = await repo.getOwned(me.id, id);
-    for (const run of ctx.runs.activeForChat(chat.id)) ctx.runs.stop(run);
+    for (const run of await ctx.runs.activeForChat(chat.id)) await ctx.runs.stop(run);
     await ctx.db.delete(chats).where(eq(chats.id, chat.id));
     return { ok: true };
   });
@@ -286,7 +286,7 @@ export async function runRoutes(app: FastifyInstance, ctx: ServerContext): Promi
 
   app.get('/:id/events', async (req, reply) => {
     const { id } = IdParams.parse(req.params);
-    const run = ctx.runs.getOwned(id, currentUser(req).id);
+    const run = await ctx.runs.find(id, currentUser(req).id);
     const lastEventId = Number(req.headers['last-event-id']);
     const after = Number.isFinite(lastEventId)
       ? lastEventId
@@ -314,19 +314,19 @@ export async function runRoutes(app: FastifyInstance, ctx: ServerContext): Promi
       unsubscribe();
       res.end();
     };
-    unsubscribe = ctx.runs.subscribe(run, after, (envelope) => {
+    req.raw.on('close', close);
+    unsubscribe = await ctx.runs.subscribe(run, after, (envelope) => {
       if (closed) return;
       res.write(`id: ${envelope.seq}\nevent: run\ndata: ${JSON.stringify(envelope)}\n\n`);
       if (envelope.event.type === 'run.completed') close();
     });
     if (closed) unsubscribe();
     else if (run.done) close();
-    req.raw.on('close', close);
   });
 
   app.post('/:id/stop', async (req) => {
     const { id } = IdParams.parse(req.params);
-    ctx.runs.stop(ctx.runs.getOwned(id, currentUser(req).id));
+    await ctx.runs.stop(await ctx.runs.find(id, currentUser(req).id));
     return { ok: true };
   });
 
@@ -336,8 +336,8 @@ export async function runRoutes(app: FastifyInstance, ctx: ServerContext): Promi
     const body = z
       .object({ callId: z.string().min(1), content: z.string().max(1_000_000), isError: z.boolean().optional() })
       .parse(req.body);
-    const run = ctx.runs.getOwned(id, currentUser(req).id);
-    if (!ctx.runs.submitClientTool(run, body.callId, { content: body.content, isError: body.isError })) {
+    const run = await ctx.runs.find(id, currentUser(req).id);
+    if (!(await ctx.runs.submitClientTool(run, body.callId, { content: body.content, isError: body.isError }))) {
       throw notFound('Pending tool call');
     }
     return { ok: true };

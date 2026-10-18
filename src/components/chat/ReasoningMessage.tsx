@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useT } from '../../i18n';
 
 interface ReasoningMessageProps {
   reasoning: string;
@@ -13,11 +14,12 @@ function estimateDuration(text: string): string {
 }
 
 export function ReasoningMessage({ reasoning, isStreaming = false }: ReasoningMessageProps) {
+  const t = useT();
   const [isExpanded, setIsExpanded] = useState(false);
 
   if (!reasoning) return null;
 
-  const label = isStreaming ? 'Thinking…' : `Thought for ${estimateDuration(reasoning)}`;
+  const label = isStreaming ? t('reasoning.thinking', 'Thinking…') : t('reasoning.thoughtFor', 'Thought for {{duration}}', { duration: estimateDuration(reasoning) });
 
   return (
     <div className={`my-2 overflow-hidden rounded-lg border border-border bg-background ${isExpanded ? 'w-full' : 'max-w-[360px]'}`}>

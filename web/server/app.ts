@@ -14,7 +14,13 @@ import { createKeyring } from './crypto/keys';
 import { SecretBox } from './crypto/secrets';
 import { registerErrorHandler } from './lib/errors';
 import { AppSettings } from './modules/settings/app-settings';
-import { LoginGuard } from './auth/login-guard';
+import { MemoryLoginGuard, RedisLoginGuard } from './auth/login-guard';
+import { Cluster } from './cluster/cluster';
+import { S3Storage } from './storage/s3';
+import { AuditLog, registerAdminAudit } from './admin/audit';
+import { Webhooks } from './admin/webhooks';
+import { adminOpsRoutes, bannerRoutes } from './admin/routes';
+import { registerRequestTracing } from './telemetry';
 import { registerAuthHooks } from './auth/rbac';
 import { authRoutes } from './auth/routes';
 import { bootstrapAdmin } from './auth/bootstrap';
@@ -26,7 +32,7 @@ import { ModelRegistry } from './llm/model-registry';
 import { RunHub } from './llm/run-hub';
 import { ChatOrchestrator, type OrchestratorDeps } from './llm/chat-orchestrator';
 import { registerSandboxHost, sandboxOriginFor } from './sandbox';
-import { LocalStorage } from './storage/local';
+import { LocalStorage, type Storage } from './storage/local';
 import { ExtractPool } from './extract/pool';
 import { FileService } from './modules/files/service';
 import { fileRoutes } from './modules/files/routes';
@@ -139,19 +145,33 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
 
   const keyring = createKeyring(deps.rootSecret, deps.config.previousSecretKeys);
   const secrets = new SecretBox(keyring);
-  const settings = new AppSettings(deps.db.db);
-  const runs = new RunHub();
+  const cluster = await Cluster.open({ redisUrl: deps.config.REDIS_URL, prefix: deps.config.REDIS_PREFIX, log: app.log });
+  const settings = new AppSettings(deps.db.db, cluster);
+  const runs = new RunHub({ cluster, log: app.log });
   const access = new AccessService({ db: deps.db.db, settings });
   const usage = new UsageService({ db: deps.db.db, access });
-  const models = new ModelRegistry({ db: deps.db.db, secrets, settings, access, log: app.log });
-  const storage = new LocalStorage(path.join(deps.config.dataDir, 'storage'));
+  const models = new ModelRegistry({ db: deps.db.db, secrets, settings, access, log: app.log, cluster });
+  const storage: Storage = deps.config.S3_BUCKET
+    ? new S3Storage({
+        bucket: deps.config.S3_BUCKET,
+        region: deps.config.S3_REGION,
+        endpoint: deps.config.S3_ENDPOINT,
+        accessKeyId: deps.config.S3_ACCESS_KEY_ID,
+        secretAccessKey: deps.config.S3_SECRET_ACCESS_KEY,
+        forcePathStyle: deps.config.S3_FORCE_PATH_STYLE,
+        prefix: deps.config.S3_PREFIX,
+      })
+    : new LocalStorage(path.join(deps.config.dataDir, 'storage'));
   const extract = new ExtractPool();
   const files = new FileService({ db: deps.db.db, storage, extract, log: app.log });
   const skills = new SkillService(deps.db.db);
-  const rag = new RagConfig({ db: deps.db.db, secrets });
-  const media = new MediaConfig({ db: deps.db.db, secrets });
-  const jobQueue = new JobQueue({ db: deps.db.db, log: app.log });
-  const events = new EventHub();
+  const rag = new RagConfig({ db: deps.db.db, secrets, cluster });
+  const media = new MediaConfig({ db: deps.db.db, secrets, cluster });
+  const jobQueue = new JobQueue({ db: deps.db.db, log: app.log, notifier: deps.db });
+  const events = new EventHub(cluster);
+  await events.listen();
+  const webhooks = new Webhooks({ db: deps.db.db, secrets, jobs: jobQueue, log: app.log });
+  const audit = new AuditLog({ db: deps.db.db, settings, log: app.log, webhooks });
   const knowledge = new KnowledgeService({
     db: deps.db.db,
     storage,
@@ -161,6 +181,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     jobs: jobQueue,
     events,
     log: app.log,
+    webhooks,
   });
   const netPolicy = () => ({ allow: settings.peek('net.allowlist').hosts });
   const sources = new SourceBuilder({
@@ -188,7 +209,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     keyring,
     secrets,
     settings,
-    loginGuard: new LoginGuard(),
+    loginGuard: cluster.redis ? new RedisLoginGuard(cluster.redis, deps.config.REDIS_PREFIX) : new MemoryLoginGuard(),
     models,
     runs,
     orchestrator: new ChatOrchestrator({
@@ -207,6 +228,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       rag,
       sandboxOrigin: sandboxOriginFor(deps.config),
       media,
+      webhooks,
       ...deps.orchestrator,
     }),
     storage,
@@ -223,9 +245,13 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     jobs: jobQueue,
     events,
     media,
+    cluster,
+    audit,
+    webhooks,
     log: app.log,
   };
   app.decorate('ctx', ctx);
+  cluster.on('mcp.global', ({ id }) => mcp.reloadGlobal(String(id)));
   // Temporary chats go after a day without activity
   const purgeTemporary = () =>
     void new ChatRepo(deps.db.db)
@@ -237,14 +263,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     clearInterval(sweeper);
     await jobQueue.stop();
     runs.close();
+    events.close();
+    audit.close();
     await mcp.close();
     await extract.close();
+    await cluster.close();
   });
 
   if (deps.sandboxDir) registerSandboxHost(app, deps.config, deps.sandboxDir);
   registerErrorHandler(app);
   await app.register(fastifyCookie);
-  await app.register(fastifyRateLimit, { global: false });
+  // Several instances count together in Redis; if Redis fails, requests go through rather than all failing
+  await app.register(fastifyRateLimit, {
+    global: false,
+    ...(cluster.redis ? { redis: cluster.redis, nameSpace: `${deps.config.REDIS_PREFIX}rate:`, skipOnError: true } : {}),
+  });
   await app.register(fastifyMultipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5, parts: 6 } });
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: { directives: cspDirectives(deps.config) },
@@ -252,7 +285,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: 'same-site' },
   });
+  registerRequestTracing(app);
   registerAuthHooks(app, ctx);
+  registerAdminAudit(app, audit);
   events.guard('kb', async (user, id) => {
     const [kb] = await deps.db.db.select({ id: knowledgeBases.id, ownerId: knowledgeBases.ownerId }).from(knowledgeBases).where(eq(knowledgeBases.id, id));
     return !!kb && (await access.rights(user, 'knowledge', kb)).read;
@@ -264,18 +299,28 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   app.get('/healthz', async (): Promise<HealthResponse> => ({ status: 'ok', version: VERSION }));
 
   app.get('/readyz', async (_req, reply): Promise<ReadyResponse> => {
+    const storageKind = deps.config.S3_BUCKET ? 's3' : 'local';
+    let redis: ReadyResponse['redis'] = cluster.distributed ? 'ok' : 'off';
     try {
+      if (cluster.distributed) {
+        await cluster.ping().catch((err) => {
+          redis = 'error';
+          throw err;
+        });
+      }
       await deps.db.ping();
       const migrations = await deps.db.migrationStatus(deps.migrationsDir);
       const ready = migrations.pending === 0;
       reply.code(ready ? 200 : 503);
-      return { status: ready ? 'ready' : 'not_ready', database: deps.db.kind, migrations };
+      return { status: ready ? 'ready' : 'not_ready', database: deps.db.kind, migrations, redis, storage: storageKind };
     } catch (err) {
       reply.code(503);
       return {
         status: 'not_ready',
         database: deps.db.kind,
         migrations: { applied: 0, pending: 0 },
+        redis,
+        storage: storageKind,
         error: err instanceof Error ? err.message : String(err),
       };
     }
@@ -321,6 +366,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => adminMediaRoutes(a, ctx), { prefix: '/admin/media' });
       await api.register((a) => adminToolServerRoutes(a, ctx), { prefix: '/admin/tool-servers' });
       await api.register((a) => adminPluginRoutes(a, ctx), { prefix: '/admin/plugins' });
+      await api.register((a) => adminOpsRoutes(a, ctx), { prefix: '/admin' });
+      await api.register((a) => bannerRoutes(a, ctx), { prefix: '/banners' });
       api.setNotFoundHandler((req, reply) => {
         reply.code(404).send({ error: { code: 'not_found', message: `No route for ${req.method} ${req.url}` } });
       });

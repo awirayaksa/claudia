@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { DefaultCapsSchema, PermissionsSchema } from './access';
+import { Banner } from './admin';
 
 /**
  * Per-user settings: the desktop `settings` slice's appearance and
@@ -37,6 +38,22 @@ export const UserSettingsSchema = z.object({
 });
 export type UserSettingsInput = z.infer<typeof UserSettingsSchema>;
 
+/** Admin defaults: what a user's appearance and preferences are until they change them. */
+export const UserDefaultsSchema = z.object({
+  appearance: UserSettingsSchema.shape.appearance,
+  preferences: UserSettingsSchema.shape.preferences,
+});
+export type UserDefaults = z.infer<typeof UserDefaultsSchema>;
+
+/** The user's own settings over the admin defaults (section by section, field by field). */
+export function withDefaults<T extends { appearance?: object; preferences?: object }>(own: T, defaults: UserDefaults): T {
+  return {
+    ...own,
+    appearance: { ...defaults.appearance, ...own.appearance },
+    preferences: { ...defaults.preferences, ...own.preferences },
+  };
+}
+
 export const AppSettingsResponse = z.object({
   'auth.signup': z.object({ enabled: z.boolean(), defaultRole: z.enum(['pending', 'user']) }),
   'models.allowlist': z.object({ user: z.array(z.string()).nullable() }),
@@ -51,5 +68,8 @@ export const AppSettingsResponse = z.object({
   'net.allowlist': z.object({ hosts: z.array(z.string()) }),
   'permissions.default': PermissionsSchema,
   'caps.default': DefaultCapsSchema,
+  'ui.banners': z.object({ items: z.array(Banner) }),
+  'users.defaults': UserDefaultsSchema,
+  audit: z.object({ retentionDays: z.number() }),
 });
 export type AppSettingsResponse = z.infer<typeof AppSettingsResponse>;

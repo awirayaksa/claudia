@@ -181,5 +181,5 @@ export const usageEvents = pgTable(
     latencyMs: integer('latency_ms'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('usage_events_user_created_idx').on(t.userId, t.createdAt)]
+  (t) => [index('usage_events_user_created_idx').on(t.userId, t.createdAt), index('usage_events_created_idx').on(t.createdAt)]
 );

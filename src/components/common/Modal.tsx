@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { clsx } from 'clsx';
+import { useT } from '../../i18n';
 
 interface ModalProps {
   isOpen: boolean;
@@ -18,6 +19,7 @@ export function Modal({
   footer,
   size = 'md',
 }: ModalProps) {
+  const t = useT();
   // Handle escape key
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
@@ -75,7 +77,7 @@ export function Modal({
           <h2 className="text-xl font-semibold text-text-primary">{title}</h2>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('common.close', 'Close')}
             className="rounded p-1 text-text-secondary hover:bg-background hover:text-text-primary"
           >
             <svg

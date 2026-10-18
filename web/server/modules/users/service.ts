@@ -52,7 +52,13 @@ export async function createLocalUser(ctx: ServerContext, input: CreateLocalUser
     .values({ id, email, name: input.name.trim(), passwordHash: await hashPassword(input.password), role: input.role })
     .returning();
   await ctx.db.insert(authIdentities).values({ userId: id, provider: 'local', subject: id });
+  void ctx.webhooks?.emit('user.created', { user: webhookUser(row), source: 'admin' });
   return row;
+}
+
+/** A user as webhooks see it. */
+export function webhookUser(u: Pick<UserRow, 'id' | 'email' | 'name' | 'role'>) {
+  return { id: u.id, email: u.email, name: u.name, role: u.role };
 }
 
 /**
@@ -65,7 +71,7 @@ export async function signupLocalUser(
   input: Omit<CreateLocalUserInput, 'role'>,
   defaultRole: UserRole
 ): Promise<UserRow> {
-  return ctx.db.transaction(async (tx) => {
+  const user = await ctx.db.transaction(async (tx) => {
     await tx.execute(sql`select pg_advisory_xact_lock(7421001)`);
     const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(users);
     const role: UserRole = Number(n) === 0 ? 'admin' : defaultRole;
@@ -80,4 +86,6 @@ export async function signupLocalUser(
     await tx.insert(authIdentities).values({ userId: id, provider: 'local', subject: id });
     return row;
   });
+  void ctx.webhooks?.emit('user.created', { user: webhookUser(user), source: 'signup' });
+  return user;
 }

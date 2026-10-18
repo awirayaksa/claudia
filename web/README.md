@@ -5,7 +5,36 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 5** (advanced tools). Phase 5 adds:
+Status: **Phase 6** (admin and operations). Phase 6 adds:
+
+- **Several instances** behind a load balancer: with `REDIS_URL` set, a reply
+  started on one instance can be followed, stopped and answered (browser
+  tools) from any other; WebSocket events, rate limits, the sign-in backoff
+  and settings changes are shared, and new jobs wake every instance's workers
+  (PostgreSQL LISTEN/NOTIFY). No sticky sessions needed.
+- **S3 storage** (`S3_BUCKET`, AWS or any S3-compatible server) instead of
+  `DATA_DIR`, so every instance sees every file.
+- **Usage analytics** (Admin → Analytics): tokens, cost, requests and active
+  users per day, by model, user and use, with CSV export.
+- **Webhooks** (Admin → Webhooks): user, reply, knowledge and audit events
+  POSTed as JSON and signed with HMAC-SHA256 (see [Webhooks](#webhooks)).
+- **Audit log** (Admin → Audit log): sign-ins (and failures), sign-outs,
+  sign-ups, API keys and every change made through the admin pages, with
+  secrets removed; kept for a set number of days, exportable as CSV.
+- **Banners** and **defaults for users** (Admin → Settings): notices at the
+  top of every page (optionally dismissible, optionally timed), and the
+  theme, text size, display options and system prompt users have until they
+  change them.
+- **Installable app (PWA):** a manifest, icons and a service worker that
+  caches the app's own files (never the API or user data).
+- **Translatable shared components:** the desktop components the web app
+  reuses take their text from the web app's language files (see
+  [Translating](#translating)). English only so far.
+- **OpenTelemetry** traces (`OTEL_EXPORTER_OTLP_ENDPOINT`): requests, model
+  calls (GenAI conventions, token counts, never message text), tool calls,
+  jobs and outgoing HTTP, with W3C trace context in and out.
+
+Phase 5 (advanced tools):
 
 - **Code interpreter** (the Code button above the message box): the model
   runs Python with Pyodide in your browser, in a hidden frame on the sandbox
@@ -156,8 +185,8 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 
 | Command | What it does |
 |---|---|
-| `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test) and client tests |
-| `npm run test:e2e` | Browser tests of the Phase 1a–5 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
+| `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test; two-instance tests with `TEST_REDIS_URL`; S3 tests with `TEST_S3_ENDPOINT`) and client tests |
+| `npm run test:e2e` | Browser tests of the Phase 1a–6 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
 | `npm run type-check` | Client and server, including the shared `../src` code |
 | `npm run build` | Client (`dist/client`) and server bundle (`dist/server/index.cjs`) |
 | `npm start` | Run the production build |
@@ -165,6 +194,9 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 | `npm run db:migrate` | Apply migrations and exit (the server also migrates on start) |
 | `npm run check:shared-deps` | Every package shared code imports is in `web/package.json` with a version compatible with the root |
 | `npm run check:bundle` | The client bundle holds one copy of React and Redux |
+| `node scripts/shared-strings.mjs` | Regenerate `client/i18n/locales/en.shared.json` from the shared components (`--check` in CI) |
+| `node scripts/scale-smoke.mjs` | The cross-instance test against `docker/compose.scale.yml` (two instances, Redis, PostgreSQL, S3) |
+| `node scripts/make-pwa-icons.mjs` | Regenerate the app icons in `public/icons` from `../build/icon.png` |
 | `npm run cli -- admin create --email … --password …` | Create or promote an admin (LDAP-only installs) |
 | `npm run cli -- rotate-keys` | Re-encrypt stored secrets after changing `CLAUDIA_SECRET_KEY` (old key in `CLAUDIA_SECRET_KEY_PREVIOUS`) |
 
@@ -180,6 +212,23 @@ docker compose up -d --build     # app + pgvector/pgvector:pg16
 
 The image is built from the repository root and installs only `web/`'s
 dependencies.
+
+### Several instances
+
+```bash
+cd web/docker
+export CLAUDIA_SECRET_KEY=$(openssl rand -base64 48)
+docker compose -f compose.scale.yml up -d --build --wait
+```
+
+starts two instances behind nginx (round robin, :8080; each instance on
+:8081 and :8082) with PostgreSQL, Redis and an S3 test server. Every
+instance needs the same `CLAUDIA_SECRET_KEY`, `DATABASE_URL`, `REDIS_URL` and
+`S3_*`. Instances starting together take turns migrating the database. The
+built-in file tools keep per-user workspaces in `DATA_DIR`, which instances
+on different hosts must share (e.g. NFS). A reply runs on the instance that
+received it; if that instance stops, its followers are told the reply failed
+within about a minute and the branch can be answered again.
 
 ## Configuration
 
@@ -201,6 +250,15 @@ dependencies.
 | `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` | — | Service account that looks users up |
 | `LDAP_USER_SEARCH_BASE`, `LDAP_USER_FILTER` | — | e.g. `ou=people,dc=example,dc=com` and `(uid={{username}})` (AD: `(sAMAccountName={{username}})`) |
 | `LDAP_CA_CERT_FILE` | — | PEM of the CA that signed the directory's certificate |
+| `REDIS_URL` | — | `redis://…` or `rediss://…`. Needed for more than one instance |
+| `REDIS_PREFIX` | `claudia:` | Prefix of every Redis key and channel |
+| `S3_BUCKET` | — | Keep files in this bucket instead of `DATA_DIR` |
+| `S3_REGION` | `us-east-1` | |
+| `S3_ENDPOINT` | — | S3-compatible server, e.g. `http://minio:9000`; omit for AWS |
+| `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | — | Both or neither; neither uses the AWS credential chain (instance role, env, profile) |
+| `S3_FORCE_PATH_STYLE` | `false` | Bucket in the path (most S3-compatible servers) |
+| `S3_PREFIX` | — | Prefix of every object key, e.g. `claudia/` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP/HTTP collector for traces, e.g. `http://otel-collector:4318`; `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_HEADERS` and the sampler variables are read too |
 | `LOG_LEVEL` | `info` | |
 
 Streaming behind a reverse proxy needs buffering off for `/api` (nginx:
@@ -243,6 +301,36 @@ Model ids are the ones in `GET /api/v1/models` (`<connection prefix>/<model>`,
 its tool calls come back to you; the server's own tools (MCP) are for chats in
 the app only. Claudia desktop can use it as an OpenAI-compatible custom
 provider with the base URL `https://claudia.example.com/api/v1`.
+
+## Webhooks
+
+Each delivery is a JSON `POST` (`{ id, event, createdAt, data }`) with the
+headers `X-Claudia-Event`, `X-Claudia-Delivery` (the id),
+`X-Claudia-Timestamp` (Unix seconds) and
+`X-Claudia-Signature: v1=<hex HMAC-SHA256 of "<timestamp>.<raw body>">`
+under the webhook's secret (shown once, when it is created or replaced).
+Check it like this, and refuse timestamps more than five minutes away:
+
+```js
+const expected = 'v1=' + crypto.createHmac('sha256', secret).update(`${timestamp}.${rawBody}`).digest('hex');
+const ok = crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected));
+```
+
+A delivery that fails with a network error, a timeout (10 s) or a 5xx, 408 or
+429 answer is retried twice (after about 2 and 8 seconds); other 4xx answers
+are not. Events: `user.created`, `user.updated`, `run.completed` (ids, models,
+status, token counts; never message text), `knowledge.file_processed`,
+`knowledge.file_failed` and `audit.recorded`. Webhooks are admin-only and may
+point at internal addresses.
+
+## Translating
+
+The web app's own text is in `client/i18n/locales/en.json`; the text of the
+shared desktop components is in `en.shared.json`, generated from their
+`t('key', 'English')` calls by `node scripts/shared-strings.mjs`. To add a
+language, copy both to `<lang>.json` and `<lang>.shared.json` (e.g. `de`)
+and translate the values; keep `{{placeholders}}`. The browser's preferred
+languages pick it, and anything not yet translated shows in English.
 
 ## Note for Windows developers
 

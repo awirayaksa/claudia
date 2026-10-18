@@ -17,12 +17,14 @@
  * When sources come with the message (knowledge, pages), the reply ends
  * with " [1]". Non-streaming calls answer "E2E Chat Title", or two
  * follow-up questions when asked for them. POST /embeddings answers with
- * the test hash embedding; GET /page/tides is a web page.
+ * the test hash embedding; GET /page/tides is a web page. POST /hook is a
+ * webhook receiver; GET /hook/deliveries lists what it got.
  */
 import http from 'node:http';
 import { hashDims, hashEmbed } from '../server/test/hash-embed';
 
 const port = Number(process.env.MOCK_LLM_PORT ?? 18080);
+const deliveries: Array<{ headers: http.IncomingHttpHeaders; body: string }> = [];
 
 const chunk = (delta: object) =>
   `data: ${JSON.stringify({ id: 'c', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`;
@@ -46,6 +48,15 @@ http
       res.writeHead(200, { 'Content-Type': 'application/json' });
       // A 1×1 PNG
       return res.end(JSON.stringify({ data: [{ b64_json: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' }] }));
+    }
+    if (req.method === 'POST' && req.url === '/hook') {
+      deliveries.push({ headers: req.headers, body });
+      res.writeHead(204);
+      return res.end();
+    }
+    if (req.method === 'GET' && req.url === '/hook/deliveries') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify(deliveries));
     }
     if (req.method === 'GET' && req.url === '/page/tides') {
       res.writeHead(200, { 'Content-Type': 'text/html' });

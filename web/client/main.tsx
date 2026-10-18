@@ -10,7 +10,16 @@ import { createWebStore, type WebStore } from './store';
 import { api } from './api/rtk-api';
 import { App } from './App.web';
 
+/** Installable app and a quick start (production builds only: in development Vite serves fresh files). */
+function registerServiceWorker() {
+  if (!import.meta.env.PROD || !('serviceWorker' in navigator)) return;
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch((err) => console.warn('[pwa] service worker not registered', err));
+  });
+}
+
 async function start() {
+  registerServiceWorker();
   // The sandbox origin is server configuration; MCP-UI frames need it before rendering
   let sandboxOrigin: string | undefined;
   try {

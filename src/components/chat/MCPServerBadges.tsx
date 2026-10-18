@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useAppSelector } from '../../store';
 import { selectStartedMCPServers } from '../../store/slices/mcpSlice';
 import MCPServerBadge from './MCPServerBadge';
+import { useT } from '../../i18n';
 
 interface MCPServerBadgesProps {
   disabled?: boolean;
@@ -15,6 +16,7 @@ interface MCPServerBadgesProps {
  * expand shows all of them.
  */
 const MCPServerBadges: React.FC<MCPServerBadgesProps> = ({ disabled = false, onServerToggled }) => {
+  const t = useT();
   const enabledServers = useAppSelector(selectStartedMCPServers);
   const [isExpanded, setIsExpanded] = useState(true);
 
@@ -51,8 +53,8 @@ const MCPServerBadges: React.FC<MCPServerBadgesProps> = ({ disabled = false, onS
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
         </svg>
         {isExpanded
-          ? 'Hide MCP servers'
-          : `Show MCP servers (${enabledServers.length})`}
+          ? t('mcp.hideServers', 'Hide MCP servers')
+          : t('mcp.showServers', 'Show MCP servers ({{count}})', { count: enabledServers.length })}
       </button>
     </div>
   );

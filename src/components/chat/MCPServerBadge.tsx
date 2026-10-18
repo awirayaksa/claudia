@@ -2,6 +2,7 @@ import React from 'react';
 import { useAppDispatch } from '../../store';
 import { startMCPServer, stopMCPServer } from '../../store/slices/mcpSlice';
 import { MCPServerConfig, MCPServerState, MCPServerStatus } from '../../types/mcp.types';
+import { useT } from '../../i18n';
 
 interface MCPServerBadgeProps {
   config: MCPServerConfig;
@@ -21,6 +22,7 @@ const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
   disabled = false,
   onToggled,
 }) => {
+  const t = useT();
   const dispatch = useAppDispatch();
 
   // Status color mapping
@@ -98,7 +100,7 @@ const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
       <button
         onClick={handleToggle}
         disabled={isToggleDisabled}
-        aria-label={status === 'ready' ? `Stop ${config.name}` : `Start ${config.name}`}
+        aria-label={status === 'ready' ? t('mcp.stop', 'Stop {{name}}', { name: config.name }) : t('mcp.start', 'Start {{name}}', { name: config.name })}
         className="ml-1 p-1 text-text-secondary hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isTransitioning ? (

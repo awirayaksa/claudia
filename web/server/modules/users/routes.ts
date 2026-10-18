@@ -14,8 +14,8 @@ import {
   type AdminUser,
   type SessionInfo,
 } from '../../../shared/auth';
-import { UserSettingsSchema } from '../../../shared/settings';
-import { countAdmins, createLocalUser, toPublicUser, type UserRow } from './service';
+import { UserSettingsSchema, withDefaults } from '../../../shared/settings';
+import { countAdmins, createLocalUser, toPublicUser, webhookUser, type UserRow } from './service';
 
 function toAdminUser(u: UserRow): AdminUser {
   return {
@@ -61,9 +61,10 @@ export async function meRoutes(app: FastifyInstance, ctx: ServerContext): Promis
     return { ok: true };
   });
 
+  // The user's own settings over the admin defaults
   app.get('/settings', async (req) => {
     const [row] = await ctx.db.select({ settings: users.settings }).from(users).where(eq(users.id, currentUser(req).id));
-    return { settings: row.settings };
+    return { settings: withDefaults(row.settings, await ctx.settings.get('users.defaults')) };
   });
 
   // Partial update: top-level sections are merged, so the client can save one section at a time
@@ -76,7 +77,7 @@ export async function meRoutes(app: FastifyInstance, ctx: ServerContext): Promis
       merged[k] = v && typeof v === 'object' && !Array.isArray(v) ? { ...(merged[k] as object), ...v } : v;
     }
     await ctx.db.update(users).set({ settings: merged, updatedAt: new Date() }).where(eq(users.id, me.id));
-    return { settings: merged };
+    return { settings: withDefaults(merged, await ctx.settings.get('users.defaults')) };
   });
 
   // Tokens and cost so far today and this month, against the caps
@@ -171,6 +172,9 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
       .where(eq(users.id, id))
       .returning();
     if (body.password) await revokeAllSessions(ctx, id);
+    if (body.role || body.name) {
+      void ctx.webhooks.emit('user.updated', { user: webhookUser(row), previousRole: existing.role });
+    }
     return { user: toAdminUser(row) };
   });
 

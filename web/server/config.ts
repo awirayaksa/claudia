@@ -64,6 +64,38 @@ const EnvSchema = z.object({
   CLAUDIA_ADMIN_PASSWORD: z.string().min(8).optional(),
   /** Built client to serve. Defaults to dist/client next to the server bundle. */
   CLAUDIA_CLIENT_DIR: z.string().optional(),
+
+  /**
+   * redis://… — needed to run more than one instance: live replies, WebSocket
+   * events, rate limits, the login backoff and settings changes are shared
+   * through it. Without it everything stays in one process.
+   */
+  REDIS_URL: z
+    .string()
+    .regex(/^rediss?:\/\//, 'REDIS_URL must be a redis:// or rediss:// URL')
+    .optional(),
+  /** Prefix of every Redis key and channel, to share one Redis between installs. */
+  REDIS_PREFIX: z.string().max(50).default('claudia:'),
+
+  /** Store files in this S3 bucket instead of DATA_DIR (several instances need shared storage). */
+  S3_BUCKET: z.string().optional(),
+  S3_REGION: z.string().default('us-east-1'),
+  /** S3-compatible server, e.g. http://minio:9000. Omit for AWS. */
+  S3_ENDPOINT: z.url().optional(),
+  /** Omit both to use the usual AWS credential chain (instance role, env, profile). */
+  S3_ACCESS_KEY_ID: z.string().optional(),
+  S3_SECRET_ACCESS_KEY: z.string().optional(),
+  /** bucket in the path (most S3-compatible servers) rather than the host name. */
+  S3_FORCE_PATH_STYLE: bool.default(false),
+  /** Prefix of every object key, e.g. "claudia/". */
+  S3_PREFIX: z.string().max(200).default(''),
+
+  /**
+   * OpenTelemetry: traces go to this OTLP/HTTP collector, e.g.
+   * http://otel-collector:4318. The other OTEL_* variables (service name,
+   * headers, sampler) are read by the SDK itself.
+   */
+  OTEL_EXPORTER_OTLP_ENDPOINT: z.url().optional(),
 });
 
 export type Env = z.infer<typeof EnvSchema>;
@@ -92,6 +124,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
     throw new ConfigError(parsed.error.issues.map((i) => `${i.path.join('.') || 'env'}: ${i.message}`));
   }
   const cfg = parsed.data;
+  if (!!cfg.S3_ACCESS_KEY_ID !== !!cfg.S3_SECRET_ACCESS_KEY) {
+    throw new ConfigError(['S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY go together: set both or neither.']);
+  }
   return {
     ...cfg,
     isProduction: cfg.NODE_ENV === 'production',

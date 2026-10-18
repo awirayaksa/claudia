@@ -13,6 +13,7 @@ import type { Database } from '../db/client';
 import { customModels, providerConnections, users, type UserRole } from '../db/schema';
 import type { SecretBox } from '../crypto/secrets';
 import type { AppSettings } from '../modules/settings/app-settings';
+import type { Cluster } from '../cluster/cluster';
 import { forbidden, notFound } from '../lib/errors';
 import type { ModelInfo } from '../../shared/models';
 import { createProvider } from './provider-registry';
@@ -77,9 +78,11 @@ export class ModelRegistry {
       settings: AppSettings;
       access: AccessService;
       log: FastifyBaseLogger;
+      cluster?: Cluster;
     }
   ) {
     this.guarded = guardedTransport(() => ({ allow: deps.settings.peek('net.allowlist').hosts }));
+    deps.cluster?.on('models', ({ connectionId }) => this.forget(connectionId as string | undefined));
   }
 
   /** Enabled global connections, in display order. */
@@ -185,8 +188,13 @@ export class ModelRegistry {
     return provider;
   }
 
-  /** Forget cached lists (after a connection changes). */
+  /** Forget cached lists (after a connection changes), here and on the other instances. */
   invalidate(connectionId?: string): void {
+    this.forget(connectionId);
+    this.deps.cluster?.signal('models', connectionId ? { connectionId } : {});
+  }
+
+  private forget(connectionId?: string): void {
     if (connectionId) {
       this.states.delete(connectionId);
       this.providers.delete(connectionId);

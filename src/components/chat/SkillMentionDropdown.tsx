@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Skill } from '../../types/skill.types';
+import { useT } from '../../i18n';
 
 interface SkillMentionDropdownProps {
   isOpen: boolean;
@@ -22,9 +23,10 @@ export function SkillMentionDropdown({
   anchorRef,
   onSelect,
   onClose,
-  emptyLabel = 'No skills found',
+  emptyLabel,
   prefix,
 }: SkillMentionDropdownProps) {
+  const t = useT();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const activeItemRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -82,7 +84,7 @@ export function SkillMentionDropdown({
     >
       <div className="max-h-60 overflow-y-auto p-1">
         {skills.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-text-secondary">{emptyLabel}</div>
+          <div className="px-3 py-2 text-sm text-text-secondary">{emptyLabel ?? t('mention.noSkills', 'No skills found')}</div>
         ) : (
           skills.map((skill, idx) => {
             const isActive = idx === activeIndex;
@@ -134,7 +136,7 @@ export function SkillMentionDropdown({
                       isActive ? 'text-white opacity-70' : 'text-text-secondary'
                     }`}
                   >
-                    built-in
+                    {t('mention.builtin', 'built-in')}
                   </span>
                 )}
               </button>
@@ -143,7 +145,7 @@ export function SkillMentionDropdown({
         )}
       </div>
       <div className="border-t border-border px-3 py-1.5 text-xs text-text-secondary">
-        Tab/Enter to select • Esc to close
+        {t('mention.keys', 'Tab/Enter to select • Esc to close')}
       </div>
     </div>,
     document.body

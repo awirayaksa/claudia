@@ -15,6 +15,7 @@ import { ExtractLimitError } from '../extract/limits';
 import { uuidv7 } from '../lib/ids';
 import type { JobQueue } from '../jobs/queue';
 import type { EventHub } from '../ws/gateway';
+import type { Webhooks } from '../admin/webhooks';
 import type { KbFileEvent, KbFileStatus, SearchHit } from '../../shared/knowledge';
 import { chunkSegments } from './chunk';
 import type { RagConfig } from './config';
@@ -32,6 +33,7 @@ export interface KnowledgeDeps {
   jobs: JobQueue;
   events: EventHub;
   log: FastifyBaseLogger;
+  webhooks?: Webhooks;
 }
 
 type ChunkRow = typeof chunks.$inferSelect;
@@ -65,6 +67,13 @@ export class KnowledgeService {
       .set({ status, ...patch })
       .where(and(eq(kbFiles.kbId, kbId), eq(kbFiles.fileId, fileId)));
     this.publish(kbId, fileId, status, { chunks: patch.chunkCount ?? 0, error: patch.error ?? null, progress: status === 'ready' ? 1 : 0 });
+    if (status === 'ready' || status === 'failed') {
+      void this.deps.webhooks?.emit(status === 'ready' ? 'knowledge.file_processed' : 'knowledge.file_failed', {
+        knowledgeId: kbId,
+        fileId,
+        ...(status === 'ready' ? { chunks: patch.chunkCount ?? 0 } : { error: patch.error ?? null }),
+      });
+    }
   }
 
   /** Queue a file for a knowledge base (called after the kb_files row exists). */

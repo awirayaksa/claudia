@@ -4,6 +4,7 @@ import { ReasoningMessage } from './ReasoningMessage';
 import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { useThrottledValue } from '../../hooks/useThrottledValue';
 import { useAppSelector } from '../../store';
+import { useT } from '../../i18n';
 
 interface StreamingMessageProps {
   content: string;
@@ -12,6 +13,7 @@ interface StreamingMessageProps {
 }
 
 export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessageProps) {
+  const t = useT();
   const formattedTime = format(new Date(), 'h:mm a');
 
   const { showReasoning } = useAppSelector((state) => state.settings.preferences);
@@ -25,14 +27,14 @@ export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessa
       {/* Avatar chip + name */}
       <div className="mb-2 flex items-center gap-2">
         <ClaudiaAvatar isThinking />
-        <span className="text-sm font-semibold text-text-primary">Claudia</span>
+        <span className="text-sm font-semibold text-text-primary">{t('app.name', 'Claudia')}</span>
         <span className="text-xs text-text-secondary">{formattedTime}</span>
         {/* Abort button */}
         {onAbort && (
           <button
             onClick={onAbort}
             className="ml-2 rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface hover:text-error transition-colors"
-            title="Stop generating"
+            title={t('chat.stop', 'Stop generating')}
           >
             ✕ Stop
           </button>

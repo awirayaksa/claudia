@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { truncateModelName } from '../../utils/modelHelpers';
+import { useT } from '../../i18n';
 
 interface CompactModelSelectorProps {
   value: string;
@@ -18,6 +19,7 @@ export function CompactModelSelector({
   disabled = false,
   label = (model) => model,
 }: CompactModelSelectorProps) {
+  const t = useT();
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -100,8 +102,8 @@ export function CompactModelSelector({
         className={`flex items-center gap-1.5 rounded border border-border bg-background px-3 py-2 text-sm text-text-primary transition-colors hover:border-accent focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${!isModelAvailable ? 'border-warning text-warning' : ''
           }`}
         style={{ minWidth: '140px', maxWidth: '180px' }}
-        title={isModelAvailable ? label(value) : `${label(value)} (unavailable)`}
-        aria-label="Select model"
+        title={isModelAvailable ? label(value) : t('models.unavailable', '{{model}} (unavailable)', { model: label(value) })}
+        aria-label={t('models.select', 'Select model')}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -126,11 +128,11 @@ export function CompactModelSelector({
             transform: 'translateY(-100%)',
           }}
           role="listbox"
-          aria-label="Available models"
+          aria-label={t('models.available', 'Available models')}
         >
           <div className="max-h-80 overflow-y-auto p-2">
             {sortedModels.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-text-secondary">No models available</div>
+              <div className="px-3 py-2 text-sm text-text-secondary">{t('models.none', 'No models available')}</div>
             ) : (
               sortedModels.map((model) => {
                 const isSelected = model === value;

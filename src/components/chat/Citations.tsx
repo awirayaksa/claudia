@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import type { CitationSource } from '../../types/turn.types';
+import { useT } from '../../i18n';
 
 export interface CitationItem {
   index: number;
@@ -36,6 +37,7 @@ export function Citations({
   onActiveChange: (index: number | null) => void;
   onOpen?: (source: CitationSource) => void;
 }) {
+  const t = useT();
   const detailRef = useRef<HTMLDivElement>(null);
   const current = citations.find((c) => c.index === active) ?? null;
 
@@ -46,7 +48,7 @@ export function Citations({
   if (citations.length === 0) return null;
   return (
     <div className="mt-3 text-xs" data-testid="citations">
-      <div className="mb-1.5 font-medium uppercase tracking-wide text-text-secondary">Sources</div>
+      <div className="mb-1.5 font-medium uppercase tracking-wide text-text-secondary">{t('citations.sources', 'Sources')}</div>
       <ul className="flex flex-wrap gap-1.5">
         {citations.map((c) => (
           <li key={c.index}>
@@ -72,13 +74,13 @@ export function Citations({
             <span className="min-w-0 flex-1 break-words font-medium text-text-primary">{sourceLabel(current.source)}</span>
             {current.source.kind === 'url' && current.source.url ? (
               <a href={current.source.url} target="_blank" rel="noopener noreferrer" className="shrink-0 text-accent underline hover:no-underline">
-                Open
+                {t('citations.open', 'Open')}
               </a>
             ) : (
               onOpen &&
               current.source.kind === 'chat' && (
                 <button type="button" className="shrink-0 text-accent underline hover:no-underline" onClick={() => onOpen(current.source)}>
-                  Open
+                  {t('citations.open', 'Open')}
                 </button>
               )
             )}

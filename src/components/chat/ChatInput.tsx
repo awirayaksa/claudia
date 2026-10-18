@@ -14,6 +14,7 @@ import { EffortSelector } from './EffortSelector';
 import { setEffortLevel } from '../../store/slices/composerSlice';
 import { parseEffortDirective } from '../../utils/effort-utils';
 import { getPlatform } from '../../platform';
+import { useT } from '../../i18n';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -71,7 +72,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   onAbort,
   disabled = false,
   isGenerating = false,
-  placeholder = 'Type your message...',
+  placeholder,
   variant = 'default',
   selectedModel,
   availableModels,
@@ -88,6 +89,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   hashEmptyLabel,
   toolbarExtras,
 }, ref) => {
+  const t = useT();
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -545,6 +547,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
               <button
                 onClick={() => removeAttachment(attachment.id)}
                 className="text-text-secondary hover:text-error"
+                aria-label={t('chatInput.removeAttachment', 'Remove {{name}}', { name: attachment.name })}
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -561,7 +564,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       {/* Upload progress */}
       {uploading && Object.keys(progress).length > 0 && (
         <div className="mb-3 text-xs text-text-secondary">
-          Uploading files...
+          {t('chatInput.uploading', 'Uploading files...')}
         </div>
       )}
 
@@ -575,7 +578,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       {/* Drag overlay */}
       {isDragActive && (
         <div className="mb-3 rounded border-2 border-dashed border-accent bg-accent bg-opacity-5 p-4 text-center">
-          <p className="text-sm text-accent">Drop files here to attach</p>
+          <p className="text-sm text-accent">{t('chatInput.drop', 'Drop files here to attach')}</p>
         </div>
       )}
 
@@ -609,7 +612,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
             setTimeout(() => skillMention.close(), 150);
             setTimeout(() => hashMention.close(), 150);
           }}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t('chatInput.placeholder', 'Type your message...')}
           disabled={disabled || uploading}
           rows={2}
           className="w-full resize-none bg-transparent px-0 py-0 text-sm text-text-primary placeholder-text-secondary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -623,7 +626,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || uploading}
             className="rounded p-1.5 text-text-secondary hover:bg-surface hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-            title="Attach file"
+            title={t('chatInput.attach', 'Attach file')}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
@@ -659,7 +662,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
               onClick={isGenerating ? onAbort : handleSend}
               disabled={!isGenerating && (disabled || uploading || (!message.trim() && attachments.length === 0))}
               className={isGenerating ? 'bg-error hover:bg-error-dark' : ''}
-              title={isGenerating ? 'Stop generating' : 'Send message'}
+              title={isGenerating ? t('chat.stop', 'Stop generating') : t('chatInput.send', 'Send message')}
             >
               {isGenerating ? (
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -722,7 +725,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
             <svg className="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            Paste
+            {t('chatInput.paste', 'Paste')}
           </button>
           <button
             onClick={handleContextPasteAsPlainText}
@@ -731,14 +734,14 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
             <svg className="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M12 12h.01M8 12h.01M16 12h.01" />
             </svg>
-            Paste as plain text
+            {t('chatInput.pastePlain', 'Paste as plain text')}
           </button>
         </div>
       )}
 
       <p className="mt-2 text-xs text-text-secondary">
-        Enter to send · Shift+Enter for new line · <code>--effort high</code> to set effort for one
-        message
+        {t('chatInput.hint', 'Enter to send · Shift+Enter for new line ·')} <code>--effort high</code>{' '}
+        {t('chatInput.hintEffort', 'to set effort for one message')}
       </p>
     </div>
     </div>

@@ -50,6 +50,13 @@
       "when": 1792276189807,
       "tag": "0006_phase5_tools",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792288495785,
+      "tag": "0007_phase6_admin",
+      "breakpoints": true
     }
   ]
 }

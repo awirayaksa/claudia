@@ -10,6 +10,7 @@ import { UIResourceDisplay } from './UIResourceDisplay';
 import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { format } from 'date-fns';
 import { useAppSelector } from '../../store';
+import { useT } from '../../i18n';
 
 interface ChatMessageProps {
   message: Message;
@@ -43,6 +44,7 @@ export const ChatMessage = React.memo(function ChatMessage({
   hideRatings,
   onOpenSource,
 }: ChatMessageProps) {
+  const t = useT();
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isTool = message.role === 'tool';
@@ -103,9 +105,9 @@ export const ChatMessage = React.memo(function ChatMessage({
               <button
                 onClick={handleCopy}
                 className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
-                title={copied ? 'Copied!' : 'Copy'}
+                title={copied ? t('common.copied', 'Copied!') : t('common.copy', 'Copy')}
               >
-                {copied ? '✓' : 'Copy'}
+                {copied ? '✓' : t('common.copy', 'Copy')}
               </button>
               {/* Actions show only where the host supports them */}
               {onEdit && (
@@ -113,9 +115,9 @@ export const ChatMessage = React.memo(function ChatMessage({
                   onClick={() => onEdit(message.id, message.content, message.attachments)}
                   disabled={disabled}
                   className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-                  title="Edit message"
+                  title={t('message.edit', 'Edit message')}
                 >
-                  Edit
+                  {t('common.edit', 'Edit')}
                 </button>
               )}
             </div>
@@ -132,12 +134,12 @@ export const ChatMessage = React.memo(function ChatMessage({
         {/* Avatar chip + name + inline stats */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
           <ClaudiaAvatar />
-          <span className="text-sm font-semibold text-text-primary">{authorLabel ?? 'Claudia'}</span>
+          <span className="text-sm font-semibold text-text-primary">{authorLabel ?? t('app.name', 'Claudia')}</span>
           <span className="text-xs text-text-secondary">{formattedTime}</span>
           {showStatistics && message.usage?.total_tokens != null && (
             <>
               <span className="text-xs text-text-secondary">·</span>
-              <span className="text-xs text-text-secondary">{message.usage.total_tokens.toLocaleString()} tokens</span>
+              <span className="text-xs text-text-secondary">{t('message.tokens', '{{count}} tokens', { count: message.usage.total_tokens.toLocaleString() })}</span>
             </>
           )}
           {showStatistics && message.usage?.cost != null && (
@@ -209,9 +211,9 @@ export const ChatMessage = React.memo(function ChatMessage({
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
-              title={copied ? 'Copied!' : 'Copy'}
+              title={copied ? t('common.copied', 'Copied!') : t('common.copy', 'Copy')}
             >
-              {copied ? '✓ Copied' : '⎘ Copy'}
+              {copied ? `✓ ${t('message.copiedShort', 'Copied')}` : `⎘ ${t('common.copy', 'Copy')}`}
             </button>
             {onRetry && (
               <button
@@ -219,7 +221,7 @@ export const ChatMessage = React.memo(function ChatMessage({
                 disabled={disabled}
                 className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
               >
-                ↻ Retry
+                ↻ {t('message.retry', 'Retry')}
               </button>
             )}
             {onBranch && (
@@ -228,7 +230,7 @@ export const ChatMessage = React.memo(function ChatMessage({
                 disabled={disabled}
                 className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
               >
-                ↗ Branch
+                ↗ {t('message.branch', 'Branch')}
               </button>
             )}
             {hideRatings ? null : onRate ? (
@@ -236,7 +238,7 @@ export const ChatMessage = React.memo(function ChatMessage({
                 <button
                   onClick={() => onRate(rating === 1 ? null : 1)}
                   aria-pressed={rating === 1}
-                  title="Good reply"
+                  title={t('message.good', 'Good reply')}
                   className={`rounded px-2 py-1 text-xs transition-colors hover:bg-surface ${rating === 1 ? 'bg-surface text-accent' : 'text-text-secondary'}`}
                 >
                   👍
@@ -244,7 +246,7 @@ export const ChatMessage = React.memo(function ChatMessage({
                 <button
                   onClick={() => onRate(rating === -1 ? null : -1)}
                   aria-pressed={rating === -1}
-                  title="Bad reply"
+                  title={t('message.bad', 'Bad reply')}
                   className={`rounded px-2 py-1 text-xs transition-colors hover:bg-surface ${rating === -1 ? 'bg-surface text-accent' : 'text-text-secondary'}`}
                 >
                   👎

@@ -5,6 +5,7 @@ import { ChatInput, type ChatInputRef } from '@/components/chat/ChatInput';
 import { SuggestedPrompts } from '@/components/chat/SuggestedPrompts';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { setEffortLevel } from '@/store/slices/composerSlice';
+import { loadSkills } from '@/store/slices/skillSlice';
 import { parseEffortDirective } from '@/utils/effort-utils';
 import type { MessageNode } from '@/types/turn.types';
 import type { Attachment } from '@/types/message.types';
@@ -83,7 +84,7 @@ export function ChatPage() {
   const live = useWebSelector((s) => (chatId ? s.runs[chatId] : undefined));
   const sessionEffort = useAppSelector((s) => s.composer.effortLevel);
   const skills = useAppSelector((s) => s.skills.skills);
-  const { data: mcpData } = useMcpServersQuery();
+  const { data: mcpData, refetch: refetchMcp } = useMcpServersQuery();
   const { data: promptData } = usePromptsQuery({ scope: 'usable' });
   const { data: kbData } = useKnowledgeListQuery();
   const { data: recentChats } = useChatsQuery();
@@ -212,8 +213,12 @@ export function ChatPage() {
       return;
     }
     if (!selectedModel) return;
+    // Right after the page opens, tool servers and skills may still be loading: wait for them
+    const servers = mcpData?.servers ?? (await refetchMcp().unwrap().catch(() => null))?.servers;
+    const knownSkills =
+      parsed.content.startsWith('/') && skills.length === 0 ? await dispatch(loadSkills()).unwrap().catch(() => skills) : skills;
     // "/skill args": the server adds the skill's prompt; the chat shows the args
-    const skillCall = resolveSkillCommand(parsed.content, skills);
+    const skillCall = resolveSkillCommand(parsed.content, knownSkills);
     const content = skillCall ? skillCall.userContent : parsed.content;
     const skill = skillCall ? { id: skillCall.skillId, args: parsed.content.replace(/^\/\S+/, '').trim() } : undefined;
     sending.current = true;
@@ -229,7 +234,7 @@ export function ChatPage() {
         modelIds: sendModels,
         params: { effort: effort !== undefined ? effort : (sessionEffort ?? undefined) },
         fileIds: out.attachments.map((a) => a.id).filter((x) => UUID.test(x)),
-        toolIds: enabledServerIds(mcpData?.servers),
+        toolIds: enabledServerIds(servers),
         ...(skill ? { skill } : {}),
         ...(out.refs?.length ? { refs: out.refs } : {}),
         ...(out.features && Object.values(out.features).some(Boolean) ? { features: out.features } : {}),

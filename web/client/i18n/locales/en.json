@@ -14,7 +14,10 @@
     "create": "Create",
     "rename": "Rename",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "done": "Done",
+    "copy": "Copy",
+    "copied": "Copied"
   },
   "auth": {
     "signIn": "Sign in",
@@ -701,5 +704,132 @@
     "baseUrlPlaceholder": "Empty: the spec's server",
     "authHeader": "Auth header",
     "authValue": "Auth value"
+  },
+  "banners": {
+    "title": "Banners",
+    "help": "Notices shown at the top of every page for signed-in users. Leave the dates empty to show a banner until you remove it.",
+    "dismiss": "Dismiss",
+    "type": "Type",
+    "types": {
+      "info": "Information",
+      "success": "Success",
+      "warning": "Warning",
+      "error": "Problem"
+    },
+    "dismissible": "Users can dismiss it",
+    "content": "Text",
+    "startsAt": "Show from",
+    "endsAt": "Show until",
+    "add": "Add banner"
+  },
+  "defaults": {
+    "title": "Defaults for users",
+    "help": "What every user's appearance and preferences are until they change them in their own settings. Unset fields keep the app's built-in defaults.",
+    "unset": "Not set",
+    "theme": "Theme",
+    "themes": {
+      "system": "Follow the system",
+      "light": "Light",
+      "dark": "Dark"
+    },
+    "fontSize": "Text size",
+    "sizes": {
+      "small": "Small",
+      "medium": "Medium",
+      "large": "Large"
+    },
+    "showReasoning": "Show reasoning",
+    "showStatistics": "Show reply statistics",
+    "streamingEnabled": "Stream replies",
+    "on": "On",
+    "off": "Off",
+    "temperature": "Temperature",
+    "systemPrompt": "System prompt",
+    "systemPromptHelp": "Sent first in every chat of a user who hasn't written their own."
+  },
+  "audit": {
+    "title": "Audit log",
+    "retentionDays": "Keep audit entries for (days)",
+    "action": "Action",
+    "allActions": "All actions",
+    "actions": {
+      "auth_login": "Signed in",
+      "auth_login_failed": "Failed sign-in",
+      "auth_logout": "Signed out",
+      "auth_signup": "Signed up",
+      "api_key_created": "Created an API key",
+      "api_key_revoked": "Revoked an API key",
+      "admin_request": "Admin change"
+    },
+    "actor": "Who",
+    "actorPlaceholder": "Email contains…",
+    "time": "When",
+    "ip": "IP address",
+    "empty": "Nothing recorded yet.",
+    "older": "Show older entries",
+    "anonymous": "Not signed in"
+  },
+  "analytics": {
+    "title": "Analytics",
+    "range": "Period",
+    "lastDays_one": "Today",
+    "lastDays_other": "Last {{count}} days",
+    "exportCsv": "Download CSV",
+    "tokensPerDay": "Tokens per day",
+    "utcNote": "Days are in UTC. Costs count only where the provider reports them.",
+    "byModel": "By model",
+    "byUser": "Top users",
+    "byKind": "By use",
+    "kinds": {
+      "chat": "Chat replies",
+      "api": "API (/api/v1)",
+      "title": "Titles",
+      "followups": "Follow-up suggestions"
+    },
+    "noUsage": "No usage in this period.",
+    "tokens": "Tokens",
+    "cost": "Cost",
+    "requests": "Requests",
+    "activeUsers": "Active users",
+    "newChats": "New chats",
+    "messages": "Messages",
+    "day": "Day",
+    "prompt": "Prompt",
+    "completion": "Completion",
+    "dayDetail": "{{day}}: {{prompt}} prompt + {{completion}} completion tokens, {{requests}} requests",
+    "showTable": "Show as a table"
+  },
+  "webhooks": {
+    "title": "Webhooks",
+    "help": "Claudia POSTs JSON to these addresses when something happens. Every delivery is signed with the webhook’s secret (HMAC-SHA256), so the receiver can check it came from here. Failed deliveries are retried twice.",
+    "new": "New webhook",
+    "edit": "Edit webhook",
+    "none": "No webhooks yet.",
+    "name": "Name",
+    "url": "Address (URL)",
+    "eventsLabel": "Events",
+    "allEvents": "All events",
+    "events": {
+      "user_created": "A user was created",
+      "user_updated": "A user's role or name changed",
+      "run_completed": "A reply finished",
+      "knowledge_file_processed": "A knowledge file is ready",
+      "knowledge_file_failed": "A knowledge file failed",
+      "audit_recorded": "An audit entry was written"
+    },
+    "enabled": "On",
+    "test": "Send test",
+    "testOk": "Test delivered: {{status}} in {{ms}} ms.",
+    "testFailed": "Test failed: {{error}}",
+    "rotate": "New secret",
+    "deleteTitle": "Delete webhook?",
+    "deleteBody": "{{name}} will get no more deliveries.",
+    "neverDelivered": "Nothing delivered yet.",
+    "lastOk": "Last delivery {{when}}: {{status}}.",
+    "lastFailed": "Last delivery {{when}} failed: {{error}}",
+    "secretTitle": "Signing secret",
+    "secretHelp": "Copy it now: it is shown only this once. Store it with the receiver; you can make a new one at any time.",
+    "verifyTitle": "Checking a delivery",
+    "verifyHelp": "Compute the HMAC over the raw request body, exactly as received, and compare it with the X-Claudia-Signature header."
   }
 }

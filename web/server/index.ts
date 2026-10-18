@@ -6,9 +6,12 @@ import { resolveRootSecret } from './crypto/keys';
 import { buildSandboxApp, sandboxOriginFor } from './sandbox';
 import { defaultClientDir, defaultMigrationsDir, defaultSandboxDir } from './paths';
 import { routeConsoleToLogger } from './lib/console';
+import { startTelemetry, stopTelemetry } from './telemetry';
 
 async function main() {
   const config = loadConfig();
+  // Before anything makes requests, so they are traced
+  const tracing = await startTelemetry({ endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT });
   const migrationsDir = defaultMigrationsDir();
   const db = await openDatabase({
     url: config.DATABASE_URL,
@@ -33,6 +36,7 @@ async function main() {
   // Shared desktop code logs with console.*; keep users' content out of normal logs
   routeConsoleToLogger(app.log);
   app.log.info({ database: db.kind, migrations: status }, 'database ready');
+  if (tracing) app.log.info({ endpoint: config.OTEL_EXPORTER_OTLP_ENDPOINT }, 'OpenTelemetry tracing on');
 
   if (db.kind === 'pglite') {
     app.log.warn(
@@ -62,6 +66,7 @@ async function main() {
       await app.close();
       await sandboxApp?.close();
       await db.close();
+      await stopTelemetry();
     } finally {
       process.exit(0);
     }

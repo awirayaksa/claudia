@@ -97,7 +97,10 @@ if (process.argv.includes('--list')) {
   process.exit(0);
 }
 
-const rootPkg = JSON.parse(fs.readFileSync(path.join(rootDir, 'package.json'), 'utf8'));
+// The Docker build copies the shared code without the desktop's manifest: then only presence is checked
+const rootManifest = path.join(rootDir, 'package.json');
+const rootPkg = fs.existsSync(rootManifest) ? JSON.parse(fs.readFileSync(rootManifest, 'utf8')) : {};
+if (!fs.existsSync(rootManifest)) console.log('check-shared-deps: no root package.json here; checking presence only, not version overlap.');
 const webPkg = JSON.parse(fs.readFileSync(path.join(webDir, 'package.json'), 'utf8'));
 const rootDeps = { ...rootPkg.dependencies, ...rootPkg.devDependencies };
 const webDeps = { ...webPkg.dependencies, ...webPkg.devDependencies };

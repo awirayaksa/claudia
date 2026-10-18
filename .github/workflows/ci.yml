@@ -54,12 +54,27 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U claudia -d claudia_test"
           --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      s3:
+        image: adobe/s3mock:latest
+        env:
+          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: claudia-test
+        ports:
+          - 9090:9090
     defaults:
       run:
         working-directory: web
     env:
-      # Migration tests run on real PostgreSQL as well as PGlite
+      # The whole suite runs on real PostgreSQL; two-instance tests use Redis, storage tests S3
       TEST_DATABASE_URL: postgres://claudia:claudia@localhost:5432/claudia_test
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_S3_ENDPOINT: http://localhost:9090
     steps:
       - uses: actions/checkout@v4
 
@@ -76,6 +91,9 @@ jobs:
       - name: Shared code dependencies
         run: npm run check:shared-deps
 
+      - name: Shared strings catalogue is up to date
+        run: node scripts/shared-strings.mjs --check
+
       - name: Type-check
         run: npm run type-check
 
@@ -91,7 +109,7 @@ jobs:
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
 
-      - name: Browser tests (Phase 1a exit flow)
+      - name: Browser tests
         run: npm run test:e2e
 
       - name: Upload Playwright report
@@ -102,6 +120,39 @@ jobs:
           path: |
             web/playwright-report
             web/test-results
+
+  web-scale:
+    name: Web (two instances with Redis, PostgreSQL and S3)
+    runs-on: ubuntu-latest
+    env:
+      CLAUDIA_SECRET_KEY: ci-secret-key-ci-secret-key-0123456789abcdef
+      CLAUDIA_ADMIN_EMAIL: admin@ci.test
+      CLAUDIA_ADMIN_PASSWORD: ci-admin-password
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start two instances behind a load balancer
+        working-directory: web/docker
+        run: docker compose -f compose.scale.yml up -d --build --wait --wait-timeout 600
+
+      # Streams, stops and locks across instances, shared files, signed webhooks
+      - name: Cross-instance test
+        working-directory: web
+        run: node scripts/scale-smoke.mjs
+
+      - name: Logs on failure
+        if: failure()
+        working-directory: web/docker
+        run: docker compose -f compose.scale.yml logs
+
+      - name: Stop
+        if: always()
+        working-directory: web/docker
+        run: docker compose -f compose.scale.yml down -v
 
   web-ldap:
     name: Web (LDAP against OpenLDAP)

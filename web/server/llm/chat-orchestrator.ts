@@ -42,6 +42,9 @@ import type { MessageRef } from '../../shared/knowledge';
 import { CLIENT_TOOL_NAMES, CODE_TOOL, NO_BROWSER_MESSAGE } from './client-tools';
 import { generateImage, IMAGE_TOOL, IMAGE_TOOL_NAME } from '../media/images';
 import type { MediaConfig } from '../media/config';
+import type { Webhooks } from '../admin/webhooks';
+import { SpanStatusCode, trace } from '@opentelemetry/api';
+import { withSpan } from '../telemetry';
 import type { ToolExecution } from './tools';
 import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
 
@@ -75,6 +78,28 @@ export interface OrchestratorDeps {
   clientToolTimeoutMs?: number;
   /** Image generation (without it, it is off). */
   media?: MediaConfig;
+  /** run.completed goes to admin webhooks. */
+  webhooks?: Webhooks;
+}
+
+/** What admin webhooks hear about a finished run (no message text). */
+function runSummary(plan: RunPlan, status: RunStatus) {
+  const usage = { promptTokens: 0, completionTokens: 0 };
+  for (const { event } of plan.run.events) {
+    if (event.type !== 'message.usage') continue;
+    usage.promptTokens += event.usage.prompt_tokens ?? 0;
+    usage.completionTokens += event.usage.completion_tokens ?? 0;
+  }
+  return {
+    runId: plan.run.id,
+    chatId: plan.chat.id,
+    userId: plan.user.id,
+    status,
+    models: plan.targets.map((t) => t.model.model.id),
+    assistantMessageIds: plan.targets.map((t) => t.assistantId),
+    usage,
+    durationMs: Date.now() - plan.run.startedAt,
+  };
 }
 
 /** Above this much memory text, only the memories closest to the message are sent (with embeddings). */
@@ -170,7 +195,7 @@ export class ChatOrchestrator {
     if (imageGen) await this.checkImageGen(user);
     await this.checkRefs(user, refs, webSearch);
 
-    const run = runs.start({
+    const run = await runs.start({
       userId: user.id,
       chatId: chat.id,
       // One run per branch: new turns lock the node they follow, regenerations the turn they answer
@@ -267,7 +292,7 @@ export class ChatOrchestrator {
           ? { ...req, params: { ...req.params, effort: userNode.effort } }
           : req;
       const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets, refs, webSearch, code, imageGen };
-      void this.execute(plan).catch((err) => {
+      void withSpan('claudia.run', { 'claudia.run_id': run.id, 'claudia.chat_id': chat.id, 'enduser.id': user.id }, () => this.execute(plan)).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
         runs.finish(run, 'error');
       });
@@ -283,7 +308,8 @@ export class ChatOrchestrator {
     const { run, user, chat, req } = plan;
     const [userRow] = await this.deps.db.select({ settings: users.settings }).from(users).where(eq(users.id, user.id));
     const userSettings = (userRow?.settings as UserSettings | undefined) ?? {};
-    const prefs = userSettings.preferences ?? {};
+    // The user's preferences over the admin's defaults
+    const prefs = { ...(await this.deps.settings.get('users.defaults')).preferences, ...userSettings.preferences };
     const vars: SystemValues = { userName: user.name };
     const sys = (content: string): ChatMessage => ({ role: 'system', content: fillSystemVariables(content, vars) });
 
@@ -328,16 +354,27 @@ export class ChatOrchestrator {
     const fileOpts = await this.fileOptions(user, [...plan.history, plan.userNode]);
 
     const results = await Promise.all(
-      plan.targets.map(async (t, i) =>
-        this.runModel(plan, t.assistantId, t.model, {
-          system: [...before, ...(t.model.custom?.systemPrompt.trim() ? [sys(t.model.custom.systemPrompt)] : []), ...after],
-          prefs,
-          toolset: await toolsetFor(t.model),
-          fileOpts,
-          reportTrim: i === 0,
-          citations: sources.map((src) => ({ type: 'citation' as const, index: src.index, source: src.source })),
-        })
-      )
+      plan.targets.map(async (t, i) => {
+        const toolset = await toolsetFor(t.model);
+        // GenAI semantic conventions; never the prompt or the reply
+        const attributes = {
+          'gen_ai.operation.name': 'chat',
+          'gen_ai.provider.name': t.model.connection.type,
+          'gen_ai.request.model': t.model.providerModelId,
+          'claudia.model_id': t.model.model.id,
+          'claudia.message_id': t.assistantId,
+        };
+        return withSpan(`chat ${t.model.providerModelId}`, attributes, () =>
+          this.runModel(plan, t.assistantId, t.model, {
+            system: [...before, ...(t.model.custom?.systemPrompt.trim() ? [sys(t.model.custom.systemPrompt)] : []), ...after],
+            prefs,
+            toolset,
+            fileOpts,
+            reportTrim: i === 0,
+            citations: sources.map((src) => ({ type: 'citation' as const, index: src.index, source: src.source })),
+          })
+        );
+      })
     );
 
     const status: RunStatus = results.includes('completed')
@@ -359,6 +396,7 @@ export class ChatOrchestrator {
     }
     await this.repo.touch(chat.id);
     this.deps.runs.finish(run, status);
+    void this.deps.webhooks?.emit('run.completed', runSummary(plan, status));
   }
 
   /** Produce one assistant reply (with its tool loop) and persist it. */
@@ -518,11 +556,20 @@ export class ChatOrchestrator {
         for (const call of toolCalls) {
           if (signal.aborted) break;
           runs.emit(run, { type: 'tool.started', messageId: assistantId, callId: call.id });
-          const exec = inBrowser(call.function.name)
-            ? await this.runInBrowser(plan, assistantId, call, signal)
-            : onServer(call.function.name)
-              ? await this.makeImage(plan, call, signal)
-              : await opts.toolset.execute(call, signal);
+          const exec = await withSpan(
+            `execute_tool ${call.function.name}`,
+            { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': call.function.name, 'gen_ai.tool.call.id': call.id },
+            async (span) => {
+              const result = inBrowser(call.function.name)
+                ? await this.runInBrowser(plan, assistantId, call, signal)
+                : onServer(call.function.name)
+                  ? await this.makeImage(plan, call, signal)
+                  : await opts.toolset.execute(call, signal);
+              span.setAttribute('claudia.tool.server', result.serverId);
+              if (result.result.isError) span.setStatus({ code: SpanStatusCode.ERROR });
+              return result;
+            }
+          );
           builder.add(exec.result);
           runs.emit(run, { type: 'tool.result', messageId: assistantId, part: exec.result });
           for (const part of exec.extraParts ?? []) {
@@ -543,6 +590,11 @@ export class ChatOrchestrator {
     }
 
     await persist(true);
+    trace.getActiveSpan()?.setAttributes({
+      'claudia.status': status,
+      ...(usage ? { 'gen_ai.usage.input_tokens': usage.prompt_tokens ?? 0, 'gen_ai.usage.output_tokens': usage.completion_tokens ?? 0 } : {}),
+    });
+    if (status === 'error') trace.getActiveSpan()?.setStatus({ code: SpanStatusCode.ERROR, message: error });
     runs.emit(run, {
       type: 'message.completed',
       messageId: assistantId,
@@ -648,6 +700,8 @@ export class ChatOrchestrator {
    */
   private async runInBrowser(plan: RunPlan, messageId: string, call: ToolCall, signal: AbortSignal): Promise<ToolExecution> {
     const { runs } = this.deps;
+    // Wait first, so even an instant answer finds the call
+    const waiting = runs.awaitClientTool(plan.run, call.id, this.deps.clientToolTimeoutMs);
     runs.emit(plan.run, {
       type: 'tool.client_request',
       runId: plan.run.id,
@@ -659,7 +713,7 @@ export class ChatOrchestrator {
     const stopped = new Promise<{ content: string; isError: boolean }>((resolve) =>
       signal.addEventListener('abort', () => resolve({ content: JSON.stringify({ error: 'Stopped.' }), isError: true }), { once: true })
     );
-    const answer = await Promise.race([runs.awaitClientTool(plan.run, call.id, this.deps.clientToolTimeoutMs), stopped]);
+    const answer = await Promise.race([waiting, stopped]);
     const timedOut = answer.isError && answer.content.includes('No browser answered');
     return {
       serverId: 'browser',

@@ -28,6 +28,12 @@ export interface DbHandle {
   migrationStatus(migrationsDir: string): Promise<MigrationStatus>;
   /** Throws when the database can't be reached. */
   ping(): Promise<void>;
+  /**
+   * LISTEN/NOTIFY between the processes sharing this database (PostgreSQL
+   * only; PGlite has one process). `listen` resolves to the unlisten.
+   */
+  listen?(channel: string, onMessage: (payload: string) => void): Promise<() => Promise<void>>;
+  notify?(channel: string, payload?: string): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -73,12 +79,27 @@ async function openPostgres(url: string): Promise<DbHandle> {
     db,
     kind: 'postgres',
     async migrate(dir) {
-      await migrate(drizzle(client, { schema }), { migrationsFolder: dir });
+      // Instances starting together take turns; the later ones find nothing left to do
+      const lock = await client.reserve();
+      try {
+        await lock`select pg_advisory_lock(hashtext('claudia:migrations'))`;
+        await migrate(drizzle(client, { schema }), { migrationsFolder: dir });
+      } finally {
+        await lock`select pg_advisory_unlock(hashtext('claudia:migrations'))`.catch(() => {});
+        lock.release();
+      }
       return status(dir);
     },
     migrationStatus: status,
     async ping() {
       await client`select 1`;
+    },
+    async listen(channel, onMessage) {
+      const { unlisten } = await client.listen(channel, onMessage);
+      return unlisten;
+    },
+    async notify(channel, payload = '') {
+      await client.notify(channel, payload);
     },
     async close() {
       await client.end({ timeout: 5 });

@@ -4,7 +4,7 @@ import type { ServerContext } from '../context';
 import { sessions, users } from '../db/schema';
 import { hashToken, parseRefreshToken, safeEqualHex } from './tokens';
 import { HttpError, conflict, forbidden, tooManyRequests, unauthorized } from '../lib/errors';
-import { normalizeEmail, signupLocalUser, toPublicUser } from '../modules/users/service';
+import { normalizeEmail, signupLocalUser, toPublicUser, webhookUser } from '../modules/users/service';
 import { LdapLoginRequest, LoginRequest, SignupRequest, type SessionResponse } from '../../shared/auth';
 import { LocalAuthProvider } from './providers/local';
 import { sandboxOriginFor } from '../sandbox';
@@ -32,8 +32,8 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     };
   }
 
-  function checkLocked(key: string, reply: { header(k: string, v: unknown): unknown }) {
-    const locked = ctx.loginGuard.lockedFor(key);
+  async function checkLocked(key: string, reply: { header(k: string, v: unknown): unknown }) {
+    const locked = await ctx.loginGuard.lockedFor(key);
     if (locked > 0) {
       reply.header('Retry-After', Math.ceil(locked / 1000));
       throw tooManyRequests(
@@ -73,17 +73,19 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {
     const body = LoginRequest.parse(req.body);
     const key = `local:${normalizeEmail(body.email)}`;
-    checkLocked(key, reply);
+    await checkLocked(key, reply);
 
     const result = await local.authenticate(body.email, body.password);
     if (!result.ok) {
       if (result.reason === 'disabled') throw forbidden('Password sign-in is turned off.', 'password_login_disabled');
-      ctx.loginGuard.recordFailure(key);
+      await ctx.loginGuard.recordFailure(key);
+      void ctx.audit.fromRequest(req, 'auth.login_failed', { actor: null, details: { method: 'password', email: normalizeEmail(body.email) } });
       throw unauthorized('Wrong email or password.', 'invalid_credentials');
     }
-    ctx.loginGuard.recordSuccess(key);
+    await ctx.loginGuard.recordSuccess(key);
     await startSession(ctx, req, reply, result.userId);
     const [row] = await ctx.db.select().from(users).where(eq(users.id, result.userId));
+    void ctx.audit.fromRequest(req, 'auth.login', { actor: { id: row.id, email: row.email }, details: { method: 'password' } });
     return { user: toPublicUser(row) };
   });
 
@@ -91,7 +93,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   app.post('/ldap', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {
     const body = LdapLoginRequest.parse(req.body);
     const key = `ldap:${body.username.trim().toLowerCase()}`;
-    checkLocked(key, reply);
+    await checkLocked(key, reply);
 
     const result = await ctx.ldap.login(body.username, body.password);
     if (!result.ok) {
@@ -103,13 +105,16 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
         case 'email_conflict':
           throw conflict(result.message ?? 'An account with this email already exists.', 'email_conflict');
         default:
-          ctx.loginGuard.recordFailure(key);
+          await ctx.loginGuard.recordFailure(key);
+          void ctx.audit.fromRequest(req, 'auth.login_failed', { actor: null, details: { method: 'ldap', username: body.username.trim().toLowerCase() } });
           throw unauthorized('Wrong username or password.', 'invalid_credentials');
       }
     }
-    ctx.loginGuard.recordSuccess(key);
+    await ctx.loginGuard.recordSuccess(key);
     await startSession(ctx, req, reply, result.userId);
     const [row] = await ctx.db.select().from(users).where(eq(users.id, result.userId));
+    void ctx.audit.fromRequest(req, 'auth.login', { actor: { id: row.id, email: row.email }, details: { method: 'ldap', created: result.created } });
+    if (result.created) void ctx.webhooks.emit('user.created', { user: webhookUser(row), source: 'ldap' });
     return { user: toPublicUser(row) };
   });
 
@@ -121,6 +126,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     const user = await signupLocalUser(ctx, body, signup.defaultRole);
     if (user.role === 'admin') ctx.log.info({ email: user.email }, 'first account created; it is the admin');
     await startSession(ctx, req, reply, user.id);
+    void ctx.audit.fromRequest(req, 'auth.signup', { actor: { id: user.id, email: user.email }, details: { role: user.role } });
     reply.code(201);
     return { user: toPublicUser(user) };
   });
@@ -135,6 +141,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   });
 
   app.post('/logout', async (req, reply) => {
+    if (req.user) void ctx.audit.fromRequest(req, 'auth.logout');
     if (req.user) {
       await revokeSession(ctx, req.user.sessionId);
     } else {

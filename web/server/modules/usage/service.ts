@@ -25,7 +25,9 @@ export class UsageService {
   constructor(private readonly deps: { db: Database; access: AccessService }) {}
 
   async used(userId: string, now = new Date()): Promise<Omit<UsageSummary, 'caps'>> {
-    const { day, month } = periodStarts(now);
+    const { day: dayStart, month } = periodStarts(now);
+    // A typed string: postgres.js can't send a bare Date as an untyped parameter
+    const day = sql`${dayStart.toISOString()}::timestamptz`;
     const tokens = sql`${usageEvents.promptTokens} + ${usageEvents.completionTokens}`;
     const [row] = await this.deps.db
       .select({

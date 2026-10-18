@@ -17,8 +17,14 @@ export async function bootstrapAdmin(ctx: ServerContext): Promise<void> {
   if (email && password) {
     const existing = await findUserByEmail(ctx, email);
     if (!existing) {
-      await createLocalUser(ctx, { email, name: 'Administrator', password, role: 'admin' });
-      ctx.log.info({ email }, 'created the admin account from CLAUDIA_ADMIN_EMAIL');
+      try {
+        await createLocalUser(ctx, { email, name: 'Administrator', password, role: 'admin' });
+        ctx.log.info({ email }, 'created the admin account from CLAUDIA_ADMIN_EMAIL');
+      } catch (err) {
+        // Another instance starting at the same moment created it first
+        const e = err as { code?: string; cause?: { code?: string } };
+        if ((e.code ?? e.cause?.code) !== '23505') throw err;
+      }
     } else if (existing.role !== 'admin') {
       await ctx.db.update(users).set({ role: 'admin', updatedAt: new Date() }).where(eq(users.id, existing.id));
       ctx.log.warn({ email }, 'promoted the existing account named by CLAUDIA_ADMIN_EMAIL to admin');

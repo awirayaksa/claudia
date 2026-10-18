@@ -1,30 +1,42 @@
 /**
  * Background jobs in the `jobs` table. A worker claims one with
  * FOR UPDATE SKIP LOCKED, so several app instances can share the queue.
- * Enqueueing wakes this instance's worker at once; otherwise it polls.
+ * Enqueueing wakes the workers at once (on PostgreSQL every instance's, by
+ * NOTIFY); otherwise they poll.
  * Failed jobs are retried with backoff, then marked failed. Jobs left
  * "running" by a crash are picked up again after STALE_MS.
  */
 import { and, eq, lt, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
-import type { Database } from '../db/client';
+import type { Database, DbHandle } from '../db/client';
 import { jobs } from '../db/schema';
 import { uuidv7 } from '../lib/ids';
 import { rowsOf } from '../rag/vector-store';
+import { withSpan } from '../telemetry';
 
 export type JobHandler = (payload: Record<string, unknown>, job: { id: string; attempts: number }) => Promise<void>;
 
 const POLL_MS = 2000;
 const STALE_MS = 15 * 60_000;
 const MAX_ATTEMPTS = 3;
+const CHANNEL = 'claudia_jobs';
 
 export class JobQueue {
   private handlers = new Map<string, JobHandler>();
   private timer: NodeJS.Timeout | null = null;
   private running = 0;
   private stopped = true;
+  private unlisten: (() => Promise<void>) | null = null;
 
-  constructor(private readonly deps: { db: Database; log: FastifyBaseLogger; concurrency?: number }) {}
+  constructor(
+    private readonly deps: {
+      db: Database;
+      log: FastifyBaseLogger;
+      concurrency?: number;
+      /** LISTEN/NOTIFY, to wake the other instances' workers. */
+      notifier?: Pick<DbHandle, 'listen' | 'notify'>;
+    }
+  ) {}
 
   register(type: string, handler: JobHandler): void {
     this.handlers.set(type, handler);
@@ -39,6 +51,7 @@ export class JobQueue {
       ...(opts.delayMs ? { runAfter: new Date(Date.now() + opts.delayMs) } : {}),
     });
     this.wake();
+    void this.deps.notifier?.notify?.(CHANNEL).catch(() => {});
     return id;
   }
 
@@ -52,12 +65,21 @@ export class JobQueue {
       .where(and(eq(jobs.status, 'running'), lt(jobs.lockedAt, new Date(Date.now() - STALE_MS))))
       .catch(() => {});
     this.schedule(0);
+    void this.deps.notifier
+      ?.listen?.(CHANNEL, () => this.wake())
+      .then((unlisten) => {
+        if (this.stopped) void unlisten().catch(() => {});
+        else this.unlisten = unlisten;
+      })
+      .catch((err) => this.deps.log.warn({ err: String(err) }, 'listening for new jobs failed; polling only'));
   }
 
   async stop(): Promise<void> {
     this.stopped = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
+    await this.unlisten?.().catch(() => {});
+    this.unlisten = null;
     while (this.running > 0) await new Promise((r) => setTimeout(r, 20));
   }
 
@@ -124,7 +146,9 @@ export class JobQueue {
     const handler = this.handlers.get(job.type);
     try {
       if (!handler) throw new Error(`No handler for job type "${job.type}"`);
-      await handler(job.payload, job);
+      await withSpan(`job ${job.type}`, { 'claudia.job_id': job.id, 'claudia.job_type': job.type, 'claudia.job_attempt': job.attempts }, () =>
+        handler(job.payload, job)
+      );
       await this.deps.db.update(jobs).set({ status: 'done', error: null, updatedAt: new Date() }).where(eq(jobs.id, job.id));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
