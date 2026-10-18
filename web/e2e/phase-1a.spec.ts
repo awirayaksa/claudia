@@ -158,7 +158,8 @@ test.describe.serial('Claudia Web, Phase 1a', () => {
     // The user already sent 3 messages this minute
     await send(user, 'one more');
     await expect(user.getByRole('alert')).toContainText(/rate limit/i);
-    await api(admin, 'PATCH', '/api/admin/settings/limits', { completionsPerMinute: 30, concurrentRuns: 3, maxToolIterations: 10 });
+    // Every later spec shares the admin's per-minute budget, so keep it out of their way
+    await api(admin, 'PATCH', '/api/admin/settings/limits', { completionsPerMinute: 1000, concurrentRuns: 3, maxToolIterations: 10 });
   });
 
   test('works at phone width', async ({ browser }) => {
