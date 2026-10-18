@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   Run on a Windows machine with internet access, Git and Docker Desktop
-  (Linux containers). The bundle holds everything the target needs:
+  (Linux containers), or on Linux with PowerShell 7 (pwsh), Git and Docker,
+  as the release workflow does. The bundle holds everything the target needs:
 
     images\     claudia-web (built from the release) and pgvector/pgvector
     debs\       Docker Engine and the compose plugin for Ubuntu 24.04 (noble),
@@ -99,9 +100,14 @@ function Write-Lf([string]$Path, [string[]]$Lines) {
   [IO.File]::WriteAllText($Path, (($Lines -join "`n") + "`n"), (New-Object System.Text.UTF8Encoding $false))
 }
 
-# Windows' own bsdtar; Git for Windows may put another tar first on PATH
-$tarExe = Join-Path $env:SystemRoot 'System32\tar.exe'
-if (-not (Test-Path $tarExe)) { throw "tar.exe not found at $tarExe (Windows 10 1803 or later is needed)." }
+$onWindows = $env:OS -eq 'Windows_NT'
+if ($onWindows) {
+  # Windows' own bsdtar; Git for Windows may put another tar first on PATH
+  $tarExe = Join-Path $env:SystemRoot 'System32\tar.exe'
+  if (-not (Test-Path $tarExe)) { throw "tar.exe not found at $tarExe (Windows 10 1803 or later is needed)." }
+} else {
+  $tarExe = 'tar'
+}
 
 # Windows PowerShell leaves $PSScriptRoot empty in parameter defaults
 if (-not $OutDir) { $OutDir = Join-Path $PSScriptRoot 'out' }
@@ -211,7 +217,7 @@ try {
   Write-Step "Building $image"
   Invoke-Native 'docker build' {
     docker build --platform $platform --load `
-      -f (Join-Path $src 'web\docker\Dockerfile') `
+      -f ([IO.Path]::Combine($src, 'web', 'docker', 'Dockerfile')) `
       -t $image `
       --label "org.opencontainers.image.version=$version" `
       --label "org.opencontainers.image.revision=$sha" `
@@ -251,10 +257,14 @@ try {
       'apt-get clean',
       'apt-get install -y -q --download-only --no-install-recommends docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin',
       'cp /var/cache/apt/archives/*.deb /out/',
+      '# On Linux the files would otherwise belong to root',
+      'if [ -n "${OWNER:-}" ]; then chown -R "$OWNER" /out; fi',
       'ls /out'
     )
+    $owner = ''
+    if (-not $onWindows) { $owner = "$(id -u):$(id -g)" }
     Invoke-Native 'Downloading the packages' {
-      docker run --rm --platform $platform -e "ARCH=$Arch" `
+      docker run --rm --platform $platform -e "ARCH=$Arch" -e "OWNER=$owner" `
         -v "$($tools):/tools:ro" -v "$($debDir):/out" `
         ubuntu:24.04 bash /tools/fetch-debs.sh
     }

@@ -6,11 +6,18 @@ Docker Engine, the images and the configuration all come from the bundle.
 
 | Step | Where | What |
 |---|---|---|
-| 1 | Windows (online) | `prepare-bundle.ps1` builds `claudia-web-<version>-airgap-amd64.tar` |
+| 1 | Windows (online) | Download `claudia-web-<version>-airgap-amd64.tar` from a GitHub release, or build it with `prepare-bundle.ps1` |
 | 2 | — | Copy the `.tar` and its `.tar.sha256` to the target (USB, file transfer) |
 | 3 | Ubuntu 24.04 (offline) | `sudo bash install.sh` installs Docker if needed and starts the app |
 
-## 1. Make the bundle (Windows)
+## 1. Get the bundle
+
+Every release (`npm run release`, see [Releasing](#releasing)) has the amd64
+bundle and its `.tar.sha256` attached on its GitHub releases page, so for a
+released version just download both. Build it yourself for a branch, an ARM
+target or other options.
+
+### Build it (Windows)
 
 You need Git, Docker Desktop running Linux containers, and about 5 GB of
 free disk. From the repository root:
@@ -147,7 +154,7 @@ sudo docker run --rm --user root -v claudia_claudia-data:/data -v "$PWD/backups:
 
 ## Upgrade
 
-Make a new bundle and run `install.sh` from it, just as for a first install.
+Get the new release's bundle (or make one) and run `install.sh` from it, just as for a first install.
 Your existing `.env` is kept, and any options you pass replace its values. The
 database is dumped to `/opt/claudia/backups/` before the new version starts.
 The previous image stays on the host, so you can roll back.
@@ -164,6 +171,28 @@ sudo docker compose stop app
 sudo cat backups/<dump> | sudo docker compose exec -T db pg_restore -U claudia -d claudia --clean --if-exists
 sudo docker compose up -d
 ```
+
+## Releasing
+
+Claudia Desktop and Claudia Web are released together under one version. On
+an up-to-date, clean `main`:
+
+```powershell
+npm run release                      # asks patch / minor / major / custom
+npm run release -- -Version minor    # or say it up front
+```
+
+The script sets the version in `package.json` and `web/package.json`,
+commits it, tags `vX.Y.Z` and pushes both. The tag starts the **Build and
+Release** workflow, which:
+
+1. creates a draft GitHub release with generated notes,
+2. builds the Windows installer, portable exe and `latest.yml` (what the
+   desktop auto-updater reads), and this bundle for amd64, in parallel,
+3. attaches them, publishes the release and sends the Telegram notice.
+
+If a build fails, the release stays a draft. Re-run the failed jobs from
+the Actions page; the draft is reused.
 
 ## Uninstall
 

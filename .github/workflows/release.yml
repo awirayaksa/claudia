@@ -1,25 +1,47 @@
 name: Build and Release
 
+# A vX.Y.Z tag (pushed by scripts/release.ps1) releases both apps: a draft
+# release is created, the desktop installer and the Claudia Web air-gap
+# bundle are attached to it, and it is published once both are there.
 on:
   push:
     tags:
       - 'v*'  # Triggers on version tags like v1.0.0
 
 permissions:
-  contents: write # Required for creating releases      
+  contents: write # Required for creating releases
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.ref_name }}
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
 
 jobs:
-  release:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create the draft release
+        # A re-run finds the draft from the first attempt
+        run: |
+          gh release view "$TAG" > /dev/null 2>&1 ||
+            gh release create "$TAG" --draft --verify-tag --title "$TAG" --generate-notes
+
+  desktop:
+    needs: draft
     runs-on: windows-latest
-    
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0  # Fetch all history for better release notes
 
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
           node-version: '18'
           cache: 'npm'
@@ -28,38 +50,51 @@ jobs:
         run: npm ci
 
       - name: Build application
-        run: npm run build:win
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        # The workflow uploads the files itself; electron-builder would make a second draft
+        run: npm run build:win -- --publish never
 
-      - name: Get version
-        id: version
-        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+      - name: Attach to the release
         shell: bash
+        # latest.yml and the blockmap are what the desktop auto-updater reads
+        run: |
+          gh release upload "$TAG" --clobber \
+            release/*-Setup.exe release/*-Setup.exe.blockmap release/*-Portable.exe release/latest.yml
 
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
+  web:
+    needs: draft
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
         with:
-          files: |
-            release/*.exe
-            dist/*.zip
-            dist/*.yml
-          draft: false
-          prerelease: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0  # The bundle script finds the version from the tag
+
+      - name: Build the air-gap bundle
+        shell: pwsh
+        run: ./web/deploy/airgap/prepare-bundle.ps1 -Ref "$env:TAG" -NoFetch -OutDir "$env:RUNNER_TEMP/airgap"
+
+      - name: Attach to the release
+        run: gh release upload "$TAG" --clobber "$RUNNER_TEMP"/airgap/*.tar "$RUNNER_TEMP"/airgap/*.tar.sha256
+
+  publish:
+    needs: [desktop, web]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Publish the release
+        run: gh release edit "$TAG" --draft=false --latest
 
       - name: Send Telegram Notification
-        if: success()
+        shell: pwsh
         run: |
-          $version = "${{ steps.version.outputs.VERSION }}"
+          $version = "${{ github.ref_name }}" -replace '^v', ''
           $repo = "${{ github.repository }}"
           $actor = "${{ github.actor }}"
           $releaseUrl = "https://github.com/$repo/releases/tag/v$version"
           $imageUrl = "https://opengraph.githubassets.com/1/$repo/releases/tag/v$version"
 
-          $caption = "🚀 <b>New Release Published!</b>`n`n📦 <b>Repository:</b> $repo`n🏷️ <b>Version:</b> <code>v$version</code>`n👤 <b>Released by:</b> $actor`n`n🔗 <a href='$releaseUrl'>View Release on GitHub</a>"
+          $caption = "🚀 <b>New Release Published!</b>`n`n📦 <b>Repository:</b> $repo`n🏷️ <b>Version:</b> <code>v$version</code>`n👤 <b>Released by:</b> $actor`n`n🖥️ Claudia Desktop (Windows) and 🌐 Claudia Web (air-gap bundle)`n`n🔗 <a href='$releaseUrl'>View Release on GitHub</a>"
 
           $buttons = '{"inline_keyboard":[[{"text":"📦 View Release","url":"' + $releaseUrl + '"},{"text":"📥 Download","url":"' + $releaseUrl + '"}]]}'
 
