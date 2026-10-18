@@ -76,6 +76,20 @@ test.describe.serial('Claudia Web, Phase 1a', () => {
     await shot(admin, 'admin-connections');
     // The key is never shown again
     await expect(admin.locator('body')).not.toContainText('sk-e2e-key-0000');
+
+    // Skipping certificate verification warns, is saved, and shows on the list
+    await admin.getByRole('button', { name: 'Edit' }).click();
+    await admin.getByTestId('connection-insecure-tls').check();
+    await expect(admin.getByText("the server's identity isn't checked")).toBeVisible();
+    await shot(admin, 'admin-connection-insecure-tls');
+    await admin.getByRole('button', { name: 'Save' }).click();
+    await expect(admin.getByText('certificate not verified')).toBeVisible();
+    await shot(admin, 'admin-connections-insecure-tls');
+    await admin.getByRole('button', { name: 'Edit' }).click();
+    await expect(admin.getByTestId('connection-insecure-tls')).toBeChecked();
+    await admin.getByTestId('connection-insecure-tls').uncheck();
+    await admin.getByRole('button', { name: 'Save' }).click();
+    await expect(admin.getByText('certificate not verified')).toHaveCount(0);
   });
 
   test('a new user signs up, waits, and is approved', async () => {

@@ -12,6 +12,11 @@ export interface ConnectionQuirks {
   /** OpenRouter dashboard attribution. */
   siteUrl?: string;
   siteName?: string;
+  /**
+   * Don't verify the endpoint's TLS certificate (self-signed or an internal
+   * CA). Admin connections only; user-owned ones always verify.
+   */
+  insecureTls?: boolean;
 }
 
 /** A configured LLM endpoint. owner_id null = global (admin-managed). */

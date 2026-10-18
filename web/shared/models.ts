@@ -32,6 +32,7 @@ export const ConnectionQuirks = z
     apiCompatibility: z.enum(['openai', 'anthropic']),
     siteUrl: z.string().max(500),
     siteName: z.string().max(200),
+    insecureTls: z.boolean(),
   })
   .partial();
 
