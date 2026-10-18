@@ -1,117 +1,20 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Message, Attachment, ToolCall, ToolResult } from '../../types/message.types';
 import { MessageUsage } from '../../types/statistics.types';
-import { ContentPart } from '../../types/api.types';
+import { ChatCompletionRequest } from '../../types/api.types';
+import {
+  buildAPIMessage,
+  buildMessageContent,
+  remoteFileIds,
+  toolContentForModel,
+  uiResourceConfirmation,
+} from '../../services/chat/message-builder';
+import type { IAPIProvider } from '../../services/api/provider.interface';
 import { getAPIProvider } from '../../services/api/provider.service';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
 import { v4 as uuidv4 } from 'uuid';
 import type { RootState } from '../index';
 import { ReasoningEffort, resolveEffort, coerceEffort } from '../../utils/effort-utils';
-
-/**
- * Build message content with attachments in OpenAI multi-part format.
- * Images are embedded as image_url content parts.
- */
-function buildMessageContent(
-  text: string,
-  attachments?: Attachment[]
-): string | ContentPart[] {
-  const imageAttachments = attachments?.filter(
-    (a) => a.type === 'image' && a.data
-  );
-
-  if (!imageAttachments || imageAttachments.length === 0) {
-    return text;
-  }
-
-  const parts: ContentPart[] = [];
-
-  if (text) {
-    parts.push({ type: 'text', text });
-  }
-
-  for (const img of imageAttachments) {
-    parts.push({
-      type: 'image_url',
-      image_url: { url: img.data! },
-    });
-  }
-
-  return parts;
-}
-
-/**
- * Truncate text to a maximum length, adding an ellipsis if truncated.
- */
-function truncateText(text: string, maxLength: number): string {
-  if (text.length <= maxLength) return text;
-  return text.slice(0, maxLength - 3) + '...';
-}
-
-/**
- * Build API message from a Redux Message with normalization for tool calling.
- * Assistant messages with tool_calls but empty content must send content: null.
- * Tool messages must have non-empty content.
- */
-function buildAPIMessage(msg: Message) {
-  let content: string | ContentPart[] | null = buildMessageContent(msg.content, msg.attachments);
-
-  // OpenAI-compatible APIs: assistant messages with tool_calls should omit empty content entirely
-  // rather than sending null or empty string, to avoid strict-proxy 400s.
-  let omitContent = false;
-  if (msg.role === 'assistant' && msg.toolCalls && msg.toolCalls.length > 0) {
-    if (typeof content === 'string' && !content.trim()) {
-      omitContent = true;
-    } else if (Array.isArray(content) && content.length === 0) {
-      omitContent = true;
-    }
-  }
-
-  // Tool messages must have non-empty content, and should be truncated
-  // to avoid hitting provider size limits on follow-up requests.
-  if (msg.role === 'tool') {
-    if (typeof content === 'string' && !content.trim()) {
-      content = '{}';
-    } else if (Array.isArray(content) && content.length === 0) {
-      content = '{}';
-    } else if (typeof content === 'string') {
-      content = truncateText(content, 4000);
-    }
-  }
-
-  const result: any = {
-    role: msg.role,
-  };
-
-  // Strict providers (e.g. Kimi) reject assistant messages that have BOTH
-  // 'content' and 'tool_calls'. When tool_calls are present, omit content
-  // from the API message entirely, even if it has text.
-  const hasToolCalls = msg.toolCalls && msg.toolCalls.length > 0;
-  if (!omitContent && !hasToolCalls) {
-    result.content = content;
-  }
-
-  // Only include tool_calls for non-empty arrays (some proxies reject [])
-  if (hasToolCalls) {
-    result.tool_calls = msg.toolCalls;
-  }
-  if (msg.tool_call_id) result.tool_call_id = msg.tool_call_id;
-
-  // 'name' is NOT part of the OpenAI tool-message spec and can cause 400s on
-  // strict proxies. Keep it only for assistant messages (inside tool_calls) or
-  // legacy function messages — never for role === 'tool'.
-  if (msg.name && msg.role !== 'tool') {
-    result.name = msg.name;
-  }
-
-  // DeepSeek (and some other providers) require reasoning_content to be echoed
-  // back in the conversation history when the assistant used thinking mode.
-  if (msg.role === 'assistant' && msg.reasoning) {
-    result.reasoning_content = msg.reasoning;
-  }
-
-  return result;
-}
 
 interface ChatState {
   messages: Message[];
@@ -129,10 +32,6 @@ interface ChatState {
   toolCallIteration: number;
   // Edit state
   editingMessage: { id: string; content: string; attachments?: Attachment[] } | null;
-  // Per-session filesystem directory (volatile, not persisted)
-  filesystemDirectory: string | null;
-  // Per-session reasoning effort override set via `/effort <level>` (volatile)
-  effortLevel: ReasoningEffort | null;
 }
 
 const initialState: ChatState = {
@@ -149,9 +48,22 @@ const initialState: ChatState = {
   isExecutingTools: false,
   toolCallIteration: 0,
   editingMessage: null,
-  filesystemDirectory: null,
-  effortLevel: null,
 };
+
+/**
+ * Open WebUI resolves uploaded files itself: send every file id referenced in
+ * the conversation so documents stay in context on later turns. Other
+ * providers get the text inlined instead and must not see this field.
+ */
+function openWebUIFiles(
+  provider: IAPIProvider,
+  history: Message[],
+  attachments?: Attachment[]
+): ChatCompletionRequest['files'] {
+  if (provider.getProviderType() !== 'openwebui') return undefined;
+  const ids = new Set([...history.flatMap((m) => remoteFileIds(m.attachments)), ...remoteFileIds(attachments)]);
+  return ids.size > 0 ? [...ids].map((id) => ({ type: 'file' as const, id })) : undefined;
+}
 
 /**
  * Effort that applies to an outgoing request: an explicit per-message override,
@@ -163,7 +75,7 @@ function effortForRequest(
   model: string,
   oneShot?: ReasoningEffort | null
 ): ReasoningEffort | undefined {
-  const resolved = resolveEffort(oneShot, state.chat.effortLevel, state.settings.preferences.reasoningEffort);
+  const resolved = resolveEffort(oneShot, state.composer.effortLevel, state.settings.preferences.reasoningEffort);
   return coerceEffort(resolved, model);
 }
 
@@ -202,6 +114,7 @@ export const sendMessage = createAsyncThunk(
         stream: false,
         temperature: temperature,
         reasoning_effort: reasoningEffort,
+        files: openWebUIFiles(provider, state.chat.messages, attachments),
       });
 
       // Assistant responses are always plain text strings
@@ -372,13 +285,6 @@ const chatSlice = createSlice({
     ) => {
       state.editingMessage = action.payload;
     },
-    setFilesystemDirectory: (state, action: PayloadAction<string | null>) => {
-      state.filesystemDirectory = action.payload;
-    },
-    /** Session-wide effort override set from the input via `/effort <level>`. */
-    setEffortLevel: (state, action: PayloadAction<ReasoningEffort | null>) => {
-      state.effortLevel = action.payload;
-    },
   },
   extraReducers: (builder) => {
     builder
@@ -477,8 +383,6 @@ export const {
   updateMessageToolResults,
   deleteMessagesAfter,
   setEditingMessage,
-  setFilesystemDirectory,
-  setEffortLevel,
 } = chatSlice.actions;
 
 // Thunk for sending streaming message
@@ -533,6 +437,7 @@ export const sendStreamingMessage = createAsyncThunk(
           messages,
           temperature: temperature,
           reasoning_effort: reasoningEffort,
+          files: openWebUIFiles(provider, state.chat.messages, attachments),
         },
         {
           onChunk: (chunk) => {
@@ -591,7 +496,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     dispatch(clearToolCalls());
 
     // Get all messages for context (include attachments for prior messages)
-    let messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
+    const messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
 
     // Add the new user message with attachments
     messages.push({
@@ -626,14 +531,16 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
       });
     }
 
-    // Get available MCP tools
+    // Get available MCP tools, named by alias so same-named tools on two servers both work
     const mcpState = state.mcp;
-    const availableTools = ToolIntegrationService.getAvailableTools(mcpState);
-    const hasTools = ToolIntegrationService.hasAvailableTools(mcpState);
+    const openAITools = ToolIntegrationService.getOpenAITools(mcpState);
+    const hasTools = openAITools.length > 0;
+    const toolsFirstTurnOnly = provider.getCapabilities().toolsFirstTurnOnly === true;
+    const files = openWebUIFiles(provider, state.chat.messages, attachments);
 
     console.log('[chatSlice] Sending message with tools:', {
-      availableToolCount: availableTools.length,
-      toolNames: availableTools.map(t => t.name),
+      availableToolCount: openAITools.length,
+      toolNames: openAITools.map(t => t.function.name),
       readyServers: Object.entries(mcpState.serverStates)
         .filter(([_, state]) => state.status === 'ready')
         .map(([id, state]) => ({ id, name: state.config.name, toolCount: state.tools.length })),
@@ -656,15 +563,11 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
       }
 
       try {
-        // Convert MCP tools to OpenAI format
-        // Only send tools on the first iteration. Some strict proxies
-        // (e.g. Kimi via opencode-go) fail when tools are resent after
-        // tool results have already been added to the conversation.
-        const openAITools = hasTools && iteration === 0
-          ? ToolIntegrationService.mcpToolsToOpenAI(availableTools)
-          : undefined;
-
-        const tool_choice = !hasTools || iteration > 0 ? 'none' : 'auto';
+        // Tools are offered on every iteration so the model can chain calls,
+        // unless the provider only accepts them on the first request.
+        const offerTools = hasTools && (iteration === 0 || !toolsFirstTurnOnly);
+        const tools = offerTools ? openAITools : undefined;
+        const tool_choice = offerTools ? 'auto' : 'none';
 
         let assistantToolCalls: ToolCall[] = [];
 
@@ -674,10 +577,11 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             {
               model,
               messages,
-              tools: openAITools,
+              tools,
               tool_choice: tool_choice,
               temperature: temperature,
               reasoning_effort: reasoningEffort,
+              files,
             },
             {
               onChunk: (chunk) => {
@@ -737,8 +641,11 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
           }
           messages.push(assistantAPIMessage);
 
-          // Clear streaming content for next iteration
+          // Clear streaming content for next iteration. completeStreaming() also
+          // drops the stored controller, so re-register it: Stop must still
+          // reach this loop while tools run.
           dispatch(completeStreaming());
+          dispatch(setAbortController(abortController as any));
 
           // Check if user aborted before executing tools
           if (abortController.signal.aborted) {
@@ -768,7 +675,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
 
             if (result.hasUI && result.uiResource) {
               // Send a simple confirmation to LLM instead of full UI content
-              contentString = `Interactive UI component displayed successfully. The user can now interact with the ${result.name} interface.`;
+              contentString = uiResourceConfirmation(result.name);
 
               // Add to Redux for UI rendering
               const toolResultMessage: Message = {
@@ -808,9 +715,15 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             // Also truncate content to avoid hitting provider size limits.
             messages.push({
               role: 'tool',
-              content: truncateText(contentString || '{}', 4000),
+              content: toolContentForModel(contentString),
               tool_call_id: result.tool_call_id,
             });
+          }
+
+          // Stopped while tools ran: keep the results, but don't ask the model again
+          if (abortController.signal.aborted) {
+            dispatch(clearToolCalls());
+            return;
           }
 
           // Increment iteration and continue loop
@@ -826,6 +739,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             userContent: '',
             timestamp: new Date().toISOString(),
           }));
+          dispatch(setAbortController(abortController as any));
         } else {
           // No tool calls - complete streaming
           dispatch(completeStreaming());
@@ -877,8 +791,12 @@ export const executeUIAction = createAsyncThunk(
     const state = getState() as RootState;
     const mcpState = state.mcp;
 
-    // Find server for this tool
-    const serverId = ToolIntegrationService['findServerForTool'](toolName, mcpState);
+    // Prefer the server that produced the UI resource, so a same-named tool on
+    // another server is never picked by accident.
+    const originalResult = state.chat.messages
+      .flatMap((m) => m.toolResults ?? [])
+      .find((r) => r.tool_call_id === originalToolCallId);
+    const serverId = ToolIntegrationService.findServerForTool(toolName, mcpState, originalResult?.serverId);
     if (!serverId) {
       throw new Error(`Server for tool ${toolName} not found`);
     }
@@ -896,7 +814,10 @@ export const executeUIAction = createAsyncThunk(
     dispatch(setExecutingTools(true));
 
     // Execute tool
-    const result = await ToolIntegrationService.executeToolCall(toolCall, mcpState);
+    const result = await ToolIntegrationService.executeToolCall(toolCall, mcpState, undefined, {
+      serverId,
+      tool: toolName,
+    });
 
     // Update original message with new result
     const message = state.chat.messages.find((m) =>

@@ -1,6 +1,6 @@
 import { EventEmitter } from 'events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
+import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
@@ -28,6 +28,26 @@ import { getBuiltinServerDefinition } from './builtin-mcp/registry';
 // MCP Client Wrapper - Uses official SDK
 // ============================================================================
 
+/** How a client connects; the desktop uses the defaults. */
+export interface MCPClientOptions {
+  /**
+   * stdio: hand the child the parent's whole environment (desktop default).
+   * The web server passes false: the child then gets only the SDK's safe
+   * defaults (PATH, HOME, …) plus the server's configured variables — never
+   * the database URL or the secret key.
+   */
+  inheritEnv?: boolean;
+  /** HTTP / SSE: fetch to use (the web server's SSRF guard for user servers). */
+  fetch?: typeof fetch;
+  /** HTTP / SSE: extra request headers, e.g. an Authorization token. */
+  headers?: Record<string, string>;
+  /**
+   * built-in: merged over config.builtinConfig. Holds in-process values that
+   * can't be stored, such as an injected text extractor or HTTP getter.
+   */
+  builtinContext?: Record<string, unknown>;
+}
+
 export class MCPClientWrapper extends EventEmitter {
   private client: Client | null = null;
   private transport: Transport | null = null;
@@ -42,7 +62,10 @@ export class MCPClientWrapper extends EventEmitter {
   private _logs: string[] = [];
   private readonly MAX_LOGS = 200;
 
-  constructor(private config: MCPServerConfig) {
+  constructor(
+    private config: MCPServerConfig,
+    private readonly options: MCPClientOptions = {}
+  ) {
     super();
   }
 
@@ -192,7 +215,8 @@ export class MCPClientWrapper extends EventEmitter {
 
     // Merge environment variables
     const mergedEnv: Record<string, string> = {};
-    for (const [key, value] of Object.entries(process.env)) {
+    const base = this.options.inheritEnv === false ? getDefaultEnvironment() : process.env;
+    for (const [key, value] of Object.entries(base)) {
       if (value !== undefined) {
         mergedEnv[key] = value;
       }
@@ -237,9 +261,10 @@ export class MCPClientWrapper extends EventEmitter {
       url: this.config.url,
     });
 
-    this.transport = new StreamableHTTPClientTransport(
-      new URL(this.config.url)
-    );
+    this.transport = new StreamableHTTPClientTransport(new URL(this.config.url), {
+      ...(this.options.headers ? { requestInit: { headers: this.options.headers } } : {}),
+      ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+    });
   }
 
   private async createSseTransport(): Promise<void> {
@@ -251,9 +276,10 @@ export class MCPClientWrapper extends EventEmitter {
       url: this.config.url,
     });
 
-    this.transport = new SSEClientTransport(
-      new URL(this.config.url)
-    );
+    this.transport = new SSEClientTransport(new URL(this.config.url), {
+      ...(this.options.headers ? { requestInit: { headers: this.options.headers } } : {}),
+      ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+    });
   }
 
   private async createBuiltinTransport(): Promise<void> {
@@ -271,7 +297,10 @@ export class MCPClientWrapper extends EventEmitter {
     });
 
     // Create the in-process MCP server
-    this.builtinServer = definition.createServer(this.config.builtinConfig);
+    this.builtinServer = definition.createServer({
+      ...this.config.builtinConfig,
+      ...this.options.builtinContext,
+    });
 
     // Create linked transport pair
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -398,6 +427,7 @@ export class MCPClientWrapper extends EventEmitter {
         name: tool.name,
         description: tool.description,
         inputSchema: tool.inputSchema as MCPTool['inputSchema'],
+        ...(tool.annotations ? { annotations: tool.annotations as MCPTool['annotations'] } : {}),
       }));
       console.log(`[MCP ${this.config.name}] Received ${this._tools.length} tools:`, this._tools.map((t) => t.name));
       this.emit('toolsUpdated', this._tools);
@@ -410,7 +440,7 @@ export class MCPClientWrapper extends EventEmitter {
     return this._tools;
   }
 
-  async callTool(name: string, args: Record<string, unknown>, traceId?: string): Promise<MCPToolResult> {
+  async callTool(name: string, args: Record<string, unknown>, _traceId?: string): Promise<MCPToolResult> {
     if (this._status !== 'ready' || !this.client) {
       throw new Error(`Client is not ready (status: ${this._status})`);
     }
@@ -418,11 +448,12 @@ export class MCPClientWrapper extends EventEmitter {
     this.addLog(`Calling tool: ${name}`);
 
     try {
-      const result = await this.client.callTool(
+      // The SDK types a result as either content or a legacy toolResult; servers send content
+      const result = (await this.client.callTool(
         { name, arguments: args },
         undefined,
         { timeout: 120000 }
-      );
+      )) as { content?: Array<{ type: string } & Record<string, unknown>>; isError?: boolean };
 
       return {
         content: (result.content || []).map((item) => ({
@@ -551,7 +582,12 @@ export class MCPClientWrapper extends EventEmitter {
 export class MCPClientManager extends EventEmitter {
   private clients: Map<string, MCPClientWrapper> = new Map();
 
-  async startServer(config: MCPServerConfig): Promise<void> {
+  /** Options applied to every client this manager starts (per-call options win). */
+  constructor(private readonly defaultOptions: MCPClientOptions = {}) {
+    super();
+  }
+
+  async startServer(config: MCPServerConfig, options: MCPClientOptions = {}): Promise<void> {
     // Stop existing client if running
     const existing = this.clients.get(config.id);
     if (existing) {
@@ -559,7 +595,7 @@ export class MCPClientManager extends EventEmitter {
     }
 
     // Create new instance
-    const client = new MCPClientWrapper(config);
+    const client = new MCPClientWrapper(config, { ...this.defaultOptions, ...options });
 
     // Forward events
     client.on('statusChanged', (status: MCPServerStatus) => {
@@ -595,9 +631,14 @@ export class MCPClientManager extends EventEmitter {
     }
   }
 
-  async restartServer(serverId: string, config: MCPServerConfig): Promise<void> {
+  async restartServer(serverId: string, config: MCPServerConfig, options: MCPClientOptions = {}): Promise<void> {
     await this.stopServer(serverId);
-    await this.startServer(config);
+    await this.startServer(config, options);
+  }
+
+  /** Ids of the servers this manager has started (any status). */
+  serverIds(): string[] {
+    return [...this.clients.keys()];
   }
 
   // Tools
@@ -671,6 +712,10 @@ export class MCPClientManager extends EventEmitter {
   getServerStatus(serverId: string): MCPServerStatus {
     const client = this.clients.get(serverId);
     return client ? client.status : 'stopped';
+  }
+
+  getServerError(serverId: string): string | undefined {
+    return this.clients.get(serverId)?.error;
   }
 
   // Logs

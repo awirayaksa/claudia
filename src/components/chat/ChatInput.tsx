@@ -11,8 +11,10 @@ import { useSkillMention } from '../../hooks/useSkillMention';
 import { useAppSelector, useAppDispatch } from '../../store';
 import { CompactModelSelector } from './CompactModelSelector';
 import { EffortSelector } from './EffortSelector';
-import { setEffortLevel } from '../../store/slices/chatSlice';
+import { setEffortLevel } from '../../store/slices/composerSlice';
 import { parseEffortDirective } from '../../utils/effort-utils';
+import { getPlatform } from '../../platform';
+import { useT } from '../../i18n';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -27,16 +29,40 @@ interface ChatInputProps {
   initialAttachments?: Attachment[];
   onCancelEdit?: () => void;
   variant?: 'centered' | 'default';
+  /** Called after the user starts or stops an MCP server from the badges above the input. */
+  onMCPServerToggled?: (serverId: string, running: boolean) => void;
+  /** More slash commands, listed after the skills (the web app's prompt library). */
+  extraCommands?: import('../../types/skill.types').Skill[];
+  /**
+   * One of `extraCommands` was picked: its "/command" text is removed and the
+   * host may put text in its place with `insert`.
+   */
+  onCommandPick?: (command: import('../../types/skill.types').Skill, insert: (text: string) => void) => void;
+  /** Display name of a model id (defaults to the id). */
+  modelLabel?: (model: string) => string;
+  /**
+   * A "#" menu (the web app: knowledge bases, chats, web pages). Picking an
+   * item removes the typed "#query" and calls `onHashPick`.
+   */
+  hashCommands?: import('../../types/skill.types').Skill[];
+  onHashPick?: (item: import('../../types/skill.types').Skill, insert: (text: string) => void) => void;
+  hashEmptyLabel?: string;
+  /** More buttons next to "attach" (the web app's microphone). */
+  toolbarExtras?: React.ReactNode;
 }
 
 export interface ChatInputRef {
   focus: () => void;
   addFiles: (files: File[]) => void;
   setMessage: (text: string) => void;
+  /** Add text at the end (with a space), e.g. dictated words. */
+  appendText: (text: string) => void;
+  /** Attach files that are already stored (e.g. imported from a cloud drive). */
+  addAttachments: (attachments: Attachment[]) => void;
 }
 
 function expandFileMentions(message: string, baseDir: string): string {
-  const mentionRegex = /@([\w.\-\/\\]+)/g;
+  const mentionRegex = /@([\w.\-/\\]+)/g;
   return message.replace(mentionRegex, (_match, relPath) => {
     const absPath = `${baseDir}/${relPath}`.replace(/\\/g, '/');
     return absPath;
@@ -48,7 +74,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   onAbort,
   disabled = false,
   isGenerating = false,
-  placeholder = 'Type your message...',
+  placeholder,
   variant = 'default',
   selectedModel,
   availableModels,
@@ -56,7 +82,16 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   initialMessage,
   initialAttachments,
   onCancelEdit,
+  onMCPServerToggled,
+  extraCommands,
+  onCommandPick,
+  modelLabel,
+  hashCommands,
+  onHashPick,
+  hashEmptyLabel,
+  toolbarExtras,
 }, ref) => {
+  const t = useT();
   const [message, setMessage] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -72,26 +107,69 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
   // Reasoning effort: session override, Preferences default, and any directive
   // present in the text being typed right now (applies to the next message only).
-  const sessionEffort = useAppSelector((state) => state.chat.effortLevel);
+  const sessionEffort = useAppSelector((state) => state.composer.effortLevel);
   const preferredEffort = useAppSelector((state) => state.settings.preferences.reasoningEffort);
   const pendingEffort = useMemo(() => parseEffortDirective(message).effort, [message]);
 
   // Redux selectors for filesystem mention feature
-  const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
+  const filesystemDirectory = useAppSelector((state) => state.composer.filesystemDirectory);
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
+  // @file mentions browse the user's own disk, so only hosts with a local filesystem offer them
+  const hasLocalFilesystem = getPlatform().capabilities.localFilesystem;
   const isFilesystemReady = useMemo(
     () =>
+      hasLocalFilesystem &&
       Object.values(serverStates).some(
         (s) => s.config.builtinId === 'builtin-filesystem-001' && s.status === 'ready'
       ),
-    [serverStates]
+    [serverStates, hasLocalFilesystem]
   );
 
   const fileMention = useFileMention(filesystemDirectory, isFilesystemReady);
 
   // Skills mention feature
   const skills = useAppSelector((state) => state.skills.skills);
-  const skillMention = useSkillMention(skills);
+  const commands = useMemo(() => (extraCommands?.length ? [...skills, ...extraCommands] : skills), [skills, extraCommands]);
+  const skillMention = useSkillMention(commands);
+  const noHash = useMemo(() => [] as import('../../types/skill.types').Skill[], []);
+  const hashMention = useSkillMention(hashCommands ?? noHash, '#');
+
+  /**
+   * Show a picked command. Skills stay as "/id " text; an extra command's
+   * text is taken out again and handed to the host, which inserts its own.
+   */
+  const applyCommand = useCallback(
+    (
+      picked: import('../../types/skill.types').Skill | undefined,
+      newValue: string,
+      newCursorPos: number,
+      trigger: '/' | '#' = '/'
+    ) => {
+      const extra = picked && (trigger === '#' ? onHashPick : extraCommands?.includes(picked) && onCommandPick);
+      if (!extra) {
+        setMessage(newValue);
+        requestAnimationFrame(() => {
+          textareaRef.current?.focus();
+          textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
+        });
+        return;
+      }
+      const start = newCursorPos - `${trigger}${picked.id} `.length;
+      setMessage(newValue.slice(0, start) + newValue.slice(newCursorPos));
+      extra(picked, (text) => {
+        setMessage((m) => m.slice(0, start) + text + m.slice(start));
+        requestAnimationFrame(() => {
+          const el = textareaRef.current;
+          if (!el) return;
+          el.style.height = 'auto';
+          el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+          el.focus();
+          el.setSelectionRange(start + text.length, start + text.length);
+        });
+      });
+    },
+    [extraCommands, onCommandPick, onHashPick]
+  );
 
   // Expose methods to parent component
   useImperativeHandle(ref, () => ({
@@ -110,6 +188,18 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 200)}px`;
         }
         textareaRef.current?.focus();
+      });
+    },
+    addAttachments: (more: Attachment[]) => {
+      setAttachments((prev) => [...prev, ...more.filter((a) => !prev.some((p) => p.id === a.id))]);
+    },
+    appendText: (text: string) => {
+      setMessage((m) => (m && !/\s$/.test(m) ? `${m} ${text}` : `${m}${text}`));
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
       });
     },
   }));
@@ -133,6 +223,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     if ((message.trim() || attachments.length > 0) && !disabled && !uploading) {
       fileMention.close();
       skillMention.close();
+      hashMention.close();
       const expandedMessage = filesystemDirectory
         ? expandFileMentions(message, filesystemDirectory)
         : message;
@@ -151,15 +242,20 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const handleKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     // Intercept keyboard events for the skill mention dropdown first
     if (skillMention.isOpen) {
+      const picked = skillMention.filteredSkills[skillMention.activeIndex];
       const result = skillMention.handleKeyDown(e);
       if (result.consumed) {
         e.preventDefault();
-        if (result.newValue !== undefined) {
-          setMessage(result.newValue);
-          requestAnimationFrame(() => {
-            textareaRef.current?.setSelectionRange(result.newCursorPos!, result.newCursorPos!);
-          });
-        }
+        if (result.newValue !== undefined) applyCommand(picked, result.newValue, result.newCursorPos!);
+        return;
+      }
+    }
+    if (hashMention.isOpen) {
+      const picked = hashMention.filteredSkills[hashMention.activeIndex];
+      const result = hashMention.handleKeyDown(e);
+      if (result.consumed) {
+        e.preventDefault();
+        if (result.newValue !== undefined) applyCommand(picked, result.newValue, result.newCursorPos!, '#');
         return;
       }
     }
@@ -297,19 +393,25 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     // Trigger mention detection
     fileMention.handleChange(value, e.target.selectionStart ?? value.length);
     skillMention.handleChange(value, e.target.selectionStart ?? value.length);
+    if (hashCommands?.length) hashMention.handleChange(value, e.target.selectionStart ?? value.length);
   };
+
+  const handleHashSelect = useCallback(
+    (item: import('../../types/skill.types').Skill) => {
+      const cursorPos = textareaRef.current?.selectionStart ?? message.length;
+      const { newValue, newCursorPos } = hashMention.selectSkill(item, message, cursorPos);
+      applyCommand(item, newValue, newCursorPos, '#');
+    },
+    [message, hashMention, applyCommand]
+  );
 
   const handleSkillSelect = useCallback(
     (skill: import('../../types/skill.types').Skill) => {
       const cursorPos = textareaRef.current?.selectionStart ?? message.length;
       const { newValue, newCursorPos } = skillMention.selectSkill(skill, message, cursorPos);
-      setMessage(newValue);
-      requestAnimationFrame(() => {
-        textareaRef.current?.focus();
-        textareaRef.current?.setSelectionRange(newCursorPos, newCursorPos);
-      });
+      applyCommand(skill, newValue, newCursorPos);
     },
-    [message, skillMention]
+    [message, skillMention, applyCommand]
   );
 
   const handleMentionSelect = useCallback(
@@ -345,8 +447,10 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const handleFilesSelected = async (files: File[]) => {
     if (files.length === 0) return;
 
-    const imageFiles = files.filter((f) => f.type.startsWith('image/'));
-    const otherFiles = files.filter((f) => !f.type.startsWith('image/'));
+    // Hosts that keep attachments themselves (web) take images too
+    const inlineImages = !getPlatform().files.handlesImages;
+    const imageFiles = inlineImages ? files.filter((f) => f.type.startsWith('image/')) : [];
+    const otherFiles = inlineImages ? files.filter((f) => !f.type.startsWith('image/')) : files;
 
     // Read images as base64 locally (no server upload needed)
     const imageAttachments: Attachment[] = [];
@@ -391,7 +495,11 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       'image/*': ['.png', '.jpg', '.jpeg', '.gif', '.webp'],
       'application/pdf': ['.pdf'],
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
-      'text/plain': ['.txt'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+      'application/json': ['.json'],
+      'text/plain': ['.txt', '.log'],
+      'text/markdown': ['.md'],
       'text/csv': ['.csv'],
     },
     maxSize: 10 * 1024 * 1024, // 10MB
@@ -444,6 +552,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
               <button
                 onClick={() => removeAttachment(attachment.id)}
                 className="text-text-secondary hover:text-error"
+                aria-label={t('chatInput.removeAttachment', 'Remove {{name}}', { name: attachment.name })}
               >
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -455,12 +564,12 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       )}
 
       {/* MCP Server Toggles */}
-      <MCPServerBadges disabled={disabled || uploading} />
+      <MCPServerBadges disabled={disabled || uploading} onServerToggled={onMCPServerToggled} />
 
       {/* Upload progress */}
       {uploading && Object.keys(progress).length > 0 && (
         <div className="mb-3 text-xs text-text-secondary">
-          Uploading files...
+          {t('chatInput.uploading', 'Uploading files...')}
         </div>
       )}
 
@@ -474,7 +583,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       {/* Drag overlay */}
       {isDragActive && (
         <div className="mb-3 rounded border-2 border-dashed border-accent bg-accent bg-opacity-5 p-4 text-center">
-          <p className="text-sm text-accent">Drop files here to attach</p>
+          <p className="text-sm text-accent">{t('chatInput.drop', 'Drop files here to attach')}</p>
         </div>
       )}
 
@@ -483,7 +592,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         ref={fileInputRef}
         type="file"
         multiple
-        accept="image/*,.pdf,.docx,.txt,.csv"
+        accept="image/*,.pdf,.docx,.xlsx,.pptx,.txt,.md,.csv,.json"
         onChange={(e) => {
           if (e.target.files) {
             handleFilesSelected(Array.from(e.target.files));
@@ -506,8 +615,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           onBlur={() => {
             setTimeout(() => fileMention.close(), 150);
             setTimeout(() => skillMention.close(), 150);
+            setTimeout(() => hashMention.close(), 150);
           }}
-          placeholder={placeholder}
+          placeholder={placeholder ?? t('chatInput.placeholder', 'Type your message...')}
           disabled={disabled || uploading}
           rows={2}
           className="w-full resize-none bg-transparent px-0 py-0 text-sm text-text-primary placeholder-text-secondary focus:outline-none disabled:cursor-not-allowed disabled:opacity-50"
@@ -516,16 +626,19 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
         {/* Bottom toolbar: attach left · model selector + send right */}
         <div className="flex items-center justify-between pt-2">
+          <div className="flex items-center gap-1">
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={disabled || uploading}
             className="rounded p-1.5 text-text-secondary hover:bg-surface hover:text-accent disabled:cursor-not-allowed disabled:opacity-50 transition-colors"
-            title="Attach file"
+            title={t('chatInput.attach', 'Attach file')}
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
             </svg>
           </button>
+          {toolbarExtras}
+          </div>
 
           <div className="flex items-center gap-2">
             {/* Reasoning effort selector */}
@@ -545,6 +658,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
                 models={availableModels}
                 onChange={onModelChange}
                 disabled={disabled || isGenerating}
+                label={modelLabel}
               />
             )}
 
@@ -553,7 +667,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
               onClick={isGenerating ? onAbort : handleSend}
               disabled={!isGenerating && (disabled || uploading || (!message.trim() && attachments.length === 0))}
               className={isGenerating ? 'bg-error hover:bg-error-dark' : ''}
-              title={isGenerating ? 'Stop generating' : 'Send message'}
+              title={isGenerating ? t('chat.stop', 'Stop generating') : t('chatInput.send', 'Send message')}
             >
               {isGenerating ? (
                 <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -568,6 +682,18 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
           </div>
         </div>
       </div>
+
+      {/* "#" menu (references) */}
+      <SkillMentionDropdown
+        isOpen={hashMention.isOpen}
+        skills={hashMention.filteredSkills}
+        activeIndex={hashMention.activeIndex}
+        anchorRef={textareaRef}
+        onSelect={handleHashSelect}
+        onClose={hashMention.close}
+        emptyLabel={hashEmptyLabel}
+        prefix="#"
+      />
 
       {/* Skill mention dropdown */}
       <SkillMentionDropdown
@@ -604,7 +730,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
             <svg className="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
             </svg>
-            Paste
+            {t('chatInput.paste', 'Paste')}
           </button>
           <button
             onClick={handleContextPasteAsPlainText}
@@ -613,14 +739,14 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
             <svg className="h-4 w-4 text-text-secondary" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2M12 12h.01M8 12h.01M16 12h.01" />
             </svg>
-            Paste as plain text
+            {t('chatInput.pastePlain', 'Paste as plain text')}
           </button>
         </div>
       )}
 
       <p className="mt-2 text-xs text-text-secondary">
-        Enter to send · Shift+Enter for new line · <code>--effort high</code> to set effort for one
-        message
+        {t('chatInput.hint', 'Enter to send · Shift+Enter for new line ·')} <code>--effort high</code>{' '}
+        {t('chatInput.hintEffort', 'to set effort for one message')}
       </p>
     </div>
     </div>

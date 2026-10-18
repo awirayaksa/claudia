@@ -54,15 +54,64 @@ function getConversationPath(conversationId: string, projectId: string | null): 
   return path.join(conversationsDir, `${conversationId}.json`);
 }
 
-// Save conversation
-async function saveConversation(conversation: Conversation): Promise<void> {
+/** Fields owned by `conversation:updateMeta`; a full save never overwrites them. */
+export type ConversationMetaPatch = Partial<Pick<Conversation, 'title' | 'model' | 'starred'>>;
+
+function toMetadata(conversation: Conversation): ConversationMetadata {
+  return {
+    id: conversation.id,
+    projectId: conversation.projectId,
+    title: conversation.title,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    model: conversation.model,
+    messageCount: conversation.messageCount || conversation.messages?.length || 0,
+    starred: conversation.starred || false,
+  };
+}
+
+function readConversationFile(conversationPath: string): Conversation | null {
+  if (!fs.existsSync(conversationPath)) return null;
+  return JSON.parse(fs.readFileSync(conversationPath, 'utf-8'));
+}
+
+// Save conversation (messages). Uses only synchronous fs calls, so no other
+// IPC handler can interleave between the read and the write.
+function saveConversation(conversation: Conversation): ConversationMetadata {
   const conversationPath = getConversationPath(conversation.id, conversation.projectId);
+  const existing = readConversationFile(conversationPath);
 
-  // Update the updatedAt timestamp
-  conversation.updatedAt = new Date().toISOString();
+  // Title, model and starred change only through updateMeta. The renderer's
+  // autosave may still carry values from before a rename or an AI title, so
+  // the copy on disk wins for an existing conversation.
+  const merged: Conversation = existing
+    ? { ...conversation, title: existing.title, model: existing.model, starred: existing.starred }
+    : { ...conversation };
+  merged.updatedAt = new Date().toISOString();
 
-  // Write to file
-  fs.writeFileSync(conversationPath, JSON.stringify(conversation, null, 2), 'utf-8');
+  fs.writeFileSync(conversationPath, JSON.stringify(merged, null, 2), 'utf-8');
+  return toMetadata(merged);
+}
+
+// Patch title/model/starred in one synchronous read-modify-write.
+function updateConversationMeta(
+  conversationId: string,
+  projectId: string | null,
+  patch: ConversationMetaPatch
+): ConversationMetadata {
+  const conversationPath = getConversationPath(conversationId, projectId);
+  const existing = readConversationFile(conversationPath);
+  if (!existing) {
+    throw new Error('Conversation not found');
+  }
+
+  const updated: Conversation = { ...existing, updatedAt: new Date().toISOString() };
+  if (patch.title !== undefined) updated.title = patch.title;
+  if (patch.model !== undefined) updated.model = patch.model;
+  if (patch.starred !== undefined) updated.starred = patch.starred;
+
+  fs.writeFileSync(conversationPath, JSON.stringify(updated, null, 2), 'utf-8');
+  return toMetadata(updated);
 }
 
 // Load conversation
@@ -102,16 +151,7 @@ async function listConversations(projectId?: string | null): Promise<Conversatio
           const data = fs.readFileSync(filePath, 'utf-8');
           const conversation: Conversation = JSON.parse(data);
 
-          conversations.push({
-            id: conversation.id,
-            projectId: conversation.projectId,
-            title: conversation.title,
-            createdAt: conversation.createdAt,
-            updatedAt: conversation.updatedAt,
-            model: conversation.model,
-            messageCount: conversation.messageCount || conversation.messages?.length || 0,
-            starred: conversation.starred || false,
-          });
+          conversations.push(toMetadata(conversation));
         } catch (error) {
           console.error(`Failed to read conversation file: ${filePath}`, error);
         }
@@ -175,8 +215,8 @@ export function registerConversationHandlers(): void {
   // Save conversation
   ipcMain.handle('conversation:save', async (_event, conversation: Conversation) => {
     try {
-      await saveConversation(conversation);
-      return { success: true };
+      const metadata = saveConversation(conversation);
+      return { success: true, data: metadata };
     } catch (error) {
       console.error('Failed to save conversation:', error);
       return {
@@ -185,6 +225,23 @@ export function registerConversationHandlers(): void {
       };
     }
   });
+
+  // Update title / model / starred without touching messages
+  ipcMain.handle(
+    'conversation:updateMeta',
+    async (_event, conversationId: string, projectId: string | null, patch: ConversationMetaPatch) => {
+      try {
+        const metadata = updateConversationMeta(conversationId, projectId, patch);
+        return { success: true, data: metadata };
+      } catch (error) {
+        console.error('Failed to update conversation:', error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to update conversation',
+        };
+      }
+    }
+  );
 
   // Load conversation
   ipcMain.handle('conversation:load', async (_event, conversationId: string, projectId: string | null) => {

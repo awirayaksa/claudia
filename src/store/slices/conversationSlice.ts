@@ -8,6 +8,19 @@ import {
 } from '../../types/conversation.types';
 import { v4 as uuidv4 } from 'uuid';
 
+function toMetadata(conversation: Conversation): ConversationMetadata {
+  return {
+    id: conversation.id,
+    projectId: conversation.projectId,
+    title: conversation.title,
+    createdAt: conversation.createdAt,
+    updatedAt: conversation.updatedAt,
+    model: conversation.model,
+    messageCount: conversation.messageCount,
+    starred: conversation.starred,
+  };
+}
+
 const initialState: ConversationState = {
   conversations: [],
   currentConversationId: null,
@@ -98,7 +111,9 @@ export const saveConversation = createAsyncThunk(
         return rejectWithValue(result.error || 'Failed to save conversation');
       }
 
-      return conversation;
+      // The main process keeps the title/model/starred already on disk, so
+      // its metadata is what was actually saved.
+      return (result.data as ConversationMetadata | undefined) ?? toMetadata(conversation);
     } catch (error) {
       return rejectWithValue(
         error instanceof Error ? error.message : 'Failed to save conversation'
@@ -107,7 +122,7 @@ export const saveConversation = createAsyncThunk(
   }
 );
 
-// Update conversation metadata
+// Update conversation metadata (title, model, starred) in one main-process step
 export const updateConversation = createAsyncThunk(
   'conversation/update',
   async (params: UpdateConversationParams, { getState, rejectWithValue }) => {
@@ -121,48 +136,14 @@ export const updateConversation = createAsyncThunk(
         return rejectWithValue('Conversation not found');
       }
 
-      // Load full conversation
-      const loadResult = await window.electron.conversation.load(
-        params.id,
-        conversation.projectId
-      );
+      const { id, ...patch } = params;
+      const result = await window.electron.conversation.updateMeta(id, conversation.projectId, patch);
 
-      if (!loadResult.success) {
-        return rejectWithValue('Failed to load conversation');
+      if (!result.success) {
+        return rejectWithValue(result.error || 'Failed to update conversation');
       }
 
-      const fullConversation: Conversation = loadResult.data;
-
-      // Update fields
-      if (params.title !== undefined) {
-        fullConversation.title = params.title;
-      }
-      if (params.model !== undefined) {
-        fullConversation.model = params.model;
-      }
-      if (params.starred !== undefined) {
-        fullConversation.starred = params.starred;
-      }
-
-      fullConversation.updatedAt = new Date().toISOString();
-
-      // Save updated conversation
-      const saveResult = await window.electron.conversation.save(fullConversation);
-
-      if (!saveResult.success) {
-        return rejectWithValue('Failed to save conversation');
-      }
-
-      return {
-        id: fullConversation.id,
-        projectId: fullConversation.projectId,
-        title: fullConversation.title,
-        createdAt: fullConversation.createdAt,
-        updatedAt: fullConversation.updatedAt,
-        model: fullConversation.model,
-        messageCount: fullConversation.messageCount,
-        starred: fullConversation.starred,
-      } as ConversationMetadata;
+      return result.data as ConversationMetadata;
     } catch (error) {
       return rejectWithValue(
         error instanceof Error ? error.message : 'Failed to update conversation'
@@ -308,16 +289,7 @@ const conversationSlice = createSlice({
         // Update conversation metadata in the list
         const index = state.conversations.findIndex((c) => c.id === action.payload.id);
         if (index !== -1) {
-          state.conversations[index] = {
-            id: action.payload.id,
-            projectId: action.payload.projectId,
-            title: action.payload.title,
-            createdAt: action.payload.createdAt,
-            updatedAt: action.payload.updatedAt,
-            model: action.payload.model,
-            messageCount: action.payload.messageCount,
-            starred: action.payload.starred,
-          };
+          state.conversations[index] = action.payload;
         }
       })
       .addCase(saveConversation.rejected, (state, action) => {

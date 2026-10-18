@@ -1,0 +1,13 @@
+# SearXNG for Claudia's web search (docker compose --profile search up -d).
+# Admin → Knowledge → Web search: SearXNG, URL http://searxng:8080
+use_default_settings: true
+server:
+  # Overridden by SEARXNG_SECRET
+  secret_key: "set-SEARXNG_SECRET"
+  limiter: false
+  image_proxy: false
+search:
+  # Claudia reads the JSON results
+  formats:
+    - html
+    - json

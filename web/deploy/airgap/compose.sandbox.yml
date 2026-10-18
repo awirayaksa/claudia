@@ -1,0 +1,11 @@
+# Publishes the sandbox port (code interpreter, artifact and file previews)
+# when the sandbox runs on a second port of this host. install.sh adds this
+# file to COMPOSE_FILE in .env when CLAUDIA_SANDBOX_PORT is set.
+#
+# The port is the same inside the container and on the host: the app builds
+# the sandbox origin from CLAUDIA_PUBLIC_URL with this port.
+
+services:
+  app:
+    ports:
+      - "${CLAUDIA_SANDBOX_PORT:?Set CLAUDIA_SANDBOX_PORT in .env}:${CLAUDIA_SANDBOX_PORT}"

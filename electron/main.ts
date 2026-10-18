@@ -16,6 +16,7 @@ import { registerIconHandlers, setTrayGetter } from './handlers/icon.handler';
 import { registerSystemPromptHandlers } from './handlers/system-prompt.handler';
 import { AutoUpdaterService } from './services/auto-updater.service';
 import { registerUpdaterHandlers } from './handlers/updater.handler';
+import { extractText } from './services/text-extract.service';
 import { logUpdater } from './services/auto-updater-logger';
 import {
   registerSkillHandlers,
@@ -511,6 +512,19 @@ ipcMain.handle('file:read', async (_event, filePath: string) => {
     throw new Error(String(err));
   }
 });
+
+// Attachment text extraction: the parsers live in the main process
+ipcMain.handle(
+  'file:extractText',
+  async (_event, payload: { name: string; mimeType?: string; data: Uint8Array }) => {
+    try {
+      const result = await extractText(payload);
+      return { success: true, text: result.text, truncated: result.truncated };
+    } catch (err) {
+      return { success: false, error: err instanceof Error ? err.message : String(err) };
+    }
+  }
+);
 
 // Basic error handling
 process.on('uncaughtException', (error) => {

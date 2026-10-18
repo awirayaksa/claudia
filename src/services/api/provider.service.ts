@@ -1,24 +1,37 @@
-import { store } from '../../store';
 import { IAPIProvider } from './provider.interface';
 import { ProviderFactory } from './provider.factory';
+import type { APIConfig } from '../../types/api.types';
+
+/** The API settings shape stored in `settings.api` (provider config plus legacy fields). */
+export type APISettings = Partial<APIConfig> & {
+  baseUrl?: string;
+  apiKey?: string;
+  selectedModel?: string;
+};
+
+let configSource: (() => APISettings) | null = null;
 
 /**
- * Get the currently configured API provider
- * This is the main entry point for all API operations in the application
- * @returns The configured API provider instance
- * @throws Error if no provider is configured
+ * Register where `getAPIProvider()` reads the current API settings from.
+ * The desktop store registers itself at startup; this module never imports
+ * the store, which keeps it free of import cycles.
  */
-export function getAPIProvider(): IAPIProvider {
-  const state = store.getState();
-  const apiConfig = state.settings.api;
+export function setProviderConfigSource(source: (() => APISettings) | null): void {
+  configSource = source;
+}
 
+/**
+ * Build the provider for the given API settings.
+ * @throws Error if the active provider is not configured
+ */
+export function providerFromConfig(apiConfig: APISettings): IAPIProvider {
   // Check if using new provider-based config
   if ('provider' in apiConfig && apiConfig.provider) {
-    const { provider } = apiConfig as any;
+    const { provider } = apiConfig;
 
     switch (provider) {
       case 'openwebui': {
-        const config = (apiConfig as any).openwebui;
+        const config = apiConfig.openwebui;
         if (!config?.baseUrl || !config?.apiKey) {
           throw new Error(
             'Open WebUI not configured. Please enter your API URL and key in Settings.'
@@ -28,7 +41,7 @@ export function getAPIProvider(): IAPIProvider {
       }
 
       case 'openrouter': {
-        const config = (apiConfig as any).openrouter;
+        const config = apiConfig.openrouter;
         if (!config?.apiKey) {
           throw new Error(
             'OpenRouter not configured. Please enter your API key in Settings.'
@@ -38,7 +51,7 @@ export function getAPIProvider(): IAPIProvider {
       }
 
       case 'custom': {
-        const config = (apiConfig as any).custom;
+        const config = apiConfig.custom;
         if (!config?.baseUrl || !config?.apiKey || !config?.selectedModel) {
           throw new Error(
             'Custom provider not configured. Please enter your API URL, API key, and model name in Settings.'
@@ -48,7 +61,7 @@ export function getAPIProvider(): IAPIProvider {
       }
 
       case 'opencode-go': {
-        const config = (apiConfig as any).opencodeGo;
+        const config = apiConfig.opencodeGo;
         if (!config?.apiKey || !config?.selectedModel) {
           throw new Error(
             'Opencode Go not fully configured. Please set your API key and model name in Settings.'
@@ -63,12 +76,11 @@ export function getAPIProvider(): IAPIProvider {
   }
 
   // Fallback to legacy config format for backward compatibility
-  const legacyConfig = apiConfig as any;
-  if (legacyConfig.baseUrl && legacyConfig.apiKey) {
+  if (apiConfig.baseUrl && apiConfig.apiKey) {
     return ProviderFactory.getProvider('openwebui', {
-      baseUrl: legacyConfig.baseUrl,
-      apiKey: legacyConfig.apiKey,
-      selectedModel: legacyConfig.selectedModel || '',
+      baseUrl: apiConfig.baseUrl,
+      apiKey: apiConfig.apiKey,
+      selectedModel: apiConfig.selectedModel || '',
     });
   }
 
@@ -76,4 +88,17 @@ export function getAPIProvider(): IAPIProvider {
   throw new Error(
     'No API provider configured. Please configure your API settings in the Settings panel.'
   );
+}
+
+/**
+ * Get the currently configured API provider
+ * This is the main entry point for all API operations in the application
+ * @returns The configured API provider instance
+ * @throws Error if no provider is configured
+ */
+export function getAPIProvider(): IAPIProvider {
+  if (!configSource) {
+    throw new Error('API settings are not available yet.');
+  }
+  return providerFromConfig(configSource());
 }

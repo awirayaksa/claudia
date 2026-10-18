@@ -1,13 +1,16 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Message, Attachment } from '../../types/message.types';
 import { MessageAttachment } from './MessageAttachment';
 import { MarkdownRenderer } from './MarkdownRenderer';
+import { Citations } from './Citations';
+import type { CitationSource } from '../../types/turn.types';
 import { ToolCallMessage } from './ToolCallMessage';
 import { ReasoningMessage } from './ReasoningMessage';
 import { UIResourceDisplay } from './UIResourceDisplay';
 import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { format } from 'date-fns';
 import { useAppSelector } from '../../store';
+import { useT } from '../../i18n';
 
 interface ChatMessageProps {
   message: Message;
@@ -15,13 +18,39 @@ interface ChatMessageProps {
   onRetry?: (messageId: string) => void;
   onBranch?: (messageId: string) => void;
   disabled?: boolean;
+  /** Shown instead of "Claudia" above a reply (e.g. the model, next to other models' answers). */
+  authorLabel?: string;
+  /** Host-specific controls at the start of the action row (e.g. a version switcher). */
+  actions?: React.ReactNode;
+  /** Ratings work only where the host stores them. */
+  rating?: 1 | -1;
+  onRate?: (rating: 1 | -1 | null) => void;
+  /** Read-only views (e.g. a shared chat) leave the rating buttons out. */
+  hideRatings?: boolean;
+  /** Open a cited source the host can show (e.g. a referenced chat). */
+  onOpenSource?: (source: CitationSource) => void;
 }
 
-export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, onRetry, onBranch, disabled }: ChatMessageProps) {
+export const ChatMessage = React.memo(function ChatMessage({
+  message,
+  onEdit,
+  onRetry,
+  onBranch,
+  disabled,
+  authorLabel,
+  actions,
+  rating,
+  onRate,
+  hideRatings,
+  onOpenSource,
+}: ChatMessageProps) {
+  const t = useT();
   const isUser = message.role === 'user';
   const isSystem = message.role === 'system';
   const isTool = message.role === 'tool';
   const [copied, setCopied] = useState(false);
+  const [activeCitation, setActiveCitation] = useState<number | null>(null);
+  const citationNumbers = useMemo(() => new Set((message.citations ?? []).map((c) => c.index)), [message.citations]);
 
   const { showReasoning, showStatistics } = useAppSelector((state) => state.settings.preferences);
 
@@ -69,22 +98,29 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
             )}
           </div>
           {/* Hover actions */}
-          <div className="mt-1 flex justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
-              onClick={handleCopy}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
-              title={copied ? 'Copied!' : 'Copy'}
-            >
-              {copied ? '✓' : 'Copy'}
-            </button>
-            <button
-              onClick={() => onEdit?.(message.id, message.content, message.attachments)}
-              disabled={disabled}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-              title="Edit message"
-            >
-              Edit
-            </button>
+          <div className="mt-1 flex items-center justify-end gap-1">
+            {/* Host controls (e.g. versions) stay visible; the rest shows on hover */}
+            {actions}
+            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
+              <button
+                onClick={handleCopy}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
+                title={copied ? t('common.copied', 'Copied!') : t('common.copy', 'Copy')}
+              >
+                {copied ? '✓' : t('common.copy', 'Copy')}
+              </button>
+              {/* Actions show only where the host supports them */}
+              {onEdit && (
+                <button
+                  onClick={() => onEdit(message.id, message.content, message.attachments)}
+                  disabled={disabled}
+                  className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+                  title={t('message.edit', 'Edit message')}
+                >
+                  {t('common.edit', 'Edit')}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -98,12 +134,12 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
         {/* Avatar chip + name + inline stats */}
         <div className="mb-2 flex items-center gap-2 flex-wrap">
           <ClaudiaAvatar />
-          <span className="text-sm font-semibold text-text-primary">Claudia</span>
+          <span className="text-sm font-semibold text-text-primary">{authorLabel ?? t('app.name', 'Claudia')}</span>
           <span className="text-xs text-text-secondary">{formattedTime}</span>
           {showStatistics && message.usage?.total_tokens != null && (
             <>
               <span className="text-xs text-text-secondary">·</span>
-              <span className="text-xs text-text-secondary">{message.usage.total_tokens.toLocaleString()} tokens</span>
+              <span className="text-xs text-text-secondary">{t('message.tokens', '{{count}} tokens', { count: message.usage.total_tokens.toLocaleString() })}</span>
             </>
           )}
           {showStatistics && message.usage?.cost != null && (
@@ -122,8 +158,17 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
 
           {/* Message content */}
           <div className="text-[14px] leading-[1.7] text-text-primary">
-            <MarkdownRenderer content={message.content} isUser={false} />
+            <MarkdownRenderer
+              content={message.content}
+              isUser={false}
+              citations={citationNumbers}
+              onCitation={(n) => setActiveCitation((a) => (a === n ? null : n))}
+            />
           </div>
+
+          {message.citations && message.citations.length > 0 && (
+            <Citations citations={message.citations} active={activeCitation} onActiveChange={setActiveCitation} onOpen={onOpenSource} />
+          )}
 
           {/* Error display */}
           {message.error && (
@@ -161,30 +206,58 @@ export const ChatMessage = React.memo(function ChatMessage({ message, onEdit, on
           )}
 
           {/* Action row — persistent */}
-          <div className="mt-2 flex gap-1">
+          <div className="mt-2 flex flex-wrap items-center gap-1">
+            {actions}
             <button
               onClick={handleCopy}
               className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors"
-              title={copied ? 'Copied!' : 'Copy'}
+              title={copied ? t('common.copied', 'Copied!') : t('common.copy', 'Copy')}
             >
-              {copied ? '✓ Copied' : '⎘ Copy'}
+              {copied ? `✓ ${t('message.copiedShort', 'Copied')}` : `⎘ ${t('common.copy', 'Copy')}`}
             </button>
-            <button
-              onClick={() => onRetry?.(message.id)}
-              disabled={disabled}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              ↻ Retry
-            </button>
-            <button
-              onClick={() => onBranch?.(message.id)}
-              disabled={disabled}
-              className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
-            >
-              ↗ Branch
-            </button>
-            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👍</button>
-            <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👎</button>
+            {onRetry && (
+              <button
+                onClick={() => onRetry(message.id)}
+                disabled={disabled}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                ↻ {t('message.retry', 'Retry')}
+              </button>
+            )}
+            {onBranch && (
+              <button
+                onClick={() => onBranch(message.id)}
+                disabled={disabled}
+                className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface hover:text-text-primary transition-colors disabled:cursor-not-allowed disabled:opacity-30"
+              >
+                ↗ {t('message.branch', 'Branch')}
+              </button>
+            )}
+            {hideRatings ? null : onRate ? (
+              <>
+                <button
+                  onClick={() => onRate(rating === 1 ? null : 1)}
+                  aria-pressed={rating === 1}
+                  title={t('message.good', 'Good reply')}
+                  className={`rounded px-2 py-1 text-xs transition-colors hover:bg-surface ${rating === 1 ? 'bg-surface text-accent' : 'text-text-secondary'}`}
+                >
+                  👍
+                </button>
+                <button
+                  onClick={() => onRate(rating === -1 ? null : -1)}
+                  aria-pressed={rating === -1}
+                  title={t('message.bad', 'Bad reply')}
+                  className={`rounded px-2 py-1 text-xs transition-colors hover:bg-surface ${rating === -1 ? 'bg-surface text-accent' : 'text-text-secondary'}`}
+                >
+                  👎
+                </button>
+              </>
+            ) : (
+              <>
+                <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👍</button>
+                <button disabled className="rounded px-2 py-1 text-xs text-text-secondary opacity-50 cursor-not-allowed">👎</button>
+              </>
+            )}
           </div>
         </div>
       </div>

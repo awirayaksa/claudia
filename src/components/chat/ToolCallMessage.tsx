@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ToolCall, ToolResult } from '../../types/message.types';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
 import { UIResourceDisplay } from './UIResourceDisplay';
+import { useT } from '../../i18n';
 
 interface ToolCallMessageProps {
   toolCall: ToolCall;
@@ -10,6 +11,7 @@ interface ToolCallMessageProps {
 }
 
 export function ToolCallMessage({ toolCall, result, hideUIResource = false }: ToolCallMessageProps) {
+  const t = useT();
   // Auto-expand if there's a UI resource (but not when hiding UI resource)
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -54,19 +56,19 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
           />
         </svg>
       ),
-      label: 'Executing...',
+      label: t('tool.running', 'Executing...'),
     },
     success: {
       color: 'text-green-500',
       bg: 'bg-green-500 bg-opacity-10',
       icon: '✓',
-      label: 'Success',
+      label: t('tool.success', 'Success'),
     },
     error: {
       color: 'text-error',
       bg: 'bg-error bg-opacity-10',
       icon: '✗',
-      label: 'Error',
+      label: t('tool.error', 'Error'),
     },
   }[status];
 
@@ -105,7 +107,7 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
         <div className="mt-3 w-full space-y-3 border-t border-border pt-3">
           {/* Arguments */}
           <div>
-            <div className="mb-1 text-xs font-medium text-text-secondary">Arguments:</div>
+            <div className="mb-1 text-xs font-medium text-text-secondary">{t('tool.arguments', 'Arguments:')}</div>
             <pre className="overflow-x-auto rounded bg-surface p-2 text-xs text-text-primary">
               {JSON.stringify(parsedArgs, null, 2)}
             </pre>
@@ -115,7 +117,7 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
           {result && (
             <div>
               <div className="mb-1 text-xs font-medium text-text-secondary">
-                {result.isError ? 'Error:' : 'Result:'}
+                {result.isError ? t('tool.errorLabel', 'Error:') : t('tool.result', 'Result:')}
               </div>
 
               {/* Render UI resource OR text result */}

@@ -2,3 +2,5 @@ export { OpenWebUIProvider } from './openwebui.provider';
 export { OpenRouterProvider } from './openrouter.provider';
 export { CustomProvider } from './custom.provider';
 export { OpencodeGoProvider } from './opencode-go.provider';
+export { AnthropicProvider } from './anthropic.provider';
+export { OllamaProvider } from './ollama.provider';

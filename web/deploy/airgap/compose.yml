@@ -1,0 +1,55 @@
+# Claudia Web with PostgreSQL + pgvector, as install.sh sets it up from an
+# offline bundle. Settings and secrets are in .env next to this file;
+# install.sh replaces this file on upgrade, so make changes in .env.
+#
+#   cd /opt/claudia
+#   sudo docker compose ps
+#   sudo docker compose logs -f app
+#   sudo docker compose up -d        # after editing .env
+#
+# Data lives in the volumes claudia_pgdata (the database) and
+# claudia_claudia-data (uploads and workspaces), the same names web/docker's
+# compose file uses.
+
+name: claudia
+
+services:
+  app:
+    image: ${CLAUDIA_IMAGE:?Set CLAUDIA_IMAGE in .env}
+    # Air-gapped: the images come from the bundle (docker load), never a registry
+    pull_policy: never
+    restart: unless-stopped
+    # Every variable in .env reaches the app, so any setting from the README's
+    # Configuration table can be added there
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://claudia:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@db:5432/claudia
+    ports:
+      - "${CLAUDIA_PORT:-8080}:8080"
+    volumes:
+      - claudia-data:/data
+      # CA certificates, e.g. LDAP_CA_CERT_FILE=/certs/ldap-ca.crt
+      - ./certs:/certs:ro
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: ${PGVECTOR_IMAGE:-pgvector/pgvector:pg16}
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: claudia
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: claudia
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claudia -d claudia"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  claudia-data:
+  pgdata:

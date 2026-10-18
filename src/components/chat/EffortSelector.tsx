@@ -3,9 +3,9 @@ import { createPortal } from 'react-dom';
 import {
   ReasoningEffort,
   coerceEffort,
-  formatEffort,
   getEffortLevels,
 } from '../../utils/effort-utils';
+import { t, useT } from '../../i18n';
 
 interface EffortSelectorProps {
   /** Session-level effort, or null to follow the Preferences default. */
@@ -23,13 +23,18 @@ interface EffortSelectorProps {
   disabled?: boolean;
 }
 
-const EFFORT_HINTS: Record<ReasoningEffort, string> = {
-  minimal: 'Answer fast, barely think',
-  low: 'Light reasoning',
-  medium: 'Balanced reasoning',
-  high: 'Think hard before answering',
-  xhigh: 'Think as hard as it can',
+/** Each tier's name and hint, in the current language. */
+const EFFORT_TEXT: Record<ReasoningEffort, () => { name: string; hint: string }> = {
+  minimal: () => ({ name: t('effort.levels.minimal', 'Minimal'), hint: t('effort.hints.minimal', 'Answer fast, barely think') }),
+  low: () => ({ name: t('effort.levels.low', 'Low'), hint: t('effort.hints.low', 'Light reasoning') }),
+  medium: () => ({ name: t('effort.levels.medium', 'Medium'), hint: t('effort.hints.medium', 'Balanced reasoning') }),
+  high: () => ({ name: t('effort.levels.high', 'High'), hint: t('effort.hints.high', 'Think hard before answering') }),
+  xhigh: () => ({ name: t('effort.levels.xhigh', 'X-High'), hint: t('effort.hints.xhigh', 'Think as hard as it can') }),
 };
+
+/** The tier's name ("X-High"), translated. */
+export const effortLabel = (level: ReasoningEffort) => EFFORT_TEXT[level]().name;
+const effortHint = (level: ReasoningEffort) => EFFORT_TEXT[level]().hint;
 
 export function EffortSelector({
   value,
@@ -39,6 +44,7 @@ export function EffortSelector({
   model,
   disabled = false,
 }: EffortSelectorProps) {
+  const t = useT();
   const levels = useMemo(() => getEffortLevels(model), [model]);
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0 });
@@ -92,13 +98,20 @@ export function EffortSelector({
   const active = coerceEffort(requested ?? undefined, model) ?? null;
   const isOneShot = pending !== undefined;
   const wasCoerced = requested != null && active !== requested;
-  const label = active ? formatEffort(active) : 'Auto';
+  const label = active ? effortLabel(active) : t('effort.auto', 'Auto');
 
   const source = isOneShot
-    ? `Effort for this message: ${label} (from the prompt)`
-    : `Reasoning effort: ${label}${!value && fallback ? ' (from Preferences)' : ''}`;
+    ? t('effort.oneShot', 'Effort for this message: {{level}} (from the prompt)', { level: label })
+    : !value && fallback
+      ? t('effort.fromPreferences', 'Reasoning effort: {{level}} (from Preferences)', { level: label })
+      : t('effort.current', 'Reasoning effort: {{level}}', { level: label });
   const title = wasCoerced
-    ? `${source} — ${model} has no "${formatEffort(requested!)}" tier, using ${label}`
+    ? t('effort.coerced', '{{source}} — {{model}} has no "{{requested}}" tier, using {{level}}', {
+        source,
+        model: model ?? '',
+        requested: effortLabel(requested!),
+        level: label,
+      })
     : source;
 
   return (
@@ -112,7 +125,7 @@ export function EffortSelector({
           active ? 'border-accent/60 bg-background text-accent' : 'border-border bg-background text-text-secondary'
         }`}
         title={title}
-        aria-label="Select reasoning effort"
+        aria-label={t('effort.select', 'Select reasoning effort')}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -139,7 +152,7 @@ export function EffortSelector({
               transform: 'translateY(-100%)',
             }}
             role="listbox"
-            aria-label="Reasoning effort"
+            aria-label={t('effort.label', 'Reasoning effort')}
           >
             <div className="p-2">
               <button
@@ -152,11 +165,11 @@ export function EffortSelector({
                 aria-selected={value === null}
               >
                 <span>
-                  Auto
+                  {t('effort.auto', 'Auto')}
                   <span className="ml-2 text-xs text-text-secondary">
                     {fallback
-                      ? `Preferences: ${formatEffort(coerceEffort(fallback, model)!)}`
-                      : 'provider default'}
+                      ? t('effort.preferences', 'Preferences: {{level}}', { level: effortLabel(coerceEffort(fallback, model)!) })
+                      : t('effort.providerDefault', 'provider default')}
                   </span>
                 </span>
               </button>
@@ -175,11 +188,11 @@ export function EffortSelector({
                     }`}
                     role="option"
                     aria-selected={isSelected}
-                    title={EFFORT_HINTS[level]}
+                    title={effortHint(level)}
                   >
                     <span>
-                      {formatEffort(level)}
-                      <span className="ml-2 text-xs text-text-secondary">{EFFORT_HINTS[level]}</span>
+                      {effortLabel(level)}
+                      <span className="ml-2 text-xs text-text-secondary">{effortHint(level)}</span>
                     </span>
                   </button>
                 );

@@ -13,6 +13,7 @@ import {
   clearError,
 } from '../store/slices/pluginSlice';
 import { PluginConfig, PluginStatus } from '../types/plugin.types';
+import { getPlatform } from '../platform';
 
 /**
  * Hook for managing plugins in the application.
@@ -48,7 +49,7 @@ export function usePlugins() {
       pluginId: string;
     }
 
-    const cleanupStatusChanged = window.electron.plugins.onStatusChanged((event: StatusChangedEvent) => {
+    const cleanupStatusChanged = getPlatform().events.on('plugin.statusChanged', (event: StatusChangedEvent) => {
       console.log('[usePlugins] Status changed:', event);
       if (event.pluginId) {
         dispatch(updatePluginStatus({
@@ -60,7 +61,7 @@ export function usePlugins() {
       dispatch(refreshActivePlugins());
     });
 
-    const cleanupError = window.electron.plugins.onError((event: ErrorEvent) => {
+    const cleanupError = getPlatform().events.on('plugin.error', (event: ErrorEvent) => {
       console.error('[usePlugins] Plugin error:', event);
       if (event.pluginId) {
         dispatch(updatePluginStatus({
@@ -75,11 +76,11 @@ export function usePlugins() {
     // Note: We don't dispatch discoverPlugins on discovered/changed events
     // as that would create an infinite loop. The discovery is already complete
     // when these events fire. Just log for debugging.
-    const cleanupDiscovered = window.electron.plugins.onDiscovered(() => {
+    const cleanupDiscovered = getPlatform().events.on('plugin.discovered', () => {
       console.log('[usePlugins] Plugins discovered event received');
     });
 
-    const cleanupChanged = window.electron.plugins.onChanged((event: ChangedEvent) => {
+    const cleanupChanged = getPlatform().events.on('plugin.changed', (event: ChangedEvent) => {
       console.log('[usePlugins] Plugin changed:', event);
       // Only rediscover on file system changes, not on our own actions
       // This is triggered by the file watcher in plugin-discovery.service.ts

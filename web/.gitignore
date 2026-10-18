@@ -1,0 +1,8 @@
+node_modules
+dist
+# Local data: PGlite database, uploads, generated secret key
+data
+coverage
+test-results
+playwright-report
+deploy/airgap/out

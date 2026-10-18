@@ -1,5 +1,6 @@
 import { Modal } from './Modal';
 import { Button } from './Button';
+import { useT } from '../../i18n';
 
 interface ConfirmDialogProps {
   isOpen: boolean;
@@ -19,11 +20,12 @@ export function ConfirmDialog({
   onConfirm,
   title,
   message,
-  confirmText = 'Confirm',
-  cancelText = 'Cancel',
+  confirmText,
+  cancelText,
   isDestructive = false,
   isLoading = false,
 }: ConfirmDialogProps) {
+  const t = useT();
   const handleConfirm = () => {
     onConfirm();
   };
@@ -41,7 +43,7 @@ export function ConfirmDialog({
             onClick={onClose}
             disabled={isLoading}
           >
-            {cancelText}
+            {cancelText ?? t('common.cancel', 'Cancel')}
           </Button>
           <Button
             variant="primary"
@@ -49,7 +51,7 @@ export function ConfirmDialog({
             disabled={isLoading}
             className={isDestructive ? 'bg-error hover:bg-error-hover' : ''}
           >
-            {isLoading ? 'Deleting...' : confirmText}
+            {isLoading ? t('confirm.busy', 'Deleting...') : (confirmText ?? t('common.confirm', 'Confirm'))}
           </Button>
         </div>
       }

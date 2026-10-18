@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { MarkdownRenderer } from './MarkdownRenderer';
-import { getAPIProvider } from '../../services/api/provider.service';
-import { useAppSelector } from '../../store';
+import { getPlatform } from '../../platform';
+import { useT } from '../../i18n';
 
 interface MenuState {
   visible: boolean;
@@ -25,9 +25,12 @@ interface PopupState {
 
 interface TextSelectionMenuProps {
   containerRef: React.RefObject<HTMLDivElement>;
+  /** Model used for Explain / Ask (the conversation's model). */
+  model: string;
 }
 
-export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
+export function TextSelectionMenu({ containerRef, model }: TextSelectionMenuProps) {
+  const t = useT();
   const [menu, setMenu] = useState<MenuState>({
     visible: false,
     x: 0,
@@ -50,13 +53,6 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
   const questionInputRef = useRef<HTMLTextAreaElement>(null);
   const popupRef = useRef<HTMLDivElement>(null);
   const savedRangeRef = useRef<Range | null>(null);
-
-  const apiConfig = useAppSelector((state) => state.settings.api);
-  const selectedModel =
-    (apiConfig as any).selectedModel ||
-    (apiConfig as any).openwebui?.selectedModel ||
-    (apiConfig as any).openrouter?.selectedModel ||
-    '';
 
   const hideMenu = useCallback(() => {
     setMenu((prev) => ({ ...prev, visible: false }));
@@ -162,31 +158,15 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
       abortControllerRef.current = abortController;
 
       try {
-        const provider = getAPIProvider();
-        await provider.streamChatCompletion(
-          {
-            model: selectedModel,
-            messages: [{ role: 'user', content: prompt }],
+        await getPlatform().llm.complete({
+          model,
+          messages: [{ role: 'user', content: prompt }],
+          signal: abortController.signal,
+          onChunk: (chunk: string) => {
+            setPopup((prev) => ({ ...prev, response: prev.response + chunk }));
           },
-          {
-            onChunk: (chunk: string) => {
-              setPopup((prev) => ({ ...prev, response: prev.response + chunk }));
-            },
-            onComplete: () => {
-              setPopup((prev) => ({ ...prev, isLoading: false }));
-            },
-            onError: (error: Error) => {
-              if (error.name !== 'AbortError') {
-                setPopup((prev) => ({
-                  ...prev,
-                  isLoading: false,
-                  response: prev.response || `Error: ${error.message}`,
-                }));
-              }
-            },
-          },
-          abortController.signal
-        );
+        });
+        setPopup((prev) => ({ ...prev, isLoading: false }));
       } catch (error: any) {
         if (error?.name !== 'AbortError') {
           setPopup((prev) => ({
@@ -197,7 +177,7 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
         }
       }
     },
-    [selectedModel]
+    [model]
   );
 
   const handleExplain = useCallback(() => {
@@ -278,37 +258,37 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
           <button
             onClick={handleAsk}
             className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs text-text-secondary hover:bg-background hover:text-text-primary transition-colors"
-            title="Ask a question about the selected text"
+            title={t('selection.askTitle', 'Ask a question about the selected text')}
           >
             <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <circle cx="12" cy="12" r="10" strokeWidth={2} />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3" />
               <circle cx="12" cy="17" r="0.5" fill="currentColor" />
             </svg>
-            Ask
+            {t('selection.ask', 'Ask')}
           </button>
           <div className="h-3 w-px bg-border" />
           <button
             onClick={handleCopy}
             className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs text-text-secondary hover:bg-background hover:text-text-primary transition-colors"
-            title="Copy selected text to clipboard"
+            title={t('selection.copyTitle', 'Copy selected text to clipboard')}
           >
             <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <rect x="9" y="9" width="13" height="13" rx="2" ry="2" strokeWidth={2} />
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
             </svg>
-            Copy
+            {t('selection.copy', 'Copy')}
           </button>
           <div className="h-3 w-px bg-border" />
           <button
             onClick={handleExplain}
             className="flex items-center gap-1 rounded-full px-2 py-0.5 text-xs text-text-secondary hover:bg-background hover:text-text-primary transition-colors"
-            title="Explain the selected text"
+            title={t('selection.explainTitle', 'Explain the selected text')}
           >
             <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
             </svg>
-            Explain
+            {t('selection.explain', 'Explain')}
           </button>
         </div>
       )}
@@ -332,6 +312,7 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
               </span>
               <button
                 onClick={hidePopup}
+                aria-label={t('selection.close', 'Close')}
                 className="ml-2 flex-shrink-0 rounded p-0.5 text-text-secondary hover:bg-background hover:text-text-primary transition-colors"
               >
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -342,8 +323,8 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
 
             {/* Mode label */}
             <div className="px-3 pt-2 pb-0">
-              <span className="text-xs font-semibold capitalize text-text-secondary">
-                {popup.mode}
+              <span className="text-xs font-semibold text-text-secondary">
+                {popup.mode === 'ask' ? t('selection.ask', 'Ask') : t('selection.explain', 'Explain')}
               </span>
             </div>
 
@@ -355,7 +336,8 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
                   value={popup.question}
                   onChange={(e) => setPopup((prev) => ({ ...prev, question: e.target.value }))}
                   onKeyDown={handleQuestionKeyDown}
-                  placeholder="Ask a question..."
+                  placeholder={t('selection.askPlaceholder', 'Ask a question...')}
+                  aria-label={t('selection.askPlaceholder', 'Ask a question...')}
                   className="flex-1 resize-none rounded-full border border-border bg-background px-3 py-1.5 text-xs text-text-primary placeholder-text-secondary focus:outline-none focus:ring-1 focus:ring-accent"
                   rows={1}
                   style={{ minHeight: 32 }}
@@ -363,6 +345,7 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
                 <button
                   onClick={handleSubmitQuestion}
                   disabled={!popup.question.trim()}
+                  aria-label={t('selection.send', 'Send')}
                   className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-accent text-white disabled:opacity-40 hover:opacity-90 transition-opacity"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,7 +376,7 @@ export function TextSelectionMenu({ containerRef }: TextSelectionMenuProps) {
                       <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]" />
                       <div className="h-1.5 w-1.5 animate-bounce rounded-full bg-accent" />
                     </div>
-                    <span className="text-xs text-text-secondary">Generating...</span>
+                    <span className="text-xs text-text-secondary">{t('selection.generating', 'Generating...')}</span>
                   </div>
                 )}
                 {popup.isLoading && popup.response && (

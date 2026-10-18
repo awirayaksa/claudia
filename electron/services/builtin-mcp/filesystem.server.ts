@@ -2,72 +2,16 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const pdfParse = require('pdf-parse');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const mammoth = require('mammoth');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const XLSX = require('xlsx');
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const JSZip = require('jszip');
+import { assertPathAllowed, isPathAllowed, resolveRequestedPath } from './path-guard';
+import { inProcessExtractor, type DocumentExtractor } from './document-extractor';
 
 // Maximum text content size (in bytes) to return in a single tool response.
 // Stays well below the ~8 MB API input limit to leave room for conversation context.
 const MAX_READ_SIZE = 5 * 1024 * 1024; // 5 MB
 
 // ============================================================================
-// Security: Path Validation
+// Security: Path Validation (real paths; case-insensitive only on Windows)
 // ============================================================================
-
-function normalizePath(p: string): string {
-  return path.resolve(p).toLowerCase();
-}
-
-function isPathAllowed(targetPath: string, allowedDirs: string[]): boolean {
-  const resolved = normalizePath(targetPath);
-  return allowedDirs.some((dir) => {
-    const normalizedDir = normalizePath(dir);
-    return resolved === normalizedDir || resolved.startsWith(normalizedDir + path.sep);
-  });
-}
-
-function assertPathAllowed(targetPath: string, allowedDirs: string[]): void {
-  if (!isPathAllowed(targetPath, allowedDirs)) {
-    throw new Error(
-      `Access denied: "${targetPath}" is outside allowed directories.\n` +
-      `Allowed: ${allowedDirs.join(', ')}`
-    );
-  }
-}
-
-/**
- * Resolve a requested path against the allowed directories.
- *
- * The model often sends root-relative paths like "/hello.txt" or bare names
- * like "hello.txt" when a working directory is configured. This function
- * first tries the path as an absolute path; if it falls outside every allowed
- * directory it retries by stripping leading separators and joining with the
- * first allowed directory (i.e. the configured working directory).
- */
-function resolveRequestedPath(requestedPath: string, allowedDirs: string[]): string {
-  const absoluteResolved = path.resolve(requestedPath);
-
-  if (allowedDirs.length === 0 || isPathAllowed(absoluteResolved, allowedDirs)) {
-    return absoluteResolved;
-  }
-
-  // Fall back: treat as relative to the working directory (first allowed dir)
-  const stripped = requestedPath.replace(/^[/\\]+/, '');
-  if (stripped) {
-    const relativeResolved = path.resolve(allowedDirs[0], stripped);
-    if (isPathAllowed(relativeResolved, allowedDirs)) {
-      return relativeResolved;
-    }
-  }
-
-  return absoluteResolved; // Will fail assertPathAllowed with a clear error
-}
 
 function getDefaultAllowedDirectories(): string[] {
   return [];
@@ -145,9 +89,15 @@ async function readFileLines(
 // Server Factory
 // ============================================================================
 
+/**
+ * config.allowedDirectories: the only directories the tools may touch.
+ * config.extractor: how documents are parsed (the web server parses in a
+ * worker pool with limits; the desktop parses in-process).
+ */
 export function createFilesystemServer(config?: Record<string, unknown>): McpServer {
   const allowedDirs: string[] =
     (config?.allowedDirectories as string[]) || getDefaultAllowedDirectories();
+  const extractor: DocumentExtractor = (config?.extractor as DocumentExtractor | undefined) ?? inProcessExtractor();
 
   const server = new McpServer(
     { name: 'Claudia Filesystem', version: '1.0.0' },
@@ -276,11 +226,11 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
       const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
       const hasRange = start_page !== undefined || end_page !== undefined;
 
-      // For large PDFs without a page range, do a metadata-only parse first to warn
+      const { pages } = await extractor.pdf(await fs.promises.readFile(resolvedPath));
+      const totalPages = pages.length;
+
+      // For large PDFs without a page range, warn instead of returning everything
       if (stat.size > MAX_READ_SIZE && !hasRange) {
-        const buffer = await fs.promises.readFile(resolvedPath);
-        const metaResult = await pdfParse(buffer, { max: 0 });
-        const totalPages = metaResult.numpages;
         return {
           content: [{
             type: 'text' as const,
@@ -297,27 +247,6 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
         };
       }
 
-      const buffer = await fs.promises.readFile(resolvedPath);
-
-      // Parse PDF, collecting text per page so we can support page ranges
-      const pages: string[] = [];
-      let currentPage = 0;
-
-      const pageRender = (pageData: any) => {
-        currentPage++;
-        return pageData.getTextContent().then((textContent: any) => {
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join('');
-          pages.push(pageText);
-          return pageText;
-        });
-      };
-
-      const result = await pdfParse(buffer, { pagerender: pageRender });
-      const totalPages = result.numpages;
-
-      // Determine page range
       const firstPage = Math.max(1, start_page || 1);
       const lastPage = Math.min(totalPages, end_page || totalPages);
 
@@ -330,19 +259,13 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
         };
       }
 
-      let text: string;
-      if (!hasRange) {
-        // Full document — use the combined text from pdf-parse
-        text = result.text;
-      } else {
-        // Extract only the requested page range
-        const selectedPages = pages
-          .slice(firstPage - 1, lastPage)
-          .map((pageText, i) => `--- Page ${firstPage + i} ---\n${pageText}`);
-        text = selectedPages.join('\n\n');
-      }
+      const text = hasRange
+        ? pages
+            .slice(firstPage - 1, lastPage)
+            .map((pageText, i) => `--- Page ${firstPage + i} ---\n${pageText}`)
+            .join('\n\n')
+        : pages.join('\n\n');
 
-      // Check if extracted text exceeds the limit
       const textBytes = Buffer.byteLength(text, 'utf-8');
       if (textBytes > MAX_READ_SIZE) {
         const suggestedChunkSize = Math.max(1, Math.floor((lastPage - firstPage + 1) * MAX_READ_SIZE / textBytes));
@@ -403,10 +326,8 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
       const stat = await fs.promises.stat(resolvedPath);
       const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
 
-      const result = await mammoth.extractRawText({ path: resolvedPath });
-      const text = result.value;
+      const { text, warnings } = await extractor.docx(await fs.promises.readFile(resolvedPath));
 
-      // Check if extracted text exceeds the limit
       const textBytes = Buffer.byteLength(text, 'utf-8');
       if (textBytes > MAX_READ_SIZE) {
         return {
@@ -419,10 +340,6 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
           }],
         };
       }
-
-      const warnings = result.messages
-        .filter((m: any) => m.type === 'warning')
-        .map((m: any) => m.message);
 
       let header = `Word Document: ${path.basename(resolvedPath)} | ${sizeMB} MB\n` +
         `${'='.repeat(60)}\n`;
@@ -465,14 +382,11 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
       const stat = await fs.promises.stat(resolvedPath);
       const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
 
-      const workbook = XLSX.readFile(resolvedPath);
-      const sheetNames: string[] = workbook.SheetNames;
+      const { sheets } = await extractor.xlsx(await fs.promises.readFile(resolvedPath));
+      const sheetNames = sheets.map((s) => s.name);
 
-      // List sheets mode
       if (list_sheets) {
-        const listing = sheetNames
-          .map((name: string, i: number) => `  ${i}: ${name}`)
-          .join('\n');
+        const listing = sheetNames.map((name, i) => `  ${i}: ${name}`).join('\n');
         return {
           content: [{
             type: 'text' as const,
@@ -482,10 +396,10 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
         };
       }
 
-      // Determine which sheet to read
-      let targetSheet: string;
+      let target: { name: string; tsv: string } | undefined;
       if (sheet) {
-        if (!sheetNames.includes(sheet)) {
+        target = sheets.find((s) => s.name === sheet);
+        if (!target) {
           return {
             content: [{
               type: 'text' as const,
@@ -493,25 +407,24 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
             }],
           };
         }
-        targetSheet = sheet;
       } else if (sheet_index !== undefined) {
-        if (sheet_index < 0 || sheet_index >= sheetNames.length) {
+        if (sheet_index < 0 || sheet_index >= sheets.length) {
           return {
             content: [{
               type: 'text' as const,
-              text: `Sheet index ${sheet_index} is out of range. This workbook has ${sheetNames.length} sheet(s) (0-${sheetNames.length - 1}).`,
+              text: `Sheet index ${sheet_index} is out of range. This workbook has ${sheets.length} sheet(s) (0-${sheets.length - 1}).`,
             }],
           };
         }
-        targetSheet = sheetNames[sheet_index];
+        target = sheets[sheet_index];
       } else {
-        targetSheet = sheetNames[0];
+        target = sheets[0];
+      }
+      if (!target) {
+        return { content: [{ type: 'text' as const, text: 'This workbook has no sheets.' }] };
       }
 
-      const worksheet = workbook.Sheets[targetSheet];
-      const text: string = XLSX.utils.sheet_to_csv(worksheet, { FS: '\t' });
-
-      // Check if extracted text exceeds the limit
+      const text = target.tsv;
       const textBytes = Buffer.byteLength(text, 'utf-8');
       if (textBytes > MAX_READ_SIZE) {
         return {
@@ -521,13 +434,13 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
               `The API has an ~8 MB total input limit.\n\n` +
               `File: ${resolvedPath}\n` +
               `File size: ${sizeMB} MB\n` +
-              `Sheet: ${targetSheet}`,
+              `Sheet: ${target.name}`,
           }],
         };
       }
 
       const header = `Excel: ${path.basename(resolvedPath)} | ${sizeMB} MB | ` +
-        `Sheet: "${targetSheet}" (${sheetNames.length} sheet(s) total)\n` +
+        `Sheet: "${target.name}" (${sheetNames.length} sheet(s) total)\n` +
         `${'='.repeat(60)}\n\n`;
 
       return { content: [{ type: 'text' as const, text: header + text }] };
@@ -571,20 +484,9 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
       const stat = await fs.promises.stat(resolvedPath);
       const sizeMB = (stat.size / (1024 * 1024)).toFixed(1);
 
-      const buffer = await fs.promises.readFile(resolvedPath);
-      const zip = await JSZip.loadAsync(buffer);
+      const { slides } = await extractor.pptx(await fs.promises.readFile(resolvedPath));
 
-      // Find all slide XML files and sort them by slide number
-      const slideFiles: { num: number; name: string }[] = [];
-      zip.forEach((relativePath: string) => {
-        const match = relativePath.match(/^ppt\/slides\/slide(\d+)\.xml$/);
-        if (match) {
-          slideFiles.push({ num: parseInt(match[1], 10), name: relativePath });
-        }
-      });
-      slideFiles.sort((a: { num: number }, b: { num: number }) => a.num - b.num);
-
-      if (slideFiles.length === 0) {
+      if (slides.length === 0) {
         return {
           content: [{
             type: 'text' as const,
@@ -593,45 +495,18 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
         };
       }
 
-      // Filter to a specific slide if requested
-      if (slide_number !== undefined) {
-        if (slide_number < 1 || slide_number > slideFiles.length) {
-          return {
-            content: [{
-              type: 'text' as const,
-              text: `Slide ${slide_number} is out of range. This presentation has ${slideFiles.length} slide(s).`,
-            }],
-          };
-        }
+      if (slide_number !== undefined && (slide_number < 1 || slide_number > slides.length)) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Slide ${slide_number} is out of range. This presentation has ${slides.length} slide(s).`,
+          }],
+        };
       }
 
-      const slidesToRead = slide_number !== undefined
-        ? [slideFiles[slide_number - 1]]
-        : slideFiles;
+      const selected = slide_number !== undefined ? [slides[slide_number - 1]] : slides;
+      const text = selected.map((s) => `--- Slide ${s.num} ---\n${s.text}`).join('\n\n');
 
-      // Extract text from each slide's XML
-      // Text content lives in <a:t> elements
-      const slideTexts: string[] = [];
-      for (const slide of slidesToRead) {
-        const xmlContent: string = await zip.file(slide.name)!.async('string');
-        const texts: string[] = [];
-        const regex = /<a:t>([\s\S]*?)<\/a:t>/g;
-        let match;
-        while ((match = regex.exec(xmlContent)) !== null) {
-          const decoded = match[1]
-            .replace(/&amp;/g, '&')
-            .replace(/&lt;/g, '<')
-            .replace(/&gt;/g, '>')
-            .replace(/&quot;/g, '"')
-            .replace(/&apos;/g, "'");
-          texts.push(decoded);
-        }
-        slideTexts.push(`--- Slide ${slide.num} ---\n${texts.join(' ')}`);
-      }
-
-      const text = slideTexts.join('\n\n');
-
-      // Check if extracted text exceeds the limit
       const textBytes = Buffer.byteLength(text, 'utf-8');
       if (textBytes > MAX_READ_SIZE) {
         return {
@@ -642,14 +517,14 @@ export function createFilesystemServer(config?: Record<string, unknown>): McpSer
               `Try reading individual slides with the slide_number parameter.\n\n` +
               `File: ${resolvedPath}\n` +
               `File size: ${sizeMB} MB\n` +
-              `Total slides: ${slideFiles.length}`,
+              `Total slides: ${slides.length}`,
           }],
         };
       }
 
       const slideRange = slide_number !== undefined
         ? `Slide ${slide_number}`
-        : `${slideFiles.length} slide(s)`;
+        : `${slides.length} slide(s)`;
       const header = `PowerPoint: ${path.basename(resolvedPath)} | ${sizeMB} MB | ${slideRange}\n` +
         `${'='.repeat(60)}\n\n`;
 

@@ -1,20 +1,36 @@
 import React, { useMemo, ReactNode } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Options as MarkdownOptions } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
 import { oneDark, oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import { useAppSelector } from '../../store';
 import { getPluginRenderConfig } from '../../services/plugins/plugin-renderer.service';
 import { RenderContext } from '../../types/plugin.types';
 import { Message } from '../../types/message.types';
+import { normalizeMath } from '../../utils/math-delimiters';
+import { citationIndex, linkCitations } from '../../utils/citations';
+import { MermaidDiagram } from './MermaidDiagram';
+import { useT } from '../../i18n';
+
+// Single-dollar math is off so prices stay text; normalizeMath turns $x$, \(x\) and \[x\] into $$
+const MATH_OPTIONS = { singleDollarTextMath: false };
+// No \href, \url, \htmlClass etc. (trust: false); bad input renders as an error instead of throwing
+const KATEX_OPTIONS = { trust: false, strict: 'ignore', throwOnError: false, output: 'htmlAndMathml' } as const;
 
 interface MarkdownRendererProps {
   content: string;
   isUser?: boolean;
   message?: Message;
+  /** Source numbers that exist: "[n]" for them becomes a citation chip. */
+  citations?: ReadonlySet<number>;
+  onCitation?: (index: number) => void;
 }
 
-export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ content, isUser = false, message }) => {
+export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ content, isUser = false, message, citations, onCitation }) => {
+  const t = useT();
   const { theme } = useAppSelector((state) => state.settings.appearance);
   const { activeExtensions, activeReplacement } = useAppSelector((state) => state.plugins);
 
@@ -49,10 +65,12 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
   }
 
   // Apply pre-processing from plugins
-  const processedContent = pluginConfig.preProcess(content, renderContext);
+  const preprocessed = normalizeMath(pluginConfig.preProcess(content, renderContext));
+  const processedContent = citations?.size ? linkCitations(preprocessed, citations) : preprocessed;
 
   // Merge remark plugins
-  const remarkPlugins = [remarkGfm, ...pluginConfig.remarkPlugins];
+  const remarkPlugins: MarkdownOptions['remarkPlugins'] = [remarkGfm, [remarkMath, MATH_OPTIONS], ...pluginConfig.remarkPlugins];
+  const rehypePlugins: MarkdownOptions['rehypePlugins'] = [[rehypeKatex, KATEX_OPTIONS], ...pluginConfig.rehypePlugins];
 
   // Auto-incrementing counter for h2 headings (accent numeral prefix)
   let h2Counter = 0;
@@ -64,17 +82,18 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
           const match = /language-(\w+)/.exec(className || '');
           const language = match ? match[1] : '';
 
-          return !inline && language ? (
+          const source = String(children).replace(/\n$/, '');
+          const codeBlock = !inline && language ? (
             <div className="my-2 overflow-hidden rounded-md">
               <div className="flex items-center justify-between bg-surface-hover px-3 py-1.5">
                 <span className="text-xs font-medium text-text-secondary">{language}</span>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(String(children).replace(/\n$/, ''));
+                    navigator.clipboard.writeText(source);
                   }}
                   className="text-xs text-text-secondary hover:text-text-primary transition-colors"
                 >
-                  Copy
+                  {t('common.copy', 'Copy')}
                 </button>
               </div>
               <SyntaxHighlighter
@@ -89,10 +108,15 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
                 }}
                 {...props}
               >
-                {String(children).replace(/\n$/, '')}
+                {source}
               </SyntaxHighlighter>
             </div>
-          ) : (
+          ) : null;
+
+          if (codeBlock && language === 'mermaid') {
+            return <MermaidDiagram code={source} isDark={isDark} fallback={codeBlock} />;
+          }
+          return codeBlock ?? (
             <code
               className={`rounded px-1.5 py-0.5 text-xs font-mono ${
                 isUser
@@ -160,6 +184,20 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
         },
         // Links
         a({ href, children }: { href?: string; children?: ReactNode }) {
+          const cite = citationIndex(href);
+          if (cite !== null) {
+            return (
+              <button
+                type="button"
+                className="mx-0.5 inline-flex h-4 min-w-4 -translate-y-0.5 items-center justify-center rounded-full bg-accent/15 px-1 align-baseline text-[10px] font-semibold leading-none text-accent hover:bg-accent hover:text-white"
+                onClick={() => onCitation?.(cite)}
+                aria-label={t('citations.source', 'Source {{n}}', { n: cite })}
+                data-testid="citation-link"
+              >
+                {cite}
+              </button>
+            );
+          }
           return (
             <a
               href={href}
@@ -263,7 +301,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
   const rendered = (
     <ReactMarkdown
       remarkPlugins={remarkPlugins}
-      rehypePlugins={pluginConfig.rehypePlugins}
+      rehypePlugins={rehypePlugins}
       components={mergedComponents as any}
     >
       {processedContent}
@@ -278,3 +316,5 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
          prevProps.isUser === nextProps.isUser &&
          prevProps.message?.id === nextProps.message?.id;
 });
+
+MarkdownRenderer.displayName = 'MarkdownRenderer';

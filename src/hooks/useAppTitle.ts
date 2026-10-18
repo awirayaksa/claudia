@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useAppSelector } from '../store';
+import { getPlatform } from '../platform';
 
 /**
  * Hook to apply custom application title
@@ -15,8 +16,9 @@ export function useAppTitle() {
     document.title = title;
 
     // Notify main process to update native window title
-    if (window.electron?.window?.setTitle) {
-      window.electron.window.setTitle(title).catch((error) => {
+    const platformWindow = getPlatform().window;
+    if (platformWindow) {
+      platformWindow.setTitle(title).catch((error) => {
         console.error('Failed to set window title:', error);
       });
     }

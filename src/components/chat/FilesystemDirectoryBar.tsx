@@ -1,5 +1,5 @@
 import { useAppSelector, useAppDispatch } from '../../store';
-import { setFilesystemDirectory } from '../../store/slices/chatSlice';
+import { setFilesystemDirectory } from '../../store/slices/composerSlice';
 
 interface FilesystemDirectoryBarProps {
   disabled?: boolean;
@@ -8,7 +8,7 @@ interface FilesystemDirectoryBarProps {
 export function FilesystemDirectoryBar({ disabled }: FilesystemDirectoryBarProps) {
   const dispatch = useAppDispatch();
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
-  const filesystemDirectory = useAppSelector((state) => state.chat.filesystemDirectory);
+  const filesystemDirectory = useAppSelector((state) => state.composer.filesystemDirectory);
 
   // Find the filesystem builtin server
   const filesystemEntry = Object.entries(serverStates).find(

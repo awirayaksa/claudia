@@ -17,16 +17,95 @@
   },
   "plugins": [
     "@typescript-eslint",
-    "react"
+    "react",
+    "react-hooks"
   ],
   "rules": {
     "@typescript-eslint/no-explicit-any": "warn",
     "@typescript-eslint/no-unused-vars": "warn",
-    "react/prop-types": "off"
+    "react/prop-types": "off",
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "warn",
+    "no-constant-condition": [
+      "error",
+      {
+        "checkLoops": false
+      }
+    ],
+    "react/no-unescaped-entities": [
+      "error",
+      {
+        "forbid": [
+          ">",
+          "}"
+        ]
+      }
+    ],
+    "no-restricted-properties": [
+      "error",
+      {
+        "object": "window",
+        "property": "electron",
+        "message": "Shared code talks to the host through getPlatform() (src/platform). Only src/platform/electron.ts and desktop-only files may use window.electron."
+      }
+    ]
   },
   "settings": {
     "react": {
       "version": "detect"
     }
-  }
+  },
+  "overrides": [
+    {
+      "files": [
+        "**/*.test.ts",
+        "**/*.test.tsx",
+        "src/test/**"
+      ],
+      "rules": {
+        "@typescript-eslint/no-explicit-any": "off"
+      }
+    },
+    {
+      "files": [
+        "electron/**/*.ts"
+      ],
+      "rules": {
+        "@typescript-eslint/no-var-requires": "off"
+      }
+    },
+    {
+      "files": [
+        "src/platform/electron.ts",
+        "src/App.tsx",
+        "src/main.tsx",
+        "src/components/chat/ChatWindow.tsx",
+        "src/components/chat/FilesystemDirectoryBar.tsx",
+        "src/components/layout/TitleBar.tsx",
+        "src/components/layout/MainLayout.tsx",
+        "src/components/settings/ApiSettings.tsx",
+        "src/components/settings/ProfileSwitcher.tsx",
+        "src/components/settings/ProfilesSettings.tsx",
+        "src/components/sidebar/UpdateNotification.tsx",
+        "src/components/sidebar/ConversationList.tsx",
+        "src/components/sidebar/ProjectSelector.tsx",
+        "src/hooks/useFileMention.ts",
+        "src/store/slices/conversationSlice.ts",
+        "src/store/slices/projectSlice.ts",
+        "src/test/**",
+        "**/*.test.ts",
+        "**/*.test.tsx"
+      ],
+      "rules": {
+        "no-restricted-properties": "off"
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "dist",
+    "dist-electron",
+    "release",
+    "node_modules",
+    "web"
+  ]
 }

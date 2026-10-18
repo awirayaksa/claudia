@@ -2,8 +2,7 @@ import { useCallback } from 'react';
 import { UIResourceRenderer, getUIResourceMetadata, basicComponentLibrary } from '@mcp-ui/client';
 import type { UIActionResult } from '@mcp-ui/client';
 import { UIResourceContent } from '../../types/mcp.types';
-import { useAppDispatch } from '../../store';
-import { executeUIAction } from '../../store/slices/chatSlice';
+import { getPlatform } from '../../platform';
 
 interface UIResourceDisplayProps {
   resource: UIResourceContent;
@@ -16,7 +15,8 @@ export function UIResourceDisplay({
   toolCallId,
   toolName
 }: UIResourceDisplayProps) {
-  const dispatch = useAppDispatch();
+  // iframe settings come from the host; the web app renders from a separate sandbox origin
+  const { uiSandbox, tools } = getPlatform();
 
   // Extract MCP-UI specific metadata
   const metadata = getUIResourceMetadata(resource);
@@ -37,14 +37,15 @@ export function UIResourceDisplay({
     // Handle all MCP-UI action types according to SDK specification
     switch (result.type) {
       case 'tool':
-        // Execute tool call through Redux action
-        dispatch(executeUIAction({
-          uri: resource.uri,
-          toolName: result.payload.toolName,
-          action: result.payload.toolName,
-          data: result.payload.params,
-          originalToolCallId: toolCallId,
-        }));
+        // Run the tool through the host; the result replaces the original tool result
+        tools
+          .uiAction({
+            uri: resource.uri,
+            toolName: result.payload.toolName,
+            params: result.payload.params,
+            originalToolCallId: toolCallId,
+          })
+          .catch((error) => console.error('[UI Action] Tool call failed:', error));
         return { status: 'handled' };
 
       case 'link':
@@ -78,7 +79,7 @@ export function UIResourceDisplay({
         console.warn('[UI Action] Unknown action type:', (result as any).type);
         return { status: 'unhandled', reason: 'Unknown action type' };
     }
-  }, [resource.uri, toolCallId, dispatch]);
+  }, [resource.uri, toolCallId, tools]);
 
   return (
     <div className="w-full rounded-lg border border-border bg-surface overflow-hidden shadow-sm">
@@ -90,7 +91,8 @@ export function UIResourceDisplay({
           resource={resource}
           onUIAction={handleUIAction}
           htmlProps={{
-            sandboxPermissions: 'allow-scripts allow-forms allow-same-origin allow-popups',
+            sandboxPermissions: uiSandbox.sandboxPermissions,
+            proxy: uiSandbox.proxyUrl,
             // Metadata-driven frame sizing - server can specify preferred dimensions
             style: preferredSize ? {
               width: preferredSize[0],

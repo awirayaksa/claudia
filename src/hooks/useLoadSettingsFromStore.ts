@@ -7,15 +7,17 @@ import {
   setProfiles,
   setCurrentProfileId,
 } from '../store/slices/settingsSlice';
+import { getPlatform } from '../platform';
 
 export function useLoadSettingsFromStore() {
   const dispatch = useAppDispatch();
 
   const reload = useCallback(async () => {
     try {
+      const platform = getPlatform();
       const [configResult, profileResult] = await Promise.all([
-        window.electron.config.get(),
-        window.electron.profile.list(),
+        platform.config.get(),
+        platform.profiles ? platform.profiles.list() : Promise.resolve({ profiles: [], currentProfileId: null }),
       ]);
 
       const config = configResult;

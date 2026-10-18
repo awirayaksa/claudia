@@ -1,4 +1,17 @@
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron';
+
+/**
+ * Register an IPC listener that forwards only the payload to `callback`, and
+ * return a cleanup that removes exactly the wrapper that was registered.
+ * Removing `callback` itself would be a no-op and leak the listener.
+ */
+function subscribe<T>(channel: string, callback: (data: T) => void): () => void {
+  const handler = (_event: IpcRendererEvent, data: T) => callback(data);
+  ipcRenderer.on(channel, handler);
+  return () => {
+    ipcRenderer.removeListener(channel, handler);
+  };
+}
 
 // Expose protected methods that allow the renderer process to use
 // ipcRenderer without exposing the entire object
@@ -26,11 +39,18 @@ contextBridge.exposeInMainWorld('electron', {
     read: (path: string) => ipcRenderer.invoke('file:read', path),
     save: (path: string, data: any) => ipcRenderer.invoke('file:save', path, data),
     listDirectory: (dirPath: string) => ipcRenderer.invoke('file:listDirectory', dirPath),
+    extractText: (payload: { name: string; mimeType?: string; data: Uint8Array }) =>
+      ipcRenderer.invoke('file:extractText', payload),
   },
 
   // Conversation operations
   conversation: {
     save: (conversation: any) => ipcRenderer.invoke('conversation:save', conversation),
+    updateMeta: (
+      id: string,
+      projectId: string | null,
+      patch: { title?: string; model?: string; starred?: boolean }
+    ) => ipcRenderer.invoke('conversation:updateMeta', id, projectId, patch),
     load: (id: string, projectId: string | null) => ipcRenderer.invoke('conversation:load', id, projectId),
     list: (projectId?: string | null) => ipcRenderer.invoke('conversation:list', projectId),
     delete: (id: string, projectId: string | null) => ipcRenderer.invoke('conversation:delete', id, projectId),
@@ -85,9 +105,12 @@ contextBridge.exposeInMainWorld('electron', {
       'menu:about',
     ];
     if (validChannels.includes(channel)) {
-      ipcRenderer.on(channel, callback);
-      // Return cleanup function
-      return () => ipcRenderer.removeListener(channel, callback);
+      const handler = () => callback();
+      ipcRenderer.on(channel, handler);
+      // Return cleanup function (removes the same wrapper that was registered)
+      return () => {
+        ipcRenderer.removeListener(channel, handler);
+      };
     }
   },
 
@@ -133,24 +156,19 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Event listeners
     onServerStatusChanged: (callback: (event: any) => void) => {
-      ipcRenderer.on('mcp:server:statusChanged', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('mcp:server:statusChanged', callback);
+      return subscribe('mcp:server:statusChanged', callback);
     },
     onServerToolsUpdated: (callback: (event: any) => void) => {
-      ipcRenderer.on('mcp:server:toolsUpdated', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('mcp:server:toolsUpdated', callback);
+      return subscribe('mcp:server:toolsUpdated', callback);
     },
     onServerResourcesUpdated: (callback: (event: any) => void) => {
-      ipcRenderer.on('mcp:server:resourcesUpdated', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('mcp:server:resourcesUpdated', callback);
+      return subscribe('mcp:server:resourcesUpdated', callback);
     },
     onServerPromptsUpdated: (callback: (event: any) => void) => {
-      ipcRenderer.on('mcp:server:promptsUpdated', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('mcp:server:promptsUpdated', callback);
+      return subscribe('mcp:server:promptsUpdated', callback);
     },
     onServerError: (callback: (event: any) => void) => {
-      ipcRenderer.on('mcp:server:error', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('mcp:server:error', callback);
+      return subscribe('mcp:server:error', callback);
     },
   },
 
@@ -189,20 +207,16 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Event listeners
     onStatusChanged: (callback: (event: any) => void) => {
-      ipcRenderer.on('plugin:statusChanged', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('plugin:statusChanged', callback);
+      return subscribe('plugin:statusChanged', callback);
     },
     onError: (callback: (event: any) => void) => {
-      ipcRenderer.on('plugin:error', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('plugin:error', callback);
+      return subscribe('plugin:error', callback);
     },
     onDiscovered: (callback: (event: any) => void) => {
-      ipcRenderer.on('plugin:discovered', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('plugin:discovered', callback);
+      return subscribe('plugin:discovered', callback);
     },
     onChanged: (callback: (event: any) => void) => {
-      ipcRenderer.on('plugin:changed', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('plugin:changed', callback);
+      return subscribe('plugin:changed', callback);
     },
   },
 
@@ -219,8 +233,7 @@ contextBridge.exposeInMainWorld('electron', {
 
     // Event listener for logs from main process
     onLogEntry: (callback: (entry: any) => void) => {
-      ipcRenderer.on('logger:entry', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('logger:entry', callback);
+      return subscribe('logger:entry', callback);
     },
   },
 
@@ -234,9 +247,7 @@ contextBridge.exposeInMainWorld('electron', {
     getDir: () => ipcRenderer.invoke('skill:getDir'),
     openDir: () => ipcRenderer.invoke('skill:openDir'),
     onChanged: (callback: (skills: any[]) => void) => {
-      const handler = (_event: any, data: any[]) => callback(data);
-      ipcRenderer.on('skill:changed', handler);
-      return () => ipcRenderer.removeListener('skill:changed', handler);
+      return subscribe('skill:changed', callback);
     },
   },
 
@@ -247,17 +258,13 @@ contextBridge.exposeInMainWorld('electron', {
     relaunch: () => ipcRenderer.invoke('updater:relaunch'),
     restartCheck: () => ipcRenderer.invoke('updater:restartCheck'),
     onStatusChanged: (callback: (status: any) => void) => {
-      ipcRenderer.on('updater:status-changed', (_event, data) => callback(data));
-      return () => ipcRenderer.removeListener('updater:status-changed', callback);
+      return subscribe('updater:status-changed', callback);
     },
     onDownloadProgress: (callback: (percent: number) => void) => {
-      ipcRenderer.on('updater:download-progress', (_event, percent) => callback(percent));
-      return () => ipcRenderer.removeListener('updater:download-progress', callback);
+      return subscribe('updater:download-progress', callback);
     },
     onLastAttemptFailed: (callback: (payload: any) => void) => {
-      const handler = (_event: any, data: any) => callback(data);
-      ipcRenderer.on('updater:last-attempt-failed', handler);
-      return () => ipcRenderer.removeListener('updater:last-attempt-failed', handler);
+      return subscribe('updater:last-attempt-failed', callback);
     },
   },
 });
@@ -285,9 +292,20 @@ export interface ElectronAPI {
       entries: Array<{ name: string; isDirectory: boolean }>;
       error?: string;
     }>;
+    extractText: (payload: { name: string; mimeType?: string; data: Uint8Array }) => Promise<{
+      success: boolean;
+      text?: string;
+      truncated?: boolean;
+      error?: string;
+    }>;
   };
   conversation: {
     save: (conversation: any) => Promise<any>;
+    updateMeta: (
+      id: string,
+      projectId: string | null,
+      patch: { title?: string; model?: string; starred?: boolean }
+    ) => Promise<any>;
     load: (id: string, projectId: string | null) => Promise<any>;
     list: (projectId?: string | null) => Promise<any>;
     delete: (id: string, projectId: string | null) => Promise<any>;

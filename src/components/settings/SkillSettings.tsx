@@ -3,6 +3,8 @@ import { useAppSelector, useAppDispatch } from '../../store';
 import { createSkill, updateSkill, deleteSkill, clearSkillError, setSelectedSkill } from '../../store/slices/skillSlice';
 import type { Skill, SkillWritePayload } from '../../types/skill.types';
 import { Button } from '../common/Button';
+import { getPlatform } from '../../platform';
+import { useT } from '../../i18n';
 
 const VALID_ID_PATTERN = /^[a-z][a-z0-9-]*$/;
 
@@ -32,6 +34,7 @@ interface SkillFormProps {
 }
 
 function SkillForm({ initial = emptyForm, isNew, onSave, onCancel, error }: SkillFormProps) {
+  const t = useT();
   const [form, setForm] = useState<SkillFormState>(initial);
   const [idManuallyEdited, setIdManuallyEdited] = useState(!isNew);
   const [saving, setSaving] = useState(false);
@@ -51,11 +54,11 @@ function SkillForm({ initial = emptyForm, isNew, onSave, onCancel, error }: Skil
   };
 
   const validate = (): string | null => {
-    if (!form.name.trim()) return 'Name is required.';
-    if (!form.id.trim()) return 'ID is required.';
+    if (!form.name.trim()) return t('skills.nameRequired', 'Name is required.');
+    if (!form.id.trim()) return t('skills.idRequired', 'ID is required.');
     if (!VALID_ID_PATTERN.test(form.id))
-      return 'ID must start with a lowercase letter and contain only lowercase letters, digits, and hyphens.';
-    if (!form.body.trim()) return 'Skill body is required.';
+      return t('skills.idInvalid', 'ID must start with a lowercase letter and contain only lowercase letters, digits, and hyphens.');
+    if (!form.body.trim()) return t('skills.bodyRequired', 'Skill body is required.');
     return null;
   };
 
@@ -77,18 +80,18 @@ function SkillForm({ initial = emptyForm, isNew, onSave, onCancel, error }: Skil
     <div className="rounded-lg border border-border bg-background p-4 space-y-3">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="block text-xs font-medium text-text-secondary mb-1">Name</label>
+          <label className="block text-xs font-medium text-text-secondary mb-1">{t('skills.name', 'Name')}</label>
           <input
             type="text"
             value={form.name}
             onChange={(e) => handleNameChange(e.target.value)}
-            placeholder="Code Review"
+            placeholder={t('skills.namePlaceholder', 'Code Review')}
             className="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none"
           />
         </div>
         <div>
           <label className="block text-xs font-medium text-text-secondary mb-1">
-            ID <span className="text-text-secondary font-normal">(slash command)</span>
+            {t('skills.id', 'ID')} <span className="text-text-secondary font-normal">{t('skills.idHint', '(slash command)')}</span>
           </label>
           <div className="flex items-center gap-1">
             <span className="text-text-secondary text-sm">/</span>
@@ -104,27 +107,28 @@ function SkillForm({ initial = emptyForm, isNew, onSave, onCancel, error }: Skil
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-text-secondary mb-1">Description</label>
+        <label className="block text-xs font-medium text-text-secondary mb-1">{t('skills.description', 'Description')}</label>
         <input
           type="text"
           value={form.description}
           onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
-          placeholder="Short description shown in the autocomplete dropdown"
+          placeholder={t('skills.descriptionPlaceholder', 'Short description shown in the autocomplete dropdown')}
           className="w-full rounded border border-border bg-surface px-2 py-1.5 text-sm text-text-primary focus:border-accent focus:outline-none"
         />
       </div>
 
       <div>
         <label className="block text-xs font-medium text-text-secondary mb-1">
-          Skill body{' '}
+          {t('skills.body', 'Skill body')}{' '}
           <span className="text-text-secondary font-normal">
-            — use <code className="bg-surface px-1 rounded">{'{{args}}'}</code> where user args should be inserted
+            — {t('skills.bodyHintBefore', 'use')} <code className="bg-surface px-1 rounded">{'{{args}}'}</code>{' '}
+            {t('skills.bodyHintAfter', 'where user args should be inserted')}
           </span>
         </label>
         <textarea
           value={form.body}
           onChange={(e) => setForm((p) => ({ ...p, body: e.target.value }))}
-          placeholder={`Please review the following code:\n\n{{args}}`}
+          placeholder={`${t('skills.bodyPlaceholder', 'Please review the following code:')}\n\n{{args}}`}
           rows={8}
           className="w-full resize-y rounded border border-border bg-surface px-2 py-1.5 font-mono text-sm text-text-primary focus:border-accent focus:outline-none"
         />
@@ -136,10 +140,10 @@ function SkillForm({ initial = emptyForm, isNew, onSave, onCancel, error }: Skil
 
       <div className="flex justify-end gap-2">
         <Button variant="secondary" onClick={onCancel} disabled={saving}>
-          Cancel
+          {t('common.cancel', 'Cancel')}
         </Button>
         <Button onClick={handleSubmit} disabled={saving}>
-          {saving ? 'Saving…' : 'Save Skill'}
+          {saving ? t('common.saving', 'Saving…') : t('skills.save', 'Save Skill')}
         </Button>
       </div>
     </div>
@@ -154,6 +158,7 @@ type EditMode =
   | { type: 'edit'; skill: Skill };
 
 export function SkillSettings() {
+  const t = useT();
   const dispatch = useAppDispatch();
   const { skills, error } = useAppSelector((state) => state.skills);
 
@@ -193,17 +198,20 @@ export function SkillSettings() {
     [dispatch]
   );
 
+  // Skills live in a folder on the desktop; on the web they're stored on the server
+  const hasSkillsFolder = !!getPlatform().skills.openDir;
   const handleOpenDir = async () => {
-    await window.electron.skills.openDir();
+    await getPlatform().skills.openDir?.();
   };
 
   return (
     <div className="space-y-6" style={{ padding: '22px 28px' }}>
       <div className="flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-text-primary">Skills</h3>
+          <h3 className="text-sm font-semibold text-text-primary">{t('skills.title', 'Skills')}</h3>
           <p className="mt-0.5 text-xs text-text-secondary">
-            Invoke skills with <code className="bg-surface px-1 rounded">/skill-name</code> in the chat input
+            {t('skills.invokeBefore', 'Invoke skills with')} <code className="bg-surface px-1 rounded">/skill-name</code>{' '}
+            {t('skills.invokeAfter', 'in the chat input')}
           </p>
         </div>
         {editMode.type === 'none' && (
@@ -214,7 +222,7 @@ export function SkillSettings() {
               setEditMode({ type: 'new' });
             }}
           >
-            + New Skill
+            + {t('skills.new', 'New Skill')}
           </Button>
         )}
       </div>
@@ -232,7 +240,7 @@ export function SkillSettings() {
       {/* Built-in skills */}
       <div>
         <h4 className="mb-2 text-xs font-semibold uppercase tracking-wider text-text-secondary">
-          Built-in
+          {t('skills.builtin', 'Built-in')}
         </h4>
         <div className="space-y-1">
           {builtinSkills.map((skill) => (
@@ -246,7 +254,7 @@ export function SkillSettings() {
                   className="text-xs text-text-secondary hover:text-text-primary"
                   onClick={() => setViewingBuiltin(viewingBuiltin?.id === skill.id ? null : skill)}
                 >
-                  {viewingBuiltin?.id === skill.id ? 'Hide' : 'View'}
+                  {viewingBuiltin?.id === skill.id ? t('skills.hide', 'Hide') : t('skills.view', 'View')}
                 </button>
               </div>
               {viewingBuiltin?.id === skill.id && (
@@ -263,19 +271,23 @@ export function SkillSettings() {
       <div>
         <div className="mb-2 flex items-center justify-between">
           <h4 className="text-xs font-semibold uppercase tracking-wider text-text-secondary">
-            Your Skills
+            {t('skills.yours', 'Your Skills')}
           </h4>
-          <button
-            className="text-xs text-text-secondary hover:text-text-primary"
-            onClick={handleOpenDir}
-          >
-            Open Skills Folder
-          </button>
+          {hasSkillsFolder && (
+            <button
+              className="text-xs text-text-secondary hover:text-text-primary"
+              onClick={handleOpenDir}
+            >
+              {t('skills.openFolder', 'Open Skills Folder')}
+            </button>
+          )}
         </div>
 
         {userSkills.length === 0 ? (
           <p className="text-xs text-text-secondary py-2">
-            No custom skills yet. Click "New Skill" to create one, or add .md files to the skills folder.
+            {hasSkillsFolder
+              ? t('skills.noneWithFolder', 'No custom skills yet. Click "New Skill" to create one, or add .md files to the skills folder.')
+              : t('skills.none', 'No custom skills yet. Click "New Skill" to create one.')}
           </p>
         ) : (
           <div className="space-y-1">
@@ -301,7 +313,7 @@ export function SkillSettings() {
                           setEditMode({ type: 'edit', skill });
                         }}
                       >
-                        Edit
+                        {t('common.edit', 'Edit')}
                       </button>
                       {deleteConfirm === skill.id ? (
                         <>
@@ -309,13 +321,13 @@ export function SkillSettings() {
                             className="rounded px-2 py-0.5 text-xs text-error hover:bg-background"
                             onClick={() => handleDelete(skill.id)}
                           >
-                            Confirm
+                            {t('common.confirm', 'Confirm')}
                           </button>
                           <button
                             className="rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-background"
                             onClick={() => setDeleteConfirm(null)}
                           >
-                            Cancel
+                            {t('common.cancel', 'Cancel')}
                           </button>
                         </>
                       ) : (
@@ -323,7 +335,7 @@ export function SkillSettings() {
                           className="rounded px-2 py-0.5 text-xs text-text-secondary hover:text-error hover:bg-background"
                           onClick={() => setDeleteConfirm(skill.id)}
                         >
-                          Delete
+                          {t('common.delete', 'Delete')}
                         </button>
                       )}
                     </div>

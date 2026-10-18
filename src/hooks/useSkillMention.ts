@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import type { Skill } from '../types/skill.types';
 
 export interface SkillMentionResult {
@@ -18,18 +18,23 @@ export interface SkillMentionResult {
   close: () => void;
 }
 
-export function useSkillMention(skills: Skill[]): SkillMentionResult {
+/** `trigger`: the character that opens the menu ("/" for skills; the web app also uses "#"). */
+export function useSkillMention(skills: Skill[], trigger = '/'): SkillMentionResult {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState('');
-  const [filteredSkills, setFilteredSkills] = useState<Skill[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
+  // Derived, so commands that arrive while the menu is open show up too
+  const filteredSkills = useMemo(() => {
+    if (!isOpen) return [];
+    const q = query.toLowerCase();
+    return q ? skills.filter((s) => s.id.startsWith(q) || s.name.toLowerCase().includes(q)) : skills;
+  }, [isOpen, query, skills]);
   const triggerIndexRef = useRef<number | null>(null);
 
   const close = useCallback(() => {
     setIsOpen(false);
     setQuery('');
     setActiveIndex(0);
-    setFilteredSkills([]);
     triggerIndexRef.current = null;
   }, []);
 
@@ -38,7 +43,7 @@ export function useSkillMention(skills: Skill[]): SkillMentionResult {
       const textBeforeCursor = value.slice(0, cursorPos);
 
       // Find last `/` before cursor
-      const slashIdx = textBeforeCursor.lastIndexOf('/');
+      const slashIdx = textBeforeCursor.lastIndexOf(trigger);
 
       if (slashIdx === -1) {
         if (isOpen) close();
@@ -62,20 +67,12 @@ export function useSkillMention(skills: Skill[]): SkillMentionResult {
         return;
       }
 
-      const q = rawQuery.toLowerCase();
-      const filtered = q
-        ? skills.filter(
-            (s) => s.id.startsWith(q) || s.name.toLowerCase().includes(q)
-          )
-        : skills;
-
       setQuery(rawQuery);
-      setFilteredSkills(filtered);
       setActiveIndex(0);
       setIsOpen(true);
       triggerIndexRef.current = slashIdx;
     },
-    [skills, isOpen, close]
+    [isOpen, close, trigger]
   );
 
   const buildReplacement = useCallback(
@@ -88,12 +85,12 @@ export function useSkillMention(skills: Skill[]): SkillMentionResult {
       const before = value.slice(0, slashIdx);
       const after = value.slice(cursorPos);
       // Insert command with trailing space so user can type args immediately
-      const token = `/${skill.id} `;
+      const token = `${trigger}${skill.id} `;
       const newValue = `${before}${token}${after}`;
       const newCursorPos = slashIdx + token.length;
       return { newValue, newCursorPos };
     },
-    []
+    [trigger]
   );
 
   const selectSkill = useCallback(

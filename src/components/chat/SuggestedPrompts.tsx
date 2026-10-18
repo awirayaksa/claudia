@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getAPIProvider } from '../../services/api/provider.service';
+import { getPlatform } from '../../platform';
+import { t, useT } from '../../i18n';
 
 export interface PromptSuggestion {
   title: string;
@@ -22,71 +23,72 @@ const CARD_ICONS = [
   <svg key="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2v6M12 16v6M2 12h6M16 12h6M5 5l4 4M15 15l4 4M5 19l4-4M15 9l4-4"/></svg>,
 ];
 
-const DEFAULT_SUGGESTIONS: PromptSuggestion[] = [
+/** The built-in cards (shown when suggestions can't be generated), in the current language. */
+const defaultSuggestions = (): PromptSuggestion[] => [
   {
     emoji: '📝',
-    title: 'Draft an email',
-    subtitle: 'Write a clear, professional message',
-    prompt: 'Help me write a professional email to my team announcing a project update. The tone should be clear, concise, and encouraging.',
+    title: t('suggestions.email.title', 'Draft an email'),
+    subtitle: t('suggestions.email.subtitle', 'Write a clear, professional message'),
+    prompt: t('suggestions.email.prompt', 'Help me write a professional email to my team announcing a project update. The tone should be clear, concise, and encouraging.'),
   },
   {
     emoji: '🐛',
-    title: 'Debug my code',
-    subtitle: 'Find and fix an issue in my code',
-    prompt: 'I have a bug in my code and I\'m not sure what\'s causing it. Can you help me walk through the problem step by step and suggest a fix?',
+    title: t('suggestions.debug.title', 'Debug my code'),
+    subtitle: t('suggestions.debug.subtitle', 'Find and fix an issue in my code'),
+    prompt: t('suggestions.debug.prompt', 'I have a bug in my code and I\'m not sure what\'s causing it. Can you help me walk through the problem step by step and suggest a fix?'),
   },
   {
     emoji: '🧠',
-    title: 'Explain a concept',
-    subtitle: 'Break down something complex simply',
-    prompt: 'Explain a complex technical concept to me as if I were new to the field. Use analogies and simple language to make it easy to understand.',
+    title: t('suggestions.explain.title', 'Explain a concept'),
+    subtitle: t('suggestions.explain.subtitle', 'Break down something complex simply'),
+    prompt: t('suggestions.explain.prompt', 'Explain a complex technical concept to me as if I were new to the field. Use analogies and simple language to make it easy to understand.'),
   },
   {
     emoji: '🎨',
-    title: 'Brainstorm ideas',
-    subtitle: 'Generate creative suggestions',
-    prompt: 'Help me brainstorm creative ideas for a new project. I want diverse, innovative suggestions across different categories.',
+    title: t('suggestions.brainstorm.title', 'Brainstorm ideas'),
+    subtitle: t('suggestions.brainstorm.subtitle', 'Generate creative suggestions'),
+    prompt: t('suggestions.brainstorm.prompt', 'Help me brainstorm creative ideas for a new project. I want diverse, innovative suggestions across different categories.'),
   },
   {
     emoji: '📊',
-    title: 'Analyze data',
-    subtitle: 'Interpret patterns and insights',
-    prompt: 'I have some data I need help analyzing. Can you help me identify patterns, trends, and key insights from it?',
+    title: t('suggestions.analyze.title', 'Analyze data'),
+    subtitle: t('suggestions.analyze.subtitle', 'Interpret patterns and insights'),
+    prompt: t('suggestions.analyze.prompt', 'I have some data I need help analyzing. Can you help me identify patterns, trends, and key insights from it?'),
   },
   {
     emoji: '✅',
-    title: 'Plan my day',
-    subtitle: 'Organize tasks and priorities',
-    prompt: 'Help me create a structured daily plan. I\'ll share my tasks and you can help me prioritize them and schedule them efficiently.',
+    title: t('suggestions.planDay.title', 'Plan my day'),
+    subtitle: t('suggestions.planDay.subtitle', 'Organize tasks and priorities'),
+    prompt: t('suggestions.planDay.prompt', 'Help me create a structured daily plan. I\'ll share my tasks and you can help me prioritize them and schedule them efficiently.'),
   },
   {
     emoji: '🔍',
-    title: 'Research a topic',
-    subtitle: 'Summarize key facts and context',
-    prompt: 'I want to learn about a specific topic quickly. Give me a concise overview with the most important facts, context, and key points to know.',
+    title: t('suggestions.research.title', 'Research a topic'),
+    subtitle: t('suggestions.research.subtitle', 'Summarize key facts and context'),
+    prompt: t('suggestions.research.prompt', 'I want to learn about a specific topic quickly. Give me a concise overview with the most important facts, context, and key points to know.'),
   },
   {
     emoji: '💬',
-    title: 'Improve my writing',
-    subtitle: 'Polish prose for clarity and style',
-    prompt: 'I have a piece of writing I\'d like to improve. Can you review it for clarity, flow, and style, then suggest specific edits?',
+    title: t('suggestions.writing.title', 'Improve my writing'),
+    subtitle: t('suggestions.writing.subtitle', 'Polish prose for clarity and style'),
+    prompt: t('suggestions.writing.prompt', 'I have a piece of writing I\'d like to improve. Can you review it for clarity, flow, and style, then suggest specific edits?'),
   },
   {
     emoji: '🚀',
-    title: 'Plan a project',
-    subtitle: 'Break goals into actionable steps',
-    prompt: 'Help me plan a new project from scratch. I\'ll describe my goal and constraints, and you can help me create a realistic roadmap with milestones.',
+    title: t('suggestions.project.title', 'Plan a project'),
+    subtitle: t('suggestions.project.subtitle', 'Break goals into actionable steps'),
+    prompt: t('suggestions.project.prompt', 'Help me plan a new project from scratch. I\'ll describe my goal and constraints, and you can help me create a realistic roadmap with milestones.'),
   },
   {
     emoji: '🤔',
-    title: 'Think through a decision',
-    subtitle: 'Weigh pros, cons, and trade-offs',
-    prompt: 'I\'m facing a difficult decision and need help thinking it through. Can you help me map out the pros, cons, and potential outcomes for each option?',
+    title: t('suggestions.decision.title', 'Think through a decision'),
+    subtitle: t('suggestions.decision.subtitle', 'Weigh pros, cons, and trade-offs'),
+    prompt: t('suggestions.decision.prompt', 'I\'m facing a difficult decision and need help thinking it through. Can you help me map out the pros, cons, and potential outcomes for each option?'),
   },
 ];
 
 function getRandomDefaultSuggestions(count: number): PromptSuggestion[] {
-  const shuffled = [...DEFAULT_SUGGESTIONS].sort(() => Math.random() - 0.5);
+  const shuffled = defaultSuggestions().sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
 }
 
@@ -94,6 +96,7 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
   onSelect,
   model,
 }) => {
+  const t = useT();
   const [suggestions, setSuggestions] = useState<PromptSuggestion[]>([]);
   const [, setLoading] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -105,8 +108,7 @@ export const SuggestedPrompts: React.FC<SuggestedPromptsProps> = ({
     setFailed(false);
 
     try {
-      const provider = getAPIProvider();
-      const response = await provider.chatCompletion({
+      const content = await getPlatform().llm.complete({
         model,
         messages: [
           {
@@ -123,13 +125,11 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
 [{"emoji":"📚","title":"Help me study","subtitle":"vocabulary for a college entrance exam","prompt":"Help me study vocabulary: write a sentence for me to fill in the blank, and I'll try to pick the correct option."}]`,
           },
         ],
-        stream: false,
-        max_tokens: 600,
+        maxTokens: 600,
         temperature: 1.0,
       });
 
-      const content = response.choices[0]?.message?.content;
-      if (content && typeof content === 'string') {
+      if (content) {
         const jsonMatch = content.match(/\[[\s\S]*\]/);
         if (jsonMatch) {
           const parsed = JSON.parse(jsonMatch[0]) as PromptSuggestion[];
@@ -163,7 +163,7 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
   return (
     <div className="mt-8">
       <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
-        Suggested
+        {t('suggestions.heading', 'Suggested')}
       </p>
       <div className="grid grid-cols-3 gap-2.5">
         {displayed.map((suggestion, index) => (

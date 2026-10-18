@@ -1,6 +1,7 @@
 import { ComponentType, ReactNode } from 'react';
 import type { Plugin as UnifiedPlugin } from 'unified';
 import type { Message } from './message.types';
+import type { ClaudiaPlatform } from '../platform/types';
 
 // ============================================================================
 // Plugin Manifest
@@ -62,7 +63,7 @@ export interface PluginManifest {
 export interface PluginCapabilities {
   /** Access Redux store */
   accessStore?: boolean;
-  /** Access Electron APIs via window.electron */
+  /** Access host APIs through the platform adapter (`context.platform`) */
   accessElectron?: boolean;
   /** Access service layer */
   accessServices?: boolean;
@@ -111,8 +112,8 @@ export interface PluginContext {
   /** Redux store access (if accessStore capability is granted) */
   store?: PluginStoreAccess;
 
-  /** Electron API access (if accessElectron capability is granted) */
-  electron?: typeof window.electron;
+  /** Host API access (if the accessElectron capability is granted) */
+  platform?: ClaudiaPlatform;
 
   /** Logger for plugin debugging */
   logger: PluginLogger;

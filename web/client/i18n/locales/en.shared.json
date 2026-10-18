@@ -1,0 +1,277 @@
+{
+  "app": {
+    "name": "Claudia"
+  },
+  "chat": {
+    "stop": "Stop generating"
+  },
+  "chatInput": {
+    "attach": "Attach file",
+    "drop": "Drop files here to attach",
+    "hint": "Enter to send · Shift+Enter for new line ·",
+    "hintEffort": "to set effort for one message",
+    "paste": "Paste",
+    "pastePlain": "Paste as plain text",
+    "placeholder": "Type your message...",
+    "removeAttachment": "Remove {{name}}",
+    "send": "Send message",
+    "uploading": "Uploading files..."
+  },
+  "citations": {
+    "open": "Open",
+    "source": "Source {{n}}",
+    "sources": "Sources"
+  },
+  "common": {
+    "cancel": "Cancel",
+    "close": "Close",
+    "confirm": "Confirm",
+    "copied": "Copied!",
+    "copy": "Copy",
+    "delete": "Delete",
+    "edit": "Edit",
+    "saving": "Saving…",
+    "unknownError": "Unknown error"
+  },
+  "confirm": {
+    "busy": "Deleting..."
+  },
+  "effort": {
+    "auto": "Auto",
+    "coerced": "{{source}} — {{model}} has no \"{{requested}}\" tier, using {{level}}",
+    "current": "Reasoning effort: {{level}}",
+    "fromPreferences": "Reasoning effort: {{level}} (from Preferences)",
+    "hints": {
+      "high": "Think hard before answering",
+      "low": "Light reasoning",
+      "medium": "Balanced reasoning",
+      "minimal": "Answer fast, barely think",
+      "xhigh": "Think as hard as it can"
+    },
+    "label": "Reasoning effort",
+    "levels": {
+      "high": "High",
+      "low": "Low",
+      "medium": "Medium",
+      "minimal": "Minimal",
+      "xhigh": "X-High"
+    },
+    "oneShot": "Effort for this message: {{level}} (from the prompt)",
+    "preferences": "Preferences: {{level}}",
+    "providerDefault": "provider default",
+    "select": "Select reasoning effort"
+  },
+  "mcp": {
+    "hideServers": "Hide MCP servers",
+    "showServers": "Show MCP servers ({{count}})",
+    "start": "Start {{name}}",
+    "stop": "Stop {{name}}"
+  },
+  "mention": {
+    "builtin": "built-in",
+    "keys": "Tab/Enter to select • Esc to close",
+    "noMatches": "No matches",
+    "noSkills": "No skills found"
+  },
+  "mermaid": {
+    "showDiagram": "Show diagram",
+    "showSource": "Show source"
+  },
+  "message": {
+    "bad": "Bad reply",
+    "branch": "Branch",
+    "copiedShort": "Copied",
+    "edit": "Edit message",
+    "good": "Good reply",
+    "retry": "Retry",
+    "tokens": "{{count}} tokens"
+  },
+  "models": {
+    "available": "Available models",
+    "none": "No models available",
+    "select": "Select model",
+    "unavailable": "{{model}} (unavailable)"
+  },
+  "preferences": {
+    "autoUpdate": "Auto Update",
+    "autoUpdateHelp": "Automatically check for newer portable versions. The URL must point to a JSON manifest file with",
+    "displayHelp": "Configure what information to display in chat messages.",
+    "displayTitle": "Display Preferences",
+    "effort": "Reasoning effort",
+    "effortAuto": "Auto (provider default)",
+    "effortHelp": "Default thinking budget for reasoning models. Models that don't offer the tier you pick fall back to their closest one (Qwen3.8, for example, only takes Low, Medium and X-High). Override it per session with the effort button next to the chat input, or per message by typing",
+    "effortHelpEnd": "in the prompt.",
+    "loadedFrom": "Loaded from file:",
+    "modelHelp": "Configure model parameters for API requests.",
+    "modelTitle": "Model Preferences",
+    "note": "Note:",
+    "reset": "Reset",
+    "selectFile": "Select .txt or .md file",
+    "showReasoning": "Show Reasoning",
+    "showReasoningHelp": "Display the model's reasoning process when available (extended thinking models)",
+    "showStatistics": "Show Statistics",
+    "showStatisticsHelp": "Display token usage, cost, and performance metrics for each response",
+    "systemPrompt": "System Prompt",
+    "systemPromptHelp": "Applied to all chat sessions globally. Leave empty for no system prompt.",
+    "systemPromptPlaceholder": "Enter a system prompt, or select a .txt / .md file below...",
+    "temperature": "Temperature",
+    "temperatureHelp": "Controls randomness. Lower is more focused, higher is more creative (0-2, default: 0.7)",
+    "tokenNote": "Token limits are managed by your API provider (OpenRouter). If you encounter token limit errors, you may need to upgrade your account or use a different model.",
+    "updateUrl": "Update Check URL",
+    "updateUrlHelp": "Leave empty to disable automatic update checks"
+  },
+  "reasoning": {
+    "thinking": "Thinking…",
+    "thoughtFor": "Thought for {{duration}}"
+  },
+  "selection": {
+    "ask": "Ask",
+    "askPlaceholder": "Ask a question...",
+    "askTitle": "Ask a question about the selected text",
+    "close": "Close",
+    "copy": "Copy",
+    "copyTitle": "Copy selected text to clipboard",
+    "explain": "Explain",
+    "explainTitle": "Explain the selected text",
+    "generating": "Generating...",
+    "send": "Send"
+  },
+  "skills": {
+    "body": "Skill body",
+    "bodyHintAfter": "where user args should be inserted",
+    "bodyHintBefore": "use",
+    "bodyPlaceholder": "Please review the following code:",
+    "bodyRequired": "Skill body is required.",
+    "builtin": "Built-in",
+    "description": "Description",
+    "descriptionPlaceholder": "Short description shown in the autocomplete dropdown",
+    "hide": "Hide",
+    "id": "ID",
+    "idHint": "(slash command)",
+    "idInvalid": "ID must start with a lowercase letter and contain only lowercase letters, digits, and hyphens.",
+    "idRequired": "ID is required.",
+    "invokeAfter": "in the chat input",
+    "invokeBefore": "Invoke skills with",
+    "name": "Name",
+    "namePlaceholder": "Code Review",
+    "nameRequired": "Name is required.",
+    "new": "New Skill",
+    "none": "No custom skills yet. Click \"New Skill\" to create one.",
+    "noneWithFolder": "No custom skills yet. Click \"New Skill\" to create one, or add .md files to the skills folder.",
+    "openFolder": "Open Skills Folder",
+    "save": "Save Skill",
+    "title": "Skills",
+    "view": "View",
+    "yours": "Your Skills"
+  },
+  "suggestions": {
+    "analyze": {
+      "prompt": "I have some data I need help analyzing. Can you help me identify patterns, trends, and key insights from it?",
+      "subtitle": "Interpret patterns and insights",
+      "title": "Analyze data"
+    },
+    "brainstorm": {
+      "prompt": "Help me brainstorm creative ideas for a new project. I want diverse, innovative suggestions across different categories.",
+      "subtitle": "Generate creative suggestions",
+      "title": "Brainstorm ideas"
+    },
+    "debug": {
+      "prompt": "I have a bug in my code and I'm not sure what's causing it. Can you help me walk through the problem step by step and suggest a fix?",
+      "subtitle": "Find and fix an issue in my code",
+      "title": "Debug my code"
+    },
+    "decision": {
+      "prompt": "I'm facing a difficult decision and need help thinking it through. Can you help me map out the pros, cons, and potential outcomes for each option?",
+      "subtitle": "Weigh pros, cons, and trade-offs",
+      "title": "Think through a decision"
+    },
+    "email": {
+      "prompt": "Help me write a professional email to my team announcing a project update. The tone should be clear, concise, and encouraging.",
+      "subtitle": "Write a clear, professional message",
+      "title": "Draft an email"
+    },
+    "explain": {
+      "prompt": "Explain a complex technical concept to me as if I were new to the field. Use analogies and simple language to make it easy to understand.",
+      "subtitle": "Break down something complex simply",
+      "title": "Explain a concept"
+    },
+    "heading": "Suggested",
+    "planDay": {
+      "prompt": "Help me create a structured daily plan. I'll share my tasks and you can help me prioritize them and schedule them efficiently.",
+      "subtitle": "Organize tasks and priorities",
+      "title": "Plan my day"
+    },
+    "project": {
+      "prompt": "Help me plan a new project from scratch. I'll describe my goal and constraints, and you can help me create a realistic roadmap with milestones.",
+      "subtitle": "Break goals into actionable steps",
+      "title": "Plan a project"
+    },
+    "research": {
+      "prompt": "I want to learn about a specific topic quickly. Give me a concise overview with the most important facts, context, and key points to know.",
+      "subtitle": "Summarize key facts and context",
+      "title": "Research a topic"
+    },
+    "writing": {
+      "prompt": "I have a piece of writing I'd like to improve. Can you review it for clarity, flow, and style, then suggest specific edits?",
+      "subtitle": "Polish prose for clarity and style",
+      "title": "Improve my writing"
+    }
+  },
+  "theme": {
+    "accent": "Accent color",
+    "appIcon": "Application Icon",
+    "appTitle": "Application Title",
+    "appTitleHelp": "Updates window title, menu items, and about dialog",
+    "chooseIcon": "Choose Icon",
+    "colors": {
+      "blue": "Blue",
+      "forest": "Forest",
+      "ochre": "Ochre",
+      "slate": "Slate",
+      "terracotta": "Terracotta",
+      "violet": "Violet"
+    },
+    "custom": "Custom",
+    "customColor": "Custom color",
+    "dark": "Dark",
+    "darkHelp": "Dark color scheme",
+    "default": "(default)",
+    "densities": {
+      "comfortable": "Comfortable",
+      "compact": "Compact",
+      "spacious": "Spacious"
+    },
+    "density": "Density",
+    "help": "Tune how Claudia looks on your system.",
+    "iconFormat": "PNG or ICO format, max 1MB",
+    "iconPreview": "Icon preview",
+    "iconUploadFailed": "Failed to upload icon: {{error}}",
+    "light": "Light",
+    "lightHelp": "Light color scheme",
+    "preview": "Preview",
+    "primary": "Primary",
+    "restartNow": "Restart Now",
+    "restartRequired": "Restart required to apply icon changes",
+    "sample": "Here's a sample message to preview your theme.",
+    "secondary": "Secondary",
+    "swatches": {
+      "accent": "Accent",
+      "background": "Background",
+      "surface": "Surface",
+      "text": "Text"
+    },
+    "system": "System",
+    "systemHelp": "Follow system preferences",
+    "systemNote": "System matches your OS appearance and auto-switches.",
+    "theme": "Theme",
+    "title": "Appearance"
+  },
+  "tool": {
+    "arguments": "Arguments:",
+    "error": "Error",
+    "errorLabel": "Error:",
+    "result": "Result:",
+    "running": "Executing...",
+    "success": "Success"
+  }
+}

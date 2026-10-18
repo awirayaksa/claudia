@@ -2,12 +2,18 @@ import { useState, useEffect } from 'react';
 import { useTheme, Theme } from '../../hooks/useTheme';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { setAppearance } from '../../store/slices/settingsSlice';
+import { getPlatform } from '../../platform';
+import { useT } from '../../i18n';
 
 export function ThemeSettings() {
+  const t = useT();
   const { theme, setTheme, effectiveTheme } = useTheme();
   const dispatch = useAppDispatch();
   const appearance = useAppSelector((state) => state.settings.appearance);
   const customization = appearance.customization;
+  const platform = getPlatform();
+  // Only hosts that can change the app icon (desktop) show the icon section
+  const icon = platform.icon;
 
   // State for icon preview and restart notification
   const [iconPreview, setIconPreview] = useState<string | null>(null);
@@ -16,20 +22,20 @@ export function ThemeSettings() {
   const themeOptions: { value: Theme; label: string; description: string; icon: string }[] = [
     {
       value: 'light',
-      label: 'Light',
-      description: 'Light color scheme',
+      label: t('theme.light', 'Light'),
+      description: t('theme.lightHelp', 'Light color scheme'),
       icon: '☀️',
     },
     {
       value: 'dark',
-      label: 'Dark',
-      description: 'Dark color scheme',
+      label: t('theme.dark', 'Dark'),
+      description: t('theme.darkHelp', 'Dark color scheme'),
       icon: '🌙',
     },
     {
       value: 'system',
-      label: 'System',
-      description: 'Follow system preferences',
+      label: t('theme.system', 'System'),
+      description: t('theme.systemHelp', 'Follow system preferences'),
       icon: '💻',
     },
   ];
@@ -39,8 +45,8 @@ export function ThemeSettings() {
 
   // Load icon preview on mount
   useEffect(() => {
-    if (customization?.iconPath) {
-      window.electron.icon.getPreview(customization.iconPath).then((preview) => {
+    if (customization?.iconPath && icon) {
+      icon.getPreview(customization.iconPath).then((preview) => {
         if (preview) {
           setIconPreview(preview);
         }
@@ -48,7 +54,7 @@ export function ThemeSettings() {
     } else {
       setIconPreview(null);
     }
-  }, [customization?.iconPath]);
+  }, [customization?.iconPath, icon]);
 
   // Handler for accent color change
   const handleColorChange = async (color: string) => {
@@ -57,7 +63,7 @@ export function ThemeSettings() {
 
     // Save to electron store
     try {
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
     } catch (error) {
       console.error('Failed to save accent color:', error);
     }
@@ -70,7 +76,7 @@ export function ThemeSettings() {
 
     // Save to electron store
     try {
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
     } catch (error) {
       console.error('Failed to reset accent color:', error);
     }
@@ -83,7 +89,7 @@ export function ThemeSettings() {
 
     // Save to electron store
     try {
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
     } catch (error) {
       console.error('Failed to save app title:', error);
     }
@@ -91,24 +97,25 @@ export function ThemeSettings() {
 
   // Handler for icon upload
   const handleIconUpload = async () => {
+    if (!icon) return;
     try {
       // Select icon file
-      const filePath = await window.electron.icon.select();
+      const filePath = await icon.select();
       if (!filePath) return;
 
       // Upload to AppData
-      const destPath = await window.electron.icon.upload(filePath);
+      const destPath = await icon.upload(filePath);
 
       // Save to Redux and electron store
       const newCustomization = { ...customization, iconPath: destPath };
       dispatch(setAppearance({ customization: newCustomization }));
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
 
       // Try to apply immediately
-      const result = await window.electron.icon.apply(destPath);
+      const result = await icon.apply(destPath);
 
       // Get and set preview
-      const preview = await window.electron.icon.getPreview(destPath);
+      const preview = await icon.getPreview(destPath);
       if (preview) {
         setIconPreview(preview);
       }
@@ -118,17 +125,18 @@ export function ThemeSettings() {
       }
     } catch (error: any) {
       console.error('Failed to upload icon:', error);
-      alert(`Failed to upload icon: ${error.message || 'Unknown error'}`);
+      alert(t('theme.iconUploadFailed', 'Failed to upload icon: {{error}}', { error: error.message || t('common.unknownError', 'Unknown error') }));
     }
   };
 
   // Handler for resetting icon
   const handleResetIcon = async () => {
+    if (!icon) return;
     try {
       const newCustomization = { ...customization, iconPath: undefined };
       dispatch(setAppearance({ customization: newCustomization }));
-      await window.electron.config.set({ appearance: { ...appearance, customization: newCustomization } });
-      await window.electron.icon.reset();
+      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await icon.reset();
       setIconPreview(null);
       setRestartRequired(false);
     } catch (error) {
@@ -137,12 +145,12 @@ export function ThemeSettings() {
   };
 
   const accentSwatches = [
-    { hex: '#c96a3d', label: 'Terracotta' },
-    { hex: '#3d7bc9', label: 'Blue' },
-    { hex: '#3d9966', label: 'Forest' },
-    { hex: '#7d5dc9', label: 'Violet' },
-    { hex: '#525252', label: 'Slate' },
-    { hex: '#b1843a', label: 'Ochre' },
+    { hex: '#c96a3d', label: t('theme.colors.terracotta', 'Terracotta') },
+    { hex: '#3d7bc9', label: t('theme.colors.blue', 'Blue') },
+    { hex: '#3d9966', label: t('theme.colors.forest', 'Forest') },
+    { hex: '#7d5dc9', label: t('theme.colors.violet', 'Violet') },
+    { hex: '#525252', label: t('theme.colors.slate', 'Slate') },
+    { hex: '#b1843a', label: t('theme.colors.ochre', 'Ochre') },
   ];
 
   const currentAccent = customization?.accentColor || defaultAccentColor;
@@ -152,23 +160,28 @@ export function ThemeSettings() {
   const themeIcons: Record<string, string> = { light: '☀', dark: '☾', system: '◨' };
 
   const [density, setDensity] = useState<'compact' | 'comfortable' | 'spacious'>('comfortable');
+  const densityLabels = {
+    compact: t('theme.densities.compact', 'Compact'),
+    comfortable: t('theme.densities.comfortable', 'Comfortable'),
+    spacious: t('theme.densities.spacious', 'Spacious'),
+  };
 
   return (
     <div>
       {/* Section header */}
       <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid #ebe7e1' }}>
         <div style={{ fontSize: 18, fontWeight: 600, letterSpacing: -0.2, marginBottom: 4, color: '#1a1a19' }}>
-          Appearance
+          {t('theme.title', 'Appearance')}
         </div>
         <div style={{ fontSize: 13, color: '#6f6b66', lineHeight: 1.55 }}>
-          Tune how Claudia looks on your system.
+          {t('theme.help', 'Tune how Claudia looks on your system.')}
         </div>
       </div>
 
       <div style={{ padding: '22px 28px' }}>
         {/* Theme */}
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Theme</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>{t('theme.theme', 'Theme')}</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {themeOptions.map((option) => {
               const selected = theme === option.value;
@@ -203,14 +216,14 @@ export function ThemeSettings() {
             })}
           </div>
           <div style={{ fontSize: 11.5, color: '#6f6b66', marginTop: 6 }}>
-            System matches your OS appearance and auto-switches.
+            {t('theme.systemNote', 'System matches your OS appearance and auto-switches.')}
           </div>
         </div>
 
         {/* Accent color */}
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>
-            Accent color
+            {t('theme.accent', 'Accent color')}
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             {accentSwatches.map((swatch) => {
@@ -236,7 +249,7 @@ export function ThemeSettings() {
             })}
             {/* Custom color picker */}
             <label
-              title="Custom color"
+              title={t('theme.customColor', 'Custom color')}
               style={{
                 width: 30,
                 height: 30,
@@ -262,8 +275,8 @@ export function ThemeSettings() {
               />
             </label>
             <span style={{ fontSize: 12, color: '#6f6b66', marginLeft: 4 }}>
-              {accentSwatches.find((s) => isSwatchSelected(s.hex))?.label || 'Custom'}
-              {!customization?.accentColor && ' (default)'}
+              {accentSwatches.find((s) => isSwatchSelected(s.hex))?.label || t('theme.custom', 'Custom')}
+              {!customization?.accentColor && ` ${t('theme.default', '(default)')}`}
             </span>
             {customization?.accentColor && (
               <button
@@ -277,7 +290,7 @@ export function ThemeSettings() {
                   padding: 0,
                 }}
               >
-                Reset
+                {t('preferences.reset', 'Reset')}
               </button>
             )}
           </div>
@@ -285,7 +298,7 @@ export function ThemeSettings() {
 
         {/* Preview */}
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Preview</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>{t('theme.preview', 'Preview')}</div>
           <div
             style={{
               border: '1px solid #ebe7e1',
@@ -296,10 +309,10 @@ export function ThemeSettings() {
           >
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 12, marginBottom: 14 }}>
               {[
-                ['Background', '#fdfcfa'],
-                ['Surface', '#ffffff'],
-                ['Accent', currentAccent],
-                ['Text', '#1a1a19'],
+                [t('theme.swatches.background', 'Background'), '#fdfcfa'],
+                [t('theme.swatches.surface', 'Surface'), '#ffffff'],
+                [t('theme.swatches.accent', 'Accent'), currentAccent],
+                [t('theme.swatches.text', 'Text'), '#1a1a19'],
               ].map(([label, color]) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <div
@@ -334,7 +347,7 @@ export function ThemeSettings() {
                 fontSize: 12.5,
               }}
             >
-              <b>Claudia</b> — Here's a sample message to preview your theme.
+              <b>Claudia</b> — {t('theme.sample', "Here's a sample message to preview your theme.")}
               <div style={{ marginTop: 8, display: 'flex', gap: 6 }}>
                 <button
                   style={{
@@ -347,7 +360,7 @@ export function ThemeSettings() {
                     cursor: 'pointer',
                   }}
                 >
-                  Primary
+                  {t('theme.primary', 'Primary')}
                 </button>
                 <button
                   style={{
@@ -360,7 +373,7 @@ export function ThemeSettings() {
                     cursor: 'pointer',
                   }}
                 >
-                  Secondary
+                  {t('theme.secondary', 'Secondary')}
                 </button>
               </div>
             </div>
@@ -369,7 +382,7 @@ export function ThemeSettings() {
 
         {/* Density */}
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Density</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>{t('theme.density', 'Density')}</div>
           <div
             style={{
               display: 'inline-flex',
@@ -394,7 +407,7 @@ export function ThemeSettings() {
                   textTransform: 'capitalize',
                 }}
               >
-                {d.charAt(0).toUpperCase() + d.slice(1)}
+                {densityLabels[d]}
               </button>
             ))}
           </div>
@@ -402,7 +415,7 @@ export function ThemeSettings() {
 
         {/* Application Title */}
         <div style={{ marginBottom: 24 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Application Title</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>{t('theme.appTitle', 'Application Title')}</div>
           <input
             type="text"
             value={customization?.appTitle || ''}
@@ -422,18 +435,19 @@ export function ThemeSettings() {
             }}
           />
           <div style={{ fontSize: 11.5, color: '#6f6b66', marginTop: 5 }}>
-            Updates window title, menu items, and about dialog
+            {t('theme.appTitleHelp', 'Updates window title, menu items, and about dialog')}
           </div>
         </div>
 
         {/* Application Icon */}
+        {icon && (
         <div style={{ marginBottom: 8 }}>
-          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>Application Icon</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: '#2e2b27', marginBottom: 8 }}>{t('theme.appIcon', 'Application Icon')}</div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {iconPreview && (
               <img
                 src={iconPreview}
-                alt="Icon preview"
+                alt={t('theme.iconPreview', 'Icon preview')}
                 style={{ width: 48, height: 48, borderRadius: 8, border: '1px solid #ebe7e1', objectFit: 'contain' }}
               />
             )}
@@ -450,10 +464,10 @@ export function ThemeSettings() {
                   color: '#2e2b27',
                 }}
               >
-                Choose Icon
+                {t('theme.chooseIcon', 'Choose Icon')}
               </button>
               <div style={{ fontSize: 11.5, color: '#6f6b66', marginTop: 4 }}>
-                PNG or ICO format, max 1MB
+                {t('theme.iconFormat', 'PNG or ICO format, max 1MB')}
               </div>
             </div>
             {customization?.iconPath && (
@@ -461,7 +475,7 @@ export function ThemeSettings() {
                 onClick={handleResetIcon}
                 style={{ fontSize: 12, color: '#c96a3d', background: 'none', border: 'none', cursor: 'pointer' }}
               >
-                Reset
+                {t('preferences.reset', 'Reset')}
               </button>
             )}
           </div>
@@ -477,7 +491,7 @@ export function ThemeSettings() {
               }}
             >
               <div style={{ fontSize: 12.5, color: '#1a1a19', marginBottom: 6 }}>
-                Restart required to apply icon changes
+                {t('theme.restartRequired', 'Restart required to apply icon changes')}
               </div>
               <button
                 onClick={() => window.location.reload()}
@@ -491,11 +505,12 @@ export function ThemeSettings() {
                   cursor: 'pointer',
                 }}
               >
-                Restart Now
+                {t('theme.restartNow', 'Restart Now')}
               </button>
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   );

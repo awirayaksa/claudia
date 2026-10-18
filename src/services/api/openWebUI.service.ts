@@ -1,5 +1,6 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
 import {
+  ProviderHttp,
   ChatCompletionRequest,
   ChatCompletionResponse,
   ModelsResponse,
@@ -10,7 +11,7 @@ import {
 export class OpenWebUIService {
   private axiosInstance: AxiosInstance;
 
-  constructor(baseUrl: string, apiKey: string) {
+  constructor(baseUrl: string, apiKey: string, http?: ProviderHttp) {
     // Normalize baseUrl - remove trailing slash and /api suffix to prevent duplication
     let normalizedBaseUrl = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     // Remove /api suffix if present (case-insensitive) to prevent /api/api duplication
@@ -22,13 +23,15 @@ export class OpenWebUIService {
         'Authorization': `Bearer ${apiKey}`,
       },
       timeout: 30000, // 30 seconds
+      httpAgent: http?.httpAgent,
+      httpsAgent: http?.httpsAgent,
     });
   }
 
   /**
    * Update the API configuration
    */
-  updateConfig(baseUrl: string, apiKey: string): void {
+  updateConfig(baseUrl: string, apiKey: string, http?: ProviderHttp): void {
     // Normalize baseUrl - remove trailing slash and /api suffix to prevent duplication
     let normalizedBaseUrl = baseUrl.replace(/\/+$/, ''); // Remove trailing slashes
     // Remove /api suffix if present (case-insensitive) to prevent /api/api duplication
@@ -40,6 +43,8 @@ export class OpenWebUIService {
         'Authorization': `Bearer ${apiKey}`,
       },
       timeout: 30000,
+      httpAgent: http?.httpAgent,
+      httpsAgent: http?.httpsAgent,
     });
   }
 

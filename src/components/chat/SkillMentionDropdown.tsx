@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { Skill } from '../../types/skill.types';
+import { useT } from '../../i18n';
 
 interface SkillMentionDropdownProps {
   isOpen: boolean;
@@ -9,6 +10,10 @@ interface SkillMentionDropdownProps {
   anchorRef: React.RefObject<HTMLTextAreaElement>;
   onSelect: (skill: Skill) => void;
   onClose: () => void;
+  /** Shown when nothing matches (default "No skills found"). */
+  emptyLabel?: string;
+  /** Shown before each item (default "/"-style slash icon). */
+  prefix?: string;
 }
 
 export function SkillMentionDropdown({
@@ -18,7 +23,10 @@ export function SkillMentionDropdown({
   anchorRef,
   onSelect,
   onClose,
+  emptyLabel,
+  prefix,
 }: SkillMentionDropdownProps) {
+  const t = useT();
   const dropdownRef = useRef<HTMLDivElement>(null);
   const activeItemRef = useRef<HTMLButtonElement>(null);
   const [position, setPosition] = useState({ top: 0, left: 0, width: 0 });
@@ -76,7 +84,7 @@ export function SkillMentionDropdown({
     >
       <div className="max-h-60 overflow-y-auto p-1">
         {skills.length === 0 ? (
-          <div className="px-3 py-2 text-sm text-text-secondary">No skills found</div>
+          <div className="px-3 py-2 text-sm text-text-secondary">{emptyLabel ?? t('mention.noSkills', 'No skills found')}</div>
         ) : (
           skills.map((skill, idx) => {
             const isActive = idx === activeIndex;
@@ -95,7 +103,10 @@ export function SkillMentionDropdown({
                   onSelect(skill);
                 }}
               >
-                {/* Slash icon */}
+                {prefix ? (
+                  <span className={`w-4 flex-shrink-0 text-center font-mono ${isActive ? 'text-white' : 'text-accent'}`}>{prefix}</span>
+                ) : (
+                /* Slash icon */
                 <svg
                   className={`h-4 w-4 flex-shrink-0 ${isActive ? 'text-white' : 'text-accent'}`}
                   fill="none"
@@ -109,9 +120,10 @@ export function SkillMentionDropdown({
                     d="M17 3L7 21"
                   />
                 </svg>
-                {/* Command name */}
-                <span className={`font-mono font-medium ${isActive ? 'text-white' : 'text-text-primary'}`}>
-                  {skill.id}
+                )}
+                {/* Command name (named items: their name) */}
+                <span className={`${prefix ? 'max-w-[60%] truncate' : 'font-mono'} font-medium ${isActive ? 'text-white' : 'text-text-primary'}`}>
+                  {prefix ? skill.name : skill.id}
                 </span>
                 {/* Description */}
                 <span className={`flex-1 truncate text-xs ${isActive ? 'text-white opacity-80' : 'text-text-secondary'}`}>
@@ -124,7 +136,7 @@ export function SkillMentionDropdown({
                       isActive ? 'text-white opacity-70' : 'text-text-secondary'
                     }`}
                   >
-                    built-in
+                    {t('mention.builtin', 'built-in')}
                   </span>
                 )}
               </button>
@@ -133,7 +145,7 @@ export function SkillMentionDropdown({
         )}
       </div>
       <div className="border-t border-border px-3 py-1.5 text-xs text-text-secondary">
-        Tab/Enter to select • Esc to close
+        {t('mention.keys', 'Tab/Enter to select • Esc to close')}
       </div>
     </div>,
     document.body

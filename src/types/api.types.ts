@@ -4,13 +4,30 @@ import { MessageUsage } from './statistics.types';
 import { ReasoningEffort } from '../utils/effort-utils';
 
 // Provider Types
-export type ProviderType = 'openwebui' | 'openrouter' | 'custom' | 'opencode-go';
+export type ProviderType = 'openwebui' | 'openrouter' | 'custom' | 'opencode-go' | 'anthropic' | 'ollama';
 
 export interface ProviderCapabilities {
   supportsFileUpload: boolean;
   supportsToolCalling: boolean;
   supportsStreaming: boolean;
   requiresCustomHeaders: boolean;
+  /**
+   * Offer tools only on the first request of a tool loop. Some strict proxies
+   * (e.g. Kimi via opencode-go) fail when tools are resent after tool results
+   * are already in the conversation.
+   */
+  toolsFirstTurnOnly?: boolean;
+}
+
+/**
+ * How a provider reaches its endpoint. The desktop uses the defaults; the web
+ * server routes user-owned connections through its SSRF guard.
+ */
+export interface ProviderHttp {
+  fetch?: typeof fetch;
+  /** Node http.Agent / https.Agent for axios requests. */
+  httpAgent?: unknown;
+  httpsAgent?: unknown;
 }
 
 // Provider-specific Configuration Types
@@ -18,6 +35,7 @@ export interface OpenWebUIConfig {
   baseUrl: string;
   apiKey: string;
   selectedModel: string;
+  http?: ProviderHttp;
 }
 
 export interface OpenRouterConfig {
@@ -31,6 +49,7 @@ export interface CustomProviderConfig {
   baseUrl: string;
   apiKey: string;
   selectedModel: string;
+  http?: ProviderHttp;
 }
 
 export interface OpencodeGoConfig {
@@ -38,6 +57,7 @@ export interface OpencodeGoConfig {
   apiKey: string;
   selectedModel: string;
   apiCompatibility: 'openai' | 'anthropic';
+  http?: ProviderHttp;
 }
 
 // Union type for all provider configs
@@ -92,11 +112,14 @@ export type ContentPart = TextContentPart | ImageUrlContentPart;
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string | ContentPart[] | null;
+  /** Omitted on assistant messages that carry tool_calls (strict providers reject both). */
+  content?: string | ContentPart[] | null;
   tool_calls?: ToolCall[];
   tool_call_id?: string; // For tool role messages
   name?: string; // Tool name for tool role messages
-  reasoning?: string; // Reasoning/thinking content from the model
+  reasoning?: string; // Reasoning/thinking content from the model (responses)
+  /** Reasoning echoed back in history (DeepSeek thinking mode requires it). */
+  reasoning_content?: string;
 }
 
 export interface ChatCompletionRequest {
@@ -116,6 +139,8 @@ export interface ChatCompletionRequest {
    * (OpenRouter, Anthropic) translate it in their own request builder.
    */
   reasoning_effort?: ReasoningEffort;
+  /** Open WebUI only: uploaded files the server should use for this request. */
+  files?: Array<{ type: 'file'; id: string }>;
 }
 
 export interface ChatCompletionResponse {

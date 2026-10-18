@@ -1,8 +1,8 @@
 import React from 'react';
 import { useAppDispatch } from '../../store';
 import { startMCPServer, stopMCPServer } from '../../store/slices/mcpSlice';
-import { clearMessages } from '../../store/slices/chatSlice';
 import { MCPServerConfig, MCPServerState, MCPServerStatus } from '../../types/mcp.types';
+import { useT } from '../../i18n';
 
 interface MCPServerBadgeProps {
   config: MCPServerConfig;
@@ -10,6 +10,8 @@ interface MCPServerBadgeProps {
   status: MCPServerStatus;
   toolCount: number;
   disabled?: boolean;
+  /** Called after the user starts (running = true) or stops a server. */
+  onToggled?: (serverId: string, running: boolean) => void;
 }
 
 const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
@@ -18,7 +20,9 @@ const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
   status,
   toolCount,
   disabled = false,
+  onToggled,
 }) => {
+  const t = useT();
   const dispatch = useAppDispatch();
 
   // Status color mapping
@@ -52,13 +56,11 @@ const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
     if (status === 'ready') {
       // Server is running, stop it
       dispatch(stopMCPServer(config.id));
-      // Clear chat to refresh context without the tools
-      dispatch(clearMessages());
+      onToggled?.(config.id, false);
     } else if (status === 'stopped' || status === 'error') {
       // Server is stopped or errored, start it
       dispatch(startMCPServer(config.id));
-      // Clear chat to refresh context with the new tools
-      dispatch(clearMessages());
+      onToggled?.(config.id, true);
     }
   };
 
@@ -98,7 +100,7 @@ const MCPServerBadge: React.FC<MCPServerBadgeProps> = ({
       <button
         onClick={handleToggle}
         disabled={isToggleDisabled}
-        aria-label={status === 'ready' ? `Stop ${config.name}` : `Start ${config.name}`}
+        aria-label={status === 'ready' ? t('mcp.stop', 'Stop {{name}}', { name: config.name }) : t('mcp.start', 'Start {{name}}', { name: config.name })}
         className="ml-1 p-1 text-text-secondary hover:text-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         {isTransitioning ? (

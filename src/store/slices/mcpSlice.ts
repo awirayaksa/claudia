@@ -1,4 +1,4 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, createSelector, PayloadAction } from '@reduxjs/toolkit';
 import {
   MCPServerConfig,
   MCPServerState,
@@ -9,6 +9,7 @@ import {
   MCPResourceContent,
   MCPPromptMessage,
 } from '../../types/mcp.types';
+import { getPlatform } from '../../platform';
 
 // ============================================================================
 // State Interface
@@ -56,7 +57,7 @@ export const loadMCPServers = createAsyncThunk(
   'mcp/loadServers',
   async (_, { rejectWithValue }) => {
     try {
-      const response = await window.electron.mcp.listConfigs();
+      const response = await getPlatform().mcp.listConfigs();
       if (!response.success) {
         throw new Error(response.error || 'Failed to load servers');
       }
@@ -74,7 +75,7 @@ export const startMCPServer = createAsyncThunk(
   'mcp/startServer',
   async (serverId: string, { dispatch, rejectWithValue }) => {
     try {
-      const response = await window.electron.mcp.startServer(serverId);
+      const response = await getPlatform().mcp.startServer(serverId);
       if (!response.success) {
         throw new Error(response.error || 'Failed to start server');
       }
@@ -97,7 +98,7 @@ export const stopMCPServer = createAsyncThunk(
   'mcp/stopServer',
   async (serverId: string, { rejectWithValue }) => {
     try {
-      const response = await window.electron.mcp.stopServer(serverId);
+      const response = await getPlatform().mcp.stopServer(serverId);
       if (!response.success) {
         throw new Error(response.error || 'Failed to stop server');
       }
@@ -115,7 +116,7 @@ export const restartMCPServer = createAsyncThunk(
   'mcp/restartServer',
   async (serverId: string, { rejectWithValue }) => {
     try {
-      const response = await window.electron.mcp.restartServer(serverId);
+      const response = await getPlatform().mcp.restartServer(serverId);
       if (!response.success) {
         throw new Error(response.error || 'Failed to restart server');
       }
@@ -133,7 +134,7 @@ export const saveMCPServer = createAsyncThunk(
   'mcp/saveServer',
   async (config: MCPServerConfig, { dispatch, rejectWithValue }) => {
     try {
-      const response = await window.electron.mcp.saveConfig(config);
+      const response = await getPlatform().mcp.saveConfig(config);
       if (!response.success) {
         throw new Error(response.error || 'Failed to save server');
       }
@@ -161,10 +162,10 @@ export const deleteMCPServer = createAsyncThunk(
         serverState?.status === 'starting' ||
         serverState?.status === 'initializing'
       ) {
-        await window.electron.mcp.stopServer(serverId);
+        await getPlatform().mcp.stopServer(serverId);
       }
 
-      const response = await window.electron.mcp.deleteConfig(serverId);
+      const response = await getPlatform().mcp.deleteConfig(serverId);
       if (!response.success) {
         throw new Error(response.error || 'Failed to delete server');
       }
@@ -184,7 +185,11 @@ export const importFromClaudeDesktop = createAsyncThunk(
   'mcp/importClaudeDesktop',
   async (_, { dispatch, rejectWithValue }) => {
     try {
-      const response = await window.electron.mcp.importClaudeDesktop();
+      const { mcp } = getPlatform();
+      if (!mcp.importClaudeDesktop) {
+        throw new Error('Importing from Claude Desktop is only available in the desktop app');
+      }
+      const response = await mcp.importClaudeDesktop();
       if (!response.success) {
         throw new Error(response.error || 'Failed to import from Claude Desktop');
       }
@@ -219,7 +224,7 @@ export const callMCPTool = createAsyncThunk(
     { rejectWithValue }
   ) => {
     try {
-      const response = await window.electron.mcp.callTool(serverId, toolName, args);
+      const response = await getPlatform().mcp.callTool(serverId, toolName, args);
       if (!response.success) {
         throw new Error(response.error || 'Failed to call tool');
       }
@@ -246,7 +251,7 @@ export const readMCPResource = createAsyncThunk(
     { rejectWithValue }
   ): Promise<MCPResourceContent[]> => {
     try {
-      const response = await window.electron.mcp.readResource(serverId, uri);
+      const response = await getPlatform().mcp.readResource(serverId, uri);
       if (!response.success) {
         throw new Error(response.error || 'Failed to read resource');
       }
@@ -275,7 +280,7 @@ export const getMCPPrompt = createAsyncThunk(
     { rejectWithValue }
   ): Promise<MCPPromptMessage[]> => {
     try {
-      const response = await window.electron.mcp.getPrompt(serverId, promptName, args);
+      const response = await getPlatform().mcp.getPrompt(serverId, promptName, args);
       if (!response.success) {
         throw new Error(response.error || 'Failed to get prompt');
       }
@@ -300,10 +305,10 @@ export const syncAllServerTools = createAsyncThunk(
     for (const serverId of serverIds) {
       try {
         // Get server status
-        const statusResponse = await window.electron.mcp.getServerStatus(serverId);
+        const statusResponse = await getPlatform().mcp.getServerStatus(serverId);
         if (statusResponse.success && statusResponse.status === 'ready') {
           // Get server tools
-          const toolsResponse = await window.electron.mcp.listTools(serverId);
+          const toolsResponse = await getPlatform().mcp.listTools(serverId);
           if (toolsResponse.success) {
             console.log(`[MCP] Synced ${toolsResponse.tools.length} tools for server ${serverId}`);
             dispatch(
@@ -332,9 +337,9 @@ export const syncAllServerResources = createAsyncThunk(
 
     for (const serverId of serverIds) {
       try {
-        const statusResponse = await window.electron.mcp.getServerStatus(serverId);
+        const statusResponse = await getPlatform().mcp.getServerStatus(serverId);
         if (statusResponse.success && statusResponse.status === 'ready') {
-          const resourcesResponse = await window.electron.mcp.listResources(serverId);
+          const resourcesResponse = await getPlatform().mcp.listResources(serverId);
           if (resourcesResponse.success) {
             console.log(`[MCP] Synced ${resourcesResponse.resources.length} resources for server ${serverId}`);
             dispatch(
@@ -363,9 +368,9 @@ export const syncAllServerPrompts = createAsyncThunk(
 
     for (const serverId of serverIds) {
       try {
-        const statusResponse = await window.electron.mcp.getServerStatus(serverId);
+        const statusResponse = await getPlatform().mcp.getServerStatus(serverId);
         if (statusResponse.success && statusResponse.status === 'ready') {
-          const promptsResponse = await window.electron.mcp.listPrompts(serverId);
+          const promptsResponse = await getPlatform().mcp.listPrompts(serverId);
           if (promptsResponse.success) {
             console.log(`[MCP] Synced ${promptsResponse.prompts.length} prompts for server ${serverId}`);
             dispatch(
@@ -737,18 +742,20 @@ export const selectEnabledMCPServers = (state: { mcp: MCPState }) => {
  * Selects enabled MCP servers that are started (not stopped)
  * Used by chat input to display only running server badges
  */
-export const selectStartedMCPServers = (state: { mcp: MCPState }) => {
-  const { servers, serverStates } = state.mcp;
-  return Object.values(servers)
-    .filter(server => server.enabled)
-    .map(server => ({
-      config: server,
-      state: serverStates[server.id],
-      status: (serverStates[server.id]?.status || 'stopped') as MCPServerStatus,
-      toolCount: serverStates[server.id]?.tools?.length || 0,
-    }))
-    .filter(server => server.status !== 'stopped');
-};
+// Memoized: components re-render only when servers or their states change
+export const selectStartedMCPServers = createSelector(
+  [(state: { mcp: MCPState }) => state.mcp.servers, (state: { mcp: MCPState }) => state.mcp.serverStates],
+  (servers, serverStates) =>
+    Object.values(servers)
+      .filter(server => server.enabled)
+      .map(server => ({
+        config: server,
+        state: serverStates[server.id],
+        status: (serverStates[server.id]?.status || 'stopped') as MCPServerStatus,
+        toolCount: serverStates[server.id]?.tools?.length || 0,
+      }))
+      .filter(server => server.status !== 'stopped')
+);
 
 /**
  * Selects built-in MCP servers

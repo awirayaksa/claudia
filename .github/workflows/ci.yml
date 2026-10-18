@@ -1,0 +1,252 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  desktop:
+    name: Desktop (type-check, lint, test, build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  web:
+    name: Web (shared deps, type-check, test, build)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: claudia
+          POSTGRES_PASSWORD: claudia
+          POSTGRES_DB: claudia_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U claudia -d claudia_test"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+      s3:
+        image: adobe/s3mock:latest
+        env:
+          COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: claudia-test
+        ports:
+          - 9090:9090
+    defaults:
+      run:
+        working-directory: web
+    env:
+      # The whole suite runs on real PostgreSQL; two-instance tests use Redis, storage tests S3
+      TEST_DATABASE_URL: postgres://claudia:claudia@localhost:5432/claudia_test
+      TEST_REDIS_URL: redis://localhost:6379
+      TEST_S3_ENDPOINT: http://localhost:9090
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      # web/ installs only its own dependencies: the root node_modules never exist here
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Shared code dependencies
+        run: npm run check:shared-deps
+
+      - name: Shared strings catalogue is up to date
+        run: node scripts/shared-strings.mjs --check
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Test (PGlite and PostgreSQL)
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: One copy of React and Redux in the bundle
+        run: npm run check:bundle
+
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      - name: Browser tests
+        run: npm run test:e2e
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+
+  web-scale:
+    name: Web (two instances with Redis, PostgreSQL and S3)
+    runs-on: ubuntu-latest
+    env:
+      CLAUDIA_SECRET_KEY: ci-secret-key-ci-secret-key-0123456789abcdef
+      CLAUDIA_ADMIN_EMAIL: admin@ci.test
+      CLAUDIA_ADMIN_PASSWORD: ci-admin-password
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start two instances behind a load balancer
+        working-directory: web/docker
+        run: docker compose -f compose.scale.yml up -d --build --wait --wait-timeout 600
+
+      # Streams, stops and locks across instances, shared files, signed webhooks
+      - name: Cross-instance test
+        working-directory: web
+        run: node scripts/scale-smoke.mjs
+
+      - name: Logs on failure
+        if: failure()
+        working-directory: web/docker
+        run: docker compose -f compose.scale.yml logs
+
+      - name: Stop
+        if: always()
+        working-directory: web/docker
+        run: docker compose -f compose.scale.yml down -v
+
+  web-ldap:
+    name: Web (LDAP against OpenLDAP)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Start OpenLDAP
+        run: docker compose -f docker/compose.ldap.yml up -d --wait --wait-timeout 180
+
+      # The certificate is issued for ldap.claudia.test, so connect by that name
+      - name: Trust the test CA
+        run: |
+          echo "127.0.0.1 ldap.claudia.test" | sudo tee -a /etc/hosts
+          docker compose -f docker/compose.ldap.yml cp ldap:/container/service/slapd/assets/certs/ca.crt "$RUNNER_TEMP/ldap-ca.crt"
+
+      - name: LDAP integration tests
+        run: npx vitest run server/auth/ldap.integration.test.ts
+        env:
+          TEST_LDAP_HOST: ldap.claudia.test
+          TEST_LDAP_CA_FILE: ${{ runner.temp }}/ldap-ca.crt
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker/compose.ldap.yml logs
+
+  web-docker:
+    name: Web (Docker image)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -f web/docker/Dockerfile -t claudia-web:ci .
+
+      - name: Start and check readiness (embedded database)
+        run: |
+          docker run -d --name claudia -p 8080:8080 claudia-web:ci
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/readyz; then echo; exit 0; fi
+            sleep 1
+          done
+          docker logs claudia
+          exit 1
+
+  web-compose:
+    name: Web (docker compose with PostgreSQL)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web/docker
+    env:
+      CLAUDIA_SECRET_KEY: ci-secret-key-ci-secret-key-0123456789abcdef
+      CLAUDIA_ADMIN_EMAIL: admin@ci.test
+      CLAUDIA_ADMIN_PASSWORD: ci-admin-password
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start the stack
+        run: docker compose up -d --build --wait --wait-timeout 300
+
+      - name: Smoke test
+        run: |
+          set -e
+          curl -sf http://localhost:8080/healthz
+          ready=$(curl -sf http://localhost:8080/readyz)
+          echo "$ready"
+          echo "$ready" | grep -q '"database":"postgres"'
+          echo "$ready" | grep -q '"pending":0'
+          # Sign in as the bootstrapped admin
+          jar=$(mktemp)
+          curl -sf -c "$jar" -b "$jar" http://localhost:8080/api/auth/session > /dev/null
+          csrf=$(awk '$6 == "claudia_csrf" { print $7 }' "$jar")
+          curl -sf -c "$jar" -b "$jar" -H "Content-Type: application/json" -H "X-Claudia-CSRF: $csrf"             -d '{"email":"admin@ci.test","password":"ci-admin-password"}' http://localhost:8080/api/auth/login | grep -q '"role":"admin"'
+          curl -sf -b "$jar" http://localhost:8080/api/chats | grep -q '"chats"'
+          # The SPA is served for client routes
+          curl -sf -H "Accept: text/html" http://localhost:8080/c/anything | grep -q '<div id="root">'
+
+      - name: Logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v

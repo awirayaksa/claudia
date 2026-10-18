@@ -1,5 +1,4 @@
 import axios, { AxiosInstance, AxiosError } from 'axios';
-import { createParser, ParsedEvent, ReconnectInterval } from 'eventsource-parser';
 import {
   Model,
   ChatCompletionRequest,
@@ -9,9 +8,8 @@ import {
   CustomProviderConfig,
   APIError,
 } from '../../../types/api.types';
-import { ToolCall } from '../../../types/message.types';
 import { IAPIProvider } from '../provider.interface';
-import { StreamCallbacks } from '../streaming.service';
+import { streamOpenAICompatible, type StreamCallbacks } from '../sse-parser';
 
 /**
  * Custom API Provider
@@ -39,6 +37,8 @@ export class CustomProvider implements IAPIProvider {
         'Authorization': `Bearer ${config.apiKey}`,
       },
       timeout: 30000, // 30 seconds
+      httpAgent: config.http?.httpAgent,
+      httpsAgent: config.http?.httpsAgent,
     });
   }
 
@@ -94,180 +94,19 @@ export class CustomProvider implements IAPIProvider {
     abortSignal?: AbortSignal,
     _traceId?: string
   ): Promise<void> {
-    const { onChunk, onComplete, onError, onToolCalls, onReasoning, onUsage } = callbacks;
-
     // Normalize baseUrl - remove trailing slash and /api suffix to prevent duplication
-    let normalizedBaseUrl = this.config.baseUrl.replace(/\/+$/, '');
-    normalizedBaseUrl = normalizedBaseUrl.replace(/\/api$/i, '');
+    const normalizedBaseUrl = this.config.baseUrl.replace(/\/+$/, '').replace(/\/api$/i, '');
 
-    try {
-      const response = await fetch(`${normalizedBaseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
-        body: JSON.stringify({
-          ...request,
-          stream: true,
-          stream_options: { include_usage: true },
-        }),
+    await streamOpenAICompatible(
+      {
+        url: `${normalizedBaseUrl}/chat/completions`,
+        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        body: { ...request, stream: true, stream_options: { include_usage: true } },
         signal: abortSignal,
-      });
-
-      if (!response.ok) {
-        let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
-
-        try {
-          const errorData = await response.json();
-          errorMessage = errorData.error?.message || errorMessage;
-        } catch {
-          // Use default error message if JSON parsing fails
-        }
-
-        throw new Error(errorMessage);
-      }
-
-      if (!response.body) {
-        throw new Error('No response body received');
-      }
-
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      // Accumulate tool calls from streaming deltas
-      const accumulatedToolCalls: Map<number, ToolCall> = new Map();
-
-      // Accumulate content and track chunks for logging
-      let accumulatedContent = '';
-      let chunkCount = 0;
-
-      // Create SSE parser
-      const parser = createParser((event: ParsedEvent | ReconnectInterval) => {
-        if (event.type === 'event') {
-          const data = event.data;
-
-          // OpenAI-compatible providers send [DONE] when stream is complete
-          if (data === '[DONE]') {
-            onComplete();
-            return;
-          }
-
-          try {
-            const json = JSON.parse(data);
-            const delta = json.choices?.[0]?.delta;
-            const content = delta?.content;
-            const toolCallDeltas = delta?.tool_calls;
-            const reasoningContent = delta?.reasoning ?? delta?.reasoning_content;
-            const usage = json.usage;
-
-            if (content) {
-              accumulatedContent += content;
-              chunkCount++;
-              onChunk(content);
-            }
-
-            if (reasoningContent && onReasoning) {
-              onReasoning(reasoningContent);
-            }
-
-            // Handle usage data
-            if (usage && onUsage) {
-              onUsage(usage);
-            }
-
-            // Accumulate tool call deltas
-            if (toolCallDeltas && onToolCalls) {
-              for (const toolCallDelta of toolCallDeltas) {
-                const index = toolCallDelta.index;
-                const existing = accumulatedToolCalls.get(index);
-
-                if (!existing) {
-                  // First chunk for this tool call
-                  accumulatedToolCalls.set(index, {
-                    id: toolCallDelta.id || '',
-                    type: toolCallDelta.type || 'function',
-                    function: {
-                      name: toolCallDelta.function?.name || '',
-                      arguments: toolCallDelta.function?.arguments || '',
-                    },
-                  });
-                } else {
-                  // Subsequent chunks - append arguments
-                  if (toolCallDelta.function?.arguments) {
-                    existing.function.arguments += toolCallDelta.function.arguments;
-                  }
-                  // Update ID if it wasn't set in first chunk
-                  if (toolCallDelta.id && !existing.id) {
-                    existing.id = toolCallDelta.id;
-                  }
-                  // Update name if it wasn't set in first chunk
-                  if (toolCallDelta.function?.name && !existing.function.name) {
-                    existing.function.name = toolCallDelta.function.name;
-                  }
-                }
-              }
-            }
-
-            // Check if stream is done via finish_reason
-            if (json.choices?.[0]?.finish_reason) {
-              // Send usage FIRST before anything else (including tool calls)
-              if (json.usage && onUsage) {
-                onUsage(json.usage);
-              }
-
-              // Then send accumulated tool calls if any
-              if (accumulatedToolCalls.size > 0 && onToolCalls) {
-                const toolCallsArray = Array.from(accumulatedToolCalls.values()).map(tc => ({
-                  ...tc,
-                  // Ensure arguments is valid JSON - default to empty object if empty
-                  function: {
-                    ...tc.function,
-                    arguments: tc.function.arguments || '{}',
-                  },
-                }));
-                onToolCalls(toolCallsArray);
-              }
-
-              // NOTE: Don't call onComplete() here - usage data may arrive in subsequent chunks
-              // onComplete() will be called when stream actually ends (done=true or [DONE])
-            }
-          } catch (error) {
-            // Continue processing other chunks even if one fails
-          }
-        }
-      });
-
-      // Read the stream
-      try {
-        while (true) {
-          const { done, value } = await reader.read();
-
-          if (done) {
-            onComplete();
-            break;
-          }
-
-          // Decode the chunk and feed to parser
-          const chunk = decoder.decode(value, { stream: true });
-          parser.feed(chunk);
-        }
-      } catch (error) {
-        if (error instanceof Error && error.name === 'AbortError') {
-          // Stream was aborted by user
-          onComplete();
-        } else {
-          throw error;
-        }
-      }
-    } catch (error) {
-      if (error instanceof Error && error.name === 'AbortError') {
-        // Stream was aborted, not an error
-        onComplete();
-      } else {
-        onError(error instanceof Error ? error : new Error('Unknown streaming error'));
-      }
-    }
+        fetchImpl: this.config.http?.fetch,
+      },
+      callbacks
+    );
   }
 
   async testConnection(): Promise<boolean> {

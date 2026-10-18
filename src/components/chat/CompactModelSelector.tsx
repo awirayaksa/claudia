@@ -1,12 +1,15 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { truncateModelName } from '../../utils/modelHelpers';
+import { useT } from '../../i18n';
 
 interface CompactModelSelectorProps {
   value: string;
   models: string[];
   onChange: (model: string) => void;
   disabled?: boolean;
+  /** Display name of a model id (defaults to the id). */
+  label?: (model: string) => string;
 }
 
 export function CompactModelSelector({
@@ -14,7 +17,9 @@ export function CompactModelSelector({
   models,
   onChange,
   disabled = false,
+  label = (model) => model,
 }: CompactModelSelectorProps) {
+  const t = useT();
   const [isOpen, setIsOpen] = useState(false);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -80,12 +85,12 @@ export function CompactModelSelector({
   };
 
   const isModelAvailable = models.includes(value);
-  const truncatedName = truncateModelName(value, 20);
+  const truncatedName = truncateModelName(label(value), 20);
 
-  // Sort models alphabetically (ensure all models are strings)
+  // Sort models alphabetically by what is shown (ensure all models are strings)
   const sortedModels = [...models]
     .map((m) => (typeof m === 'string' ? m : String(m)))
-    .sort((a, b) => a.localeCompare(b));
+    .sort((a, b) => label(a).localeCompare(label(b)));
 
   return (
     <div className="relative" onKeyDown={handleKeyDown}>
@@ -97,8 +102,8 @@ export function CompactModelSelector({
         className={`flex items-center gap-1.5 rounded border border-border bg-background px-3 py-2 text-sm text-text-primary transition-colors hover:border-accent focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:cursor-not-allowed disabled:opacity-50 ${!isModelAvailable ? 'border-warning text-warning' : ''
           }`}
         style={{ minWidth: '140px', maxWidth: '180px' }}
-        title={isModelAvailable ? value : `${value} (unavailable)`}
-        aria-label="Select model"
+        title={isModelAvailable ? label(value) : t('models.unavailable', '{{model}} (unavailable)', { model: label(value) })}
+        aria-label={t('models.select', 'Select model')}
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
@@ -123,11 +128,11 @@ export function CompactModelSelector({
             transform: 'translateY(-100%)',
           }}
           role="listbox"
-          aria-label="Available models"
+          aria-label={t('models.available', 'Available models')}
         >
           <div className="max-h-80 overflow-y-auto p-2">
             {sortedModels.length === 0 ? (
-              <div className="px-3 py-2 text-sm text-text-secondary">No models available</div>
+              <div className="px-3 py-2 text-sm text-text-secondary">{t('models.none', 'No models available')}</div>
             ) : (
               sortedModels.map((model) => {
                 const isSelected = model === value;
@@ -144,7 +149,7 @@ export function CompactModelSelector({
                     aria-selected={isSelected}
                   >
                     <span className="flex-1 truncate" title={model}>
-                      {model}
+                      {label(model)}
                     </span>
                     {isSelected && (
                       <svg
