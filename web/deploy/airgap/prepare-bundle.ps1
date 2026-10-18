@@ -21,7 +21,8 @@
 
 .PARAMETER Ref
   Tag, branch or commit to build. Default: the newest v* release tag that
-  contains Claudia Web (web/docker/Dockerfile).
+  contains Claudia Web (web/docker/Dockerfile). A branch is built as it is
+  on origin (after fetching), not as your local copy of it.
 
 .PARAMETER Arch
   CPU architecture of the target host: amd64 (default) or arm64.
@@ -37,7 +38,7 @@
   the compose plugin).
 
 .PARAMETER NoFetch
-  Don't fetch tags from origin first.
+  Don't fetch tags and branches from origin first.
 
 .PARAMETER NoArchive
   Leave the bundle as a folder; don't pack it into a .tar.
@@ -46,7 +47,7 @@
   powershell -ExecutionPolicy Bypass -File web\deploy\airgap\prepare-bundle.ps1
 
 .EXAMPLE
-  powershell -ExecutionPolicy Bypass -File web\deploy\airgap\prepare-bundle.ps1 -Ref web-phase-0
+  powershell -ExecutionPolicy Bypass -File web\deploy\airgap\prepare-bundle.ps1 -Ref main
 #>
 [CmdletBinding()]
 param(
@@ -120,7 +121,7 @@ $repo = Invoke-Native 'Finding the repository' { git -C $PSScriptRoot rev-parse 
 # --- What to build ------------------------------------------------------------
 
 if (-not $NoFetch) {
-  Write-Step 'Fetching release tags from origin'
+  Write-Step 'Fetching tags and branches from origin'
   if (-not (Test-Native { git -C $repo fetch --tags --quiet origin })) {
     Write-Warning 'Could not fetch from origin; using the tags already in this checkout.'
   }
@@ -135,11 +136,28 @@ if (-not $Ref) {
     $newest = 'none'
     if ($tags.Count -gt 0) { $newest = $tags[0] }
     throw ("No release tag contains Claudia Web yet (newest tag: $newest). Tag a release that " +
-      'includes web/, or choose what to build with -Ref, e.g. -Ref web-phase-0.')
+      'includes web/, or choose what to build with -Ref, e.g. -Ref main.')
   }
 }
 
-$sha = [string](Invoke-Native "Resolving '$Ref'" { git -C $repo rev-parse --verify --quiet "$Ref^{commit}" })
+# A branch name means the branch on origin: fetching updates origin/<branch>
+# but never the local branch, which may be far behind (or never pushed)
+$resolve = $Ref
+if (Test-Native { git -C $repo show-ref --verify --quiet "refs/remotes/origin/$Ref" }) {
+  $resolve = "refs/remotes/origin/$Ref"
+  if (Test-Native { git -C $repo show-ref --verify --quiet "refs/heads/$Ref" }) {
+    $localSha = git -C $repo rev-parse "refs/heads/$Ref"
+    $remoteSha = git -C $repo rev-parse $resolve
+    if ($localSha -ne $remoteSha) {
+      $ahead = git -C $repo rev-list --count "$($remoteSha)..$($localSha)"
+      $note = ''
+      if ([int]$ahead -gt 0) { $note = " Your local '$Ref' has $ahead commit(s) not on origin: push them, or pass -Ref $($localSha.Substring(0, 12)) to build it as it is here." }
+      Write-Warning "Building origin/$Ref ($($remoteSha.Substring(0, 12))), not your local '$Ref' ($($localSha.Substring(0, 12))).$note"
+    }
+  }
+}
+
+$sha = [string](Invoke-Native "Resolving '$Ref'" { git -C $repo rev-parse --verify --quiet "$resolve^{commit}" })
 if (-not (Test-Native { git -C $repo cat-file -e "$($sha):web/docker/Dockerfile" })) {
   throw "'$Ref' does not contain Claudia Web (no web/docker/Dockerfile)."
 }

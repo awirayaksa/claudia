@@ -23,11 +23,13 @@ This builds the newest `v*` release tag that contains Claudia Web. To build
 something else, such as a branch that hasn't been released yet:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File web\deploy\airgap\prepare-bundle.ps1 -Ref web-phase-0
+powershell -ExecutionPolicy Bypass -File web\deploy\airgap\prepare-bundle.ps1 -Ref main
 ```
 
-The image is built from a clean export of that commit, so uncommitted changes
-are not included. The output goes to `web\deploy\airgap\out\`:
+A branch is built as it is on `origin`, after fetching, so a local `main`
+that you haven't pulled doesn't matter. The script warns if your local copy
+differs. The image is built from a clean export of that commit, so
+uncommitted changes are not included. The output goes to `web\deploy\airgap\out\`:
 
 ```
 claudia-web-<version>-airgap-amd64.tar          the bundle
@@ -36,7 +38,7 @@ claudia-web-<version>-airgap-amd64.tar.sha256   its checksum
 
 | Option | |
 |---|---|
-| `-Ref <tag/branch/commit>` | What to build (default: the newest release tag with `web/`) |
+| `-Ref <tag/branch/commit>` | What to build (default: the newest release tag with `web/`; a branch is taken from `origin`) |
 | `-Arch arm64` | For an ARM target (default `amd64`; built with emulation, slower) |
 | `-PgvectorImage <image>` | Database image (default `pgvector/pgvector:pg16`) |
 | `-SkipDockerPackages` | The target already has Docker and the compose plugin |

@@ -43,6 +43,23 @@ describe('health endpoints', () => {
     expect(res.json().status).toBe('not_ready');
   });
 
+  it('over http the page is not upgraded to https (no upgrade-insecure-requests, no HSTS)', async () => {
+    const t = await buildTestApp({ env: { CLAUDIA_PUBLIC_URL: 'http://192.168.1.47:8080' } });
+    close = t.close;
+    const res = await t.app.inject({ method: 'GET', url: '/healthz' });
+    expect(res.headers['content-security-policy']).toContain("default-src 'self'");
+    expect(res.headers['content-security-policy']).not.toContain('upgrade-insecure-requests');
+    expect(res.headers['strict-transport-security']).toBeUndefined();
+  });
+
+  it('over https the page upgrades insecure requests and sends HSTS', async () => {
+    const t = await buildTestApp({ env: { CLAUDIA_PUBLIC_URL: 'https://claudia.example.com' } });
+    close = t.close;
+    const res = await t.app.inject({ method: 'GET', url: '/healthz' });
+    expect(res.headers['content-security-policy']).toContain('upgrade-insecure-requests');
+    expect(res.headers['strict-transport-security']).toContain('max-age=');
+  });
+
   it('unknown API routes answer with the JSON error shape', async () => {
     const t = await buildTestApp();
     close = t.close;

@@ -141,6 +141,11 @@ function cspDirectives(config: AppConfig) {
     baseUri: ["'self'"],
     formAction: ["'self'"],
     frameAncestors: ["'none'"],
+    // Helmet adds this by default. Over plain http (a LAN address, no TLS)
+    // it sends the browser to https:// for every script and stylesheet, which
+    // nothing serves, and the page stays blank. Browsers exempt localhost,
+    // which hides it in development.
+    upgradeInsecureRequests: config.secureCookies ? [] : null,
   };
 }
 
@@ -300,6 +305,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await app.register(fastifyMultipart, { limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 5, parts: 6 } });
   await app.register(fastifyHelmet, {
     contentSecurityPolicy: { directives: cspDirectives(deps.config) },
+    // HSTS only when the app is served over https
+    strictTransportSecurity: deps.config.secureCookies,
     // Allow the sandbox origin to load its own resources cross-origin
     crossOriginEmbedderPolicy: false,
     crossOriginResourcePolicy: { policy: 'same-site' },
