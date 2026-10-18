@@ -236,6 +236,10 @@ docker compose up -d --build     # app + pgvector/pgvector:pg16
 The image is built from the repository root and installs only `web/`'s
 dependencies.
 
+For an air-gapped Ubuntu 24.04 host, `deploy/airgap/prepare-bundle.ps1`
+builds one offline bundle (images, Docker Engine packages, installer) on a
+connected Windows machine; see [deploy/airgap/README.md](deploy/airgap/README.md).
+
 ### Several instances
 
 ```bash

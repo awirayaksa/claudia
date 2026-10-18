@@ -5,3 +5,4 @@ data
 coverage
 test-results
 playwright-report
+deploy/airgap/out
