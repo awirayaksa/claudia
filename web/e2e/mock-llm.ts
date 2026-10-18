@@ -16,7 +16,8 @@
  *   sandbox / a React component.
  * When sources come with the message (knowledge, pages), the reply ends
  * with " [1]". Non-streaming calls answer "E2E Chat Title", or two
- * follow-up questions when asked for them. POST /embeddings answers with
+ * follow-up questions when asked for them, or "Explained: <text>" /
+ * "Answered: <question>" for the selected-text Explain and Ask. POST /embeddings answers with
  * the test hash embedding; GET /page/tides is a web page. POST /hook is a
  * webhook receiver; GET /hook/deliveries lists what it got.
  */
@@ -80,8 +81,16 @@ http
       .find(Boolean);
 
     if (!json.stream) {
-      const followUps = String(json.messages[0]?.content ?? '').includes('follow-up');
-      const content = followUps ? '["Tell me more", "Give an example"]' : 'E2E Chat Title';
+      const first = String(json.messages[0]?.content ?? '');
+      const explained = /^Explain the following text[^"]*"([\s\S]*)"$/.exec(first)?.[1];
+      const asked = /My question: ([\s\S]*)$/.exec(first)?.[1];
+      const content = explained
+        ? `Explained: ${explained}`
+        : asked
+          ? `Answered: ${asked}`
+          : first.includes('follow-up')
+            ? '["Tell me more", "Give an example"]'
+            : 'E2E Chat Title';
       res.writeHead(200, { 'Content-Type': 'application/json' });
       return res.end(
         JSON.stringify({

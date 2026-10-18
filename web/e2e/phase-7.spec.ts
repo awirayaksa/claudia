@@ -1,8 +1,8 @@
 /**
  * Phase 7: two-factor sign-in set up and used; single sign-on with a fake
  * OpenID Connect provider; a blind comparison voted on; a note asked about
- * in a chat; a channel where a model answers an @mention; a scheduled
- * prompt run on demand.
+ * in a chat; Explain and Ask on selected reply text; a channel where a
+ * model answers an @mention; a scheduled prompt run on demand.
  */
 import { test, expect, type Browser, type Page } from '@playwright/test';
 import { startFakeOidc, type FakeOidc } from '../server/test/fake-oidc';
@@ -164,6 +164,30 @@ test.describe.serial('Claudia Web, Phase 7', () => {
     await idle(page);
     // The mock cites the first source when sources came with the message
     await expect(page.getByTestId('citation-link').first()).toBeVisible();
+  });
+
+  test('selected text in a reply: Explain and Ask answer in a pop-up', async () => {
+    await page.goto('/');
+    await send(page, 'tidal energy facts');
+    await idle(page);
+    // (Still in the blind arena from above: two replies, and the menu uses a real model)
+    const reply = page.getByTestId('messages').getByText('Echo: tidal energy facts').first();
+    // Selecting the reply (a triple click selects its paragraph) shows the menu
+    await reply.click({ clickCount: 3 });
+    await page.getByRole('button', { name: 'Explain', exact: true }).click();
+    const popup = page.locator('[data-selection-popup]');
+    await expect(popup).toContainText('Explained: Echo: tidal energy facts');
+    await shot(page, 'p7-selection-explain');
+    await popup.getByRole('button', { name: 'Close' }).click();
+    await expect(popup).toBeHidden();
+
+    await reply.click({ clickCount: 3 });
+    await page.getByRole('button', { name: 'Ask', exact: true }).click();
+    await popup.getByLabel('Ask a question...').fill('why tides?');
+    await popup.getByLabel('Ask a question...').press('Enter');
+    await expect(popup).toContainText('Answered: why tides?');
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
   });
 
   test('a channel: people write, and a model answers an @mention live', async () => {

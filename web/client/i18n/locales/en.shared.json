@@ -124,6 +124,18 @@
     "thinking": "Thinking…",
     "thoughtFor": "Thought for {{duration}}"
   },
+  "selection": {
+    "ask": "Ask",
+    "askPlaceholder": "Ask a question...",
+    "askTitle": "Ask a question about the selected text",
+    "close": "Close",
+    "copy": "Copy",
+    "copyTitle": "Copy selected text to clipboard",
+    "explain": "Explain",
+    "explainTitle": "Explain the selected text",
+    "generating": "Generating...",
+    "send": "Send"
+  },
   "skills": {
     "body": "Skill body",
     "bodyHintAfter": "where user args should be inserted",

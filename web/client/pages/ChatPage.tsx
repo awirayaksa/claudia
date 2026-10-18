@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChatInput, type ChatInputRef } from '@/components/chat/ChatInput';
 import { SuggestedPrompts } from '@/components/chat/SuggestedPrompts';
+import { TextSelectionMenu } from '@/components/chat/TextSelectionMenu';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { setEffortLevel } from '@/store/slices/composerSlice';
 import { loadSkills } from '@/store/slices/skillSlice';
@@ -11,7 +12,7 @@ import type { MessageNode } from '@/types/turn.types';
 import type { Attachment } from '@/types/message.types';
 import type { Skill } from '@/types/skill.types';
 import { resolveSkillCommand } from '@/utils/skill-utils';
-import { ARENA_LABELS } from '@shared/arena';
+import { ARENA_LABELS, ARENA_MODEL_ID } from '@shared/arena';
 import { CloudButton } from '../chat/CloudPicker';
 import type { PromptView } from '@shared/workspace';
 import { fillTemplate, templateVariables } from '@shared/prompts';
@@ -148,6 +149,8 @@ export function ChatPage() {
     return candidates.find((m): m is string => !!m && modelIds.includes(m)) ?? modelIds[0] ?? '';
   }, [chat?.modelIds, pendingModel, modelsData?.defaultModel, modelIds]);
   const selectedInfo = models.find((m) => m.id === selectedModel);
+  /** Answers "Ask" and "Explain" on selected text; the blind arena isn't a model that can. */
+  const selectionModel = selectedModel !== ARENA_MODEL_ID ? selectedModel : (modelIds.find((m) => m !== ARENA_MODEL_ID) ?? '');
   const sendModels = useMemo(
     () => [selectedModel, ...compare.filter((m) => m !== selectedModel && modelIds.includes(m))].filter(Boolean).slice(0, MAX_MODELS),
     [selectedModel, compare, modelIds]
@@ -384,6 +387,7 @@ export function ChatPage() {
   return (
     <div className="flex h-full flex-col">
       <ChatHeader chat={chat} temporary={temporary} onTemporaryChange={setTemporary} />
+      {!isEmpty && selectionModel && <TextSelectionMenu containerRef={scrollRef} model={selectionModel} />}
       <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto" data-testid="messages">
         <div className="mx-auto w-full max-w-3xl px-4 pb-6 pt-2 md:pt-6">
           {isEmpty ? (
