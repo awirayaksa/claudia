@@ -24,6 +24,7 @@ import { MemorySettings } from './settings/MemorySettings';
 import { ApiKeysSettings } from './settings/ApiKeysSettings';
 import { CAP_KEYS } from '@shared/access';
 import { formatUsage } from '../components/AccessFields';
+import { TwoFactorSection } from '../auth/TwoFactor';
 
 type Tab =
   | 'appearance'
@@ -148,6 +149,8 @@ function AccountSettings() {
           <p className="text-sm text-text-secondary">{t('settings.directoryAccount')}</p>
         )}
       </section>
+
+      <TwoFactorSection />
 
       <UsageSection />
 

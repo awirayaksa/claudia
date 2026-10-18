@@ -46,7 +46,7 @@ export async function authenticateApiKey(ctx: ServerContext, key: string): Promi
     .where(eq(apiKeys.keyHash, hashToken(key)));
   if (!row) return null;
   if (row.key.expiresAt && row.key.expiresAt.getTime() <= Date.now()) return null;
-  if (row.user.role === 'pending') return null;
+  if (row.user.role === 'pending' || row.user.deactivatedAt) return null;
   if (!(await ctx.access.can(row.user, 'api.keys'))) return null;
   if (!row.key.lastUsedAt || Date.now() - row.key.lastUsedAt.getTime() > LAST_USED_WRITE_MS) {
     void ctx.db.update(apiKeys).set({ lastUsedAt: new Date() }).where(eq(apiKeys.id, row.key.id)).catch(() => {});

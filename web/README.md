@@ -5,7 +5,30 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 6** (admin and operations). Phase 6 adds:
+Status: **Phase 7** (optional extras), the last phase of [PLAN.md](PLAN.md). Phase 7 adds:
+
+- **Single sign-on** (Admin → Sign-in): any OpenID Connect provider (Entra
+  ID, Google, Okta, Keycloak, Authentik…) as "Continue with …" buttons, with
+  allowed domains, linking rules, admin groups and group sync from a claim.
+- **Two-factor sign-in:** authenticator-app codes (TOTP) with recovery codes,
+  after a password, directory or SSO sign-in; admins can require it for
+  admins or everyone, and reset it for someone who lost their phone.
+- **SCIM 2.0 provisioning** at `/scim/v2`: an identity provider creates,
+  updates, deactivates and deletes accounts and groups. Accounts can also be
+  deactivated by hand (sessions and API keys stop at once).
+- **Blind comparisons and a leaderboard** (Admin → Evaluations): "Arena
+  (blind)" answers with two unnamed models; users vote, then see which was
+  which; votes give Elo ratings.
+- **Notes** (sidebar): Markdown notes, private until shared, that a chat can
+  refer to with `#`.
+- **Channels** (sidebar): rooms where people talk, live, and ask a model by
+  mentioning it (`@openai/gpt-4o …`); admins create them and choose members.
+- **Scheduled prompts** (sidebar, permission "Scheduled prompts"): a prompt
+  sent on a cron schedule in your time zone, its reply in a chat.
+- **Google Drive and OneDrive** (Admin → Integrations): users connect their
+  own account and add files to a chat from the composer's cloud button.
+
+Phase 6 (admin and operations):
 
 - **Several instances** behind a load balancer: with `REDIS_URL` set, a reply
   started on one instance can be followed, stopped and answered (browser
@@ -186,7 +209,7 @@ Without `DATABASE_URL` the server uses an embedded PGlite database in
 | Command | What it does |
 |---|---|
 | `npm test` | Server tests (PGlite; on PostgreSQL when `TEST_DATABASE_URL` is set, one throwaway database per test; two-instance tests with `TEST_REDIS_URL`; S3 tests with `TEST_S3_ENDPOINT`) and client tests |
-| `npm run test:e2e` | Browser tests of the Phase 1a–6 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
+| `npm run test:e2e` | Browser tests of the Phase 1a–7 flows against the production build (run `npm run build` first; `npx playwright install chromium` once) |
 | `npm run type-check` | Client and server, including the shared `../src` code |
 | `npm run build` | Client (`dist/client`) and server bundle (`dist/server/index.cjs`) |
 | `npm start` | Run the production build |
@@ -322,6 +345,44 @@ are not. Events: `user.created`, `user.updated`, `run.completed` (ids, models,
 status, token counts; never message text), `knowledge.file_processed`,
 `knowledge.file_failed` and `audit.recorded`. Webhooks are admin-only and may
 point at internal addresses.
+
+## Single sign-on, two-factor and provisioning
+
+**OpenID Connect.** Under Admin → Sign-in → Add provider, enter the issuer
+(e.g. `https://login.microsoftonline.com/<tenant>/v2.0`,
+`https://accounts.google.com`, `https://<keycloak>/realms/<realm>`), the client
+ID and secret, and register the redirect URI shown there
+(`<CLAUDIA_PUBLIC_URL>/api/auth/oidc/<id>/callback`) with the provider. The
+flow is the authorization code flow with PKCE; the ID token is checked
+against the provider's keys. A first sign-in links to an existing account
+only if "link by verified email" is on, or the account has no password and no
+other sign-in (made by SCIM or an admin for SSO). With a groups claim, Claudia
+groups of the same names follow the provider's groups.
+
+**Two-factor sign-in** works with any authenticator app. "Required" holds
+people without it on a set-up screen until they turn it on; an admin can reset
+it under Admin → Users.
+
+**SCIM.** Under Admin → Sign-in → Provisioning, create a token and give your
+identity provider the base URL (`<CLAUDIA_PUBLIC_URL>/scim/v2`) and the token.
+Users (userName = email) and groups are supported, with `eq` filters and
+PATCH as Entra ID and Okta send it. `active: false` deactivates an account;
+deleting one deletes it with its chats.
+
+## Google Drive and OneDrive
+
+Under Admin → Integrations, enter an OAuth client for each (the page shows the
+redirect URI to register):
+
+- **Google:** in the Cloud console enable the Drive API and create an OAuth
+  client of type "Web application". Claudia asks for `drive.readonly`.
+- **Microsoft:** an Entra ID app registration with a Web redirect URI, the
+  delegated Graph permissions `Files.Read.All` and `User.Read`, and a client
+  secret. The tenant is `common`, `organizations` or yours.
+
+Each user connects their own account in a pop-up; tokens are stored
+encrypted and refreshed as needed. Picked files are copied into Claudia
+(Google Docs, Sheets and Slides as Word, Excel and PowerPoint).
 
 ## Translating
 

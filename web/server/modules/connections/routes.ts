@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify';
+import { ARENA_MODEL_ID } from '../../../shared/arena';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ServerContext } from '../../context';
@@ -302,6 +303,20 @@ export async function modelRoutes(app: FastifyInstance, ctx: ServerContext): Pro
     const me = currentUser(req);
     const refresh = z.object({ refresh: z.coerce.boolean().optional() }).parse(req.query).refresh;
     if (refresh && me.role === 'admin') await ctx.models.all({ refresh: true });
-    return { models: await ctx.models.forUser(me), defaultModel: await ctx.models.defaultFor(me.role) };
+    const models = [...(await ctx.models.forUser(me))];
+    // Blind comparisons, when at least two of the admin's arena models are this user's
+    const arena = await ctx.settings.get('arena');
+    const ids = new Set(models.map((m) => m.id));
+    if (arena.enabled && arena.models.filter((m) => ids.has(m)).length >= 2) {
+      models.push({
+        id: ARENA_MODEL_ID,
+        name: 'Arena (blind)',
+        connectionId: 'arena',
+        connectionName: 'Arena',
+        contextLength: null,
+        description: 'Two models answer without their names; vote for the better reply to see which was which.',
+      });
+    }
+    return { models, defaultModel: await ctx.models.defaultFor(me.role) };
   });
 }

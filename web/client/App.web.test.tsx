@@ -27,7 +27,7 @@ function stubApi(routes: Record<string, unknown>) {
   return fetchMock;
 }
 
-const auth = { passwordLogin: true, signup: true, ldap: false };
+const auth = { passwordLogin: true, signup: true, ldap: false, sso: [] };
 
 function renderApp() {
   setPlatform(createWebPlatform());

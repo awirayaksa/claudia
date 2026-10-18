@@ -72,6 +72,7 @@ export const MessageRef = z.discriminatedUnion('type', [
   z.object({ type: z.literal('kb'), id: z.uuid(), name: z.string().max(200).optional() }),
   z.object({ type: z.literal('url'), url: z.url().refine((u) => /^https?:\/\//i.test(u), 'Use an http(s) URL') }),
   z.object({ type: z.literal('chat'), id: z.uuid(), name: z.string().max(200).optional() }),
+  z.object({ type: z.literal('note'), id: z.uuid(), name: z.string().max(200).optional() }),
 ]);
 export type MessageRef = z.infer<typeof MessageRef>;
 

@@ -30,6 +30,8 @@ export interface TurnHandlers {
   onArtifact?: (artifact: Artifact) => void;
   /** How replies are read aloud (none: no button). */
   readAloud?: 'none' | 'browser' | 'server';
+  /** A blind comparison's vote. */
+  onArenaVote?: (turn: MessageNode, winner: 'a' | 'b' | 'tie') => void;
 }
 
 interface Props extends TurnHandlers {
@@ -82,7 +84,10 @@ export function MessageTurns(props: Props) {
         const parent = path[i - 1];
         const columns = parent?.role === 'user' ? modelColumns(nodes, parent) : null;
         const reply = columns ? (
-          <ModelColumns key={node.id} {...props} columns={columns} activeId={node.id} onFeedback={setFeedbackFor} />
+          <>
+            <ModelColumns key={node.id} {...props} columns={columns} activeId={node.id} onFeedback={setFeedbackFor} />
+            {parent.arena && <ArenaVote turn={parent} replies={columns.flatMap((c) => c.versions)} onVote={props.readOnly ? undefined : props.onArenaVote} />}
+          </>
         ) : (
           <AssistantTurn key={node.id} {...props} node={node} onFeedback={setFeedbackFor} />
         );
@@ -221,6 +226,37 @@ function ArtifactChips({ node, onOpen }: { node: MessageNode; onOpen: (a: Artifa
           <span className="text-accent">▶</span>
           <span className="font-medium">{a.title}</span>
           <span className="text-text-secondary">{t(`artifacts.kind.${a.kind}`)}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/** Under a blind comparison: vote, then see which model was which. */
+function ArenaVote({ turn, replies, onVote }: { turn: MessageNode; replies: MessageNode[]; onVote?: (turn: MessageNode, winner: 'a' | 'b' | 'tie') => void }) {
+  const { t } = useTranslation();
+  const arena = turn.arena!;
+  if (arena.winner && arena.models) {
+    const picked = arena.winner === 'tie' ? t('arena.tie') : arena.models[arena.winner === 'a' ? 0 : 1];
+    return (
+      <p className="mb-3 text-center text-sm text-text-secondary" data-testid="arena-result">
+        {t('arena.revealed', { a: arena.models[0], b: arena.models[1], picked })}
+      </p>
+    );
+  }
+  const busy = replies.some((r) => r.status === 'streaming');
+  if (!onVote) return null;
+  return (
+    <div className="mb-3 flex flex-wrap items-center justify-center gap-2 text-sm" data-testid="arena-vote" role="group" aria-label={t('arena.question')}>
+      <span className="text-text-secondary">{t('arena.question')}</span>
+      {(['a', 'tie', 'b'] as const).map((w) => (
+        <button
+          key={w}
+          disabled={busy}
+          onClick={() => onVote(turn, w)}
+          className="rounded-full border border-border px-3 py-1 hover:border-accent hover:text-accent disabled:opacity-50"
+        >
+          {t(`arena.vote_${w}`)}
         </button>
       ))}
     </div>

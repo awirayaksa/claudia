@@ -5,7 +5,9 @@ import { sessions, users } from '../db/schema';
 import { hashToken, parseRefreshToken, safeEqualHex } from './tokens';
 import { HttpError, conflict, forbidden, tooManyRequests, unauthorized } from '../lib/errors';
 import { normalizeEmail, signupLocalUser, toPublicUser, webhookUser } from '../modules/users/service';
-import { LdapLoginRequest, LoginRequest, SignupRequest, type SessionResponse } from '../../shared/auth';
+import { LdapLoginRequest, LoginRequest, MfaCode, SignupRequest, type SessionResponse, type SignInResponse } from '../../shared/auth';
+import { clearMfaTicket, completeSignIn, mfaRequiredFor, readMfaTicket } from './signin';
+import { mfaStatus, verifyMfaCode } from './mfa';
 import { LocalAuthProvider } from './providers/local';
 import { sandboxOriginFor } from '../sandbox';
 import {
@@ -29,6 +31,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
       passwordLogin: ctx.config.ENABLE_PASSWORD_AUTH,
       signup: ctx.config.ENABLE_PASSWORD_AUTH && signup.enabled,
       ldap: await ctx.ldap.isActive(),
+      sso: await ctx.sso.enabledList(),
     };
   }
 
@@ -48,11 +51,17 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     ensureCsrfCookie(ctx, req, reply);
     let user = null;
     let permissions = null;
+    let mfa: SessionResponse['mfa'] = null;
     if (req.user) {
       const [row] = await ctx.db.select().from(users).where(eq(users.id, req.user.id));
       user = row ? toPublicUser(row) : null;
-      if (row) permissions = await ctx.access.permissionsFor(row);
+      if (row) {
+        permissions = await ctx.access.permissionsFor(row);
+        const enabled = (await mfaStatus(ctx, row.id)).enabled;
+        mfa = { enabled, required: !enabled && mfaRequiredFor(await ctx.settings.get('auth.mfa'), row.role) };
+      }
     }
+    const arena = await ctx.settings.get('arena');
     const webSearch = (await ctx.rag.settings()).webSearch.engine !== 'none';
     const media = await ctx.media.settings();
     const mode = (engine: string) => (engine === 'none' ? 'none' : engine === 'browser' ? 'browser' : 'server') as 'none' | 'browser' | 'server';
@@ -66,11 +75,14 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
         imageGen: media.image.engine !== 'none',
         voiceInput: mode(media.stt.engine),
         readAloud: mode(media.tts.engine),
+        arena: arena.enabled && arena.models.length >= 2,
+        cloudFiles: await ctx.cloud.available(),
       },
+      mfa,
     };
   });
 
-  app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {
+  app.post('/login', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply): Promise<SignInResponse> => {
     const body = LoginRequest.parse(req.body);
     const key = `local:${normalizeEmail(body.email)}`;
     await checkLocked(key, reply);
@@ -83,14 +95,11 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
       throw unauthorized('Wrong email or password.', 'invalid_credentials');
     }
     await ctx.loginGuard.recordSuccess(key);
-    await startSession(ctx, req, reply, result.userId);
-    const [row] = await ctx.db.select().from(users).where(eq(users.id, result.userId));
-    void ctx.audit.fromRequest(req, 'auth.login', { actor: { id: row.id, email: row.email }, details: { method: 'password' } });
-    return { user: toPublicUser(row) };
+    return completeSignIn(ctx, req, reply, result.userId, 'password');
   });
 
   // Directory (LDAP / Active Directory) sign-in
-  app.post('/ldap', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply) => {
+  app.post('/ldap', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply): Promise<SignInResponse> => {
     const body = LdapLoginRequest.parse(req.body);
     const key = `ldap:${body.username.trim().toLowerCase()}`;
     await checkLocked(key, reply);
@@ -111,10 +120,32 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
       }
     }
     await ctx.loginGuard.recordSuccess(key);
-    await startSession(ctx, req, reply, result.userId);
-    const [row] = await ctx.db.select().from(users).where(eq(users.id, result.userId));
-    void ctx.audit.fromRequest(req, 'auth.login', { actor: { id: row.id, email: row.email }, details: { method: 'ldap', created: result.created } });
-    if (result.created) void ctx.webhooks.emit('user.created', { user: webhookUser(row), source: 'ldap' });
+    if (result.created) {
+      const [row] = await ctx.db.select().from(users).where(eq(users.id, result.userId));
+      void ctx.webhooks.emit('user.created', { user: webhookUser(row), source: 'ldap' });
+    }
+    return completeSignIn(ctx, req, reply, result.userId, 'ldap', { created: result.created });
+  });
+
+  // The second step of a sign-in with two-factor on: a code from the app or a recovery code
+  app.post('/mfa', { config: { rateLimit: AUTH_RATE_LIMIT } }, async (req, reply): Promise<SignInResponse> => {
+    const ticket = readMfaTicket(ctx, req);
+    if (!ticket) throw unauthorized('This sign-in took too long. Start again.', 'mfa_expired');
+    const { code } = MfaCode.parse(req.body);
+    const key = `mfa:${ticket.userId}`;
+    await checkLocked(key, reply);
+    const how = await verifyMfaCode(ctx, ticket.userId, code);
+    const [row] = await ctx.db.select().from(users).where(eq(users.id, ticket.userId));
+    if (!how || !row) {
+      await ctx.loginGuard.recordFailure(key);
+      void ctx.audit.fromRequest(req, 'auth.login_failed', { actor: null, details: { method: ticket.method, email: row?.email, reason: 'mfa' } });
+      throw unauthorized("That code doesn't match.", 'mfa_invalid_code');
+    }
+    await ctx.loginGuard.recordSuccess(key);
+    clearMfaTicket(ctx, reply);
+    if (row.deactivatedAt) throw forbidden('This account has been deactivated. Ask an administrator.', 'account_deactivated');
+    await startSession(ctx, req, reply, row.id);
+    void ctx.audit.fromRequest(req, 'auth.login', { actor: { id: row.id, email: row.email }, details: { method: ticket.method, mfa: how } });
     return { user: toPublicUser(row) };
   });
 

@@ -12,7 +12,7 @@ import { notFound } from '../../lib/errors';
 import { uuidv7 } from '../../lib/ids';
 import type { MessageNode, MessagePart } from '../../../../src/types/turn.types';
 import type { SharedChat } from '../../../shared/chats';
-import { ChatRepo, pathTo, toNode, type ChatRow, type ShareRow } from '../chats/repo';
+import { ChatRepo, maskArena, pathTo, toNode, type ChatRow, type ShareRow } from '../chats/repo';
 
 function cleanPart(p: MessagePart): MessagePart {
   if (p.type === 'file') return { type: 'file', fileId: '', name: p.name, mime: p.mime, ...(p.size !== undefined ? { size: p.size } : {}) };
@@ -55,7 +55,7 @@ export class ShareService {
   }
 
   async upsert(userId: string, chat: ChatRow): Promise<ShareRow> {
-    const nodes = (await this.repo.messages(chat.id)).map(toNode);
+    const nodes = maskArena((await this.repo.messages(chat.id)).map(toNode));
     const snapshot = snapshotOf(nodes, chat.currentLeafId);
     const existing = await this.repo.share(chat.id);
     if (existing) {

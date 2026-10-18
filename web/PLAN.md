@@ -66,8 +66,8 @@ Verified facts the design rests on:
 | Native Anthropic and Ollama providers, OpenAPI tool servers, web plugins | Anthropic via opencode-go | ✅ | 5 |
 | Usage analytics, webhooks, banners, audit log | ❌ | ✅ | 6 |
 | Redis multi-instance, S3 storage, PWA, translated shared UI | ❌ | ✅ | 6 (i18n set up in 1a) |
-| OIDC/OAuth SSO, TOTP MFA, SCIM | ❌ | ✅ | 7 (optional) |
-| Arena/ELO, notes, channels, scheduled prompts, Google Drive/OneDrive pickers | ❌ | ✅ | 7 (optional) |
+| OIDC SSO, TOTP MFA, SCIM | ❌ | ✅ | 7 |
+| Arena/ELO, notes, channels, scheduled prompts, Google Drive/OneDrive pickers | ❌ | ✅ | 7 |
 | Python Tools/Functions, Pipelines, community hub, sub-agents | ❌ | ✅ | Non-goal |
 
 Claudia-only features to keep: MCP-UI rendering, inline effort syntax, skills, built-in Office and diagram tools (sandboxed per user), text-selection Explain/Ask, and profiles (which become per-user settings).
@@ -278,7 +278,7 @@ Tables:
   - `app_config`(key, value jsonb)
 
 #### Auth and sessions
-- **Providers:** a pluggable `AuthProvider` (`server/auth/providers/{local,ldap}.ts`, later `oidc`). All of them issue the same session.
+- **Providers:** a pluggable `AuthProvider` (`server/auth/providers/{local,ldap,oidc}.ts`). All of them end in the same session (`server/auth/signin.ts`).
 - **Local passwords:** argon2id (`@node-rs/argon2`).
 - **Access token:** a 15-minute JWT (`jose`) in an `httpOnly`, `SameSite=Lax`, host-only cookie. Host-only means no `Domain` attribute, so the sandbox origin never receives it.
 - **Refresh token:** random, stored hashed in `sessions` and rotated on every use. 30-day lifetime, cookie path `/api/auth`.
@@ -686,6 +686,17 @@ Changes no desktop behaviour.
 ### Phase 7 — Optional extras
 - OIDC/OAuth SSO, TOTP MFA and SCIM.
 - Arena/ELO evaluation, notes, channels, scheduled prompts, and Google Drive/OneDrive pickers.
+- **Decisions made while building it:**
+  - Every sign-in (password, LDAP, OIDC) ends in `completeSignIn`: a deactivated account is refused; with TOTP on, the browser gets a five-minute ticket (an encrypted HttpOnly cookie on `/api/auth`) that `POST /api/auth/mfa` trades for a session, with the same backoff as passwords. Sessions and API keys of deactivated accounts stop at once (the per-request query checks `deactivated_at`; deactivating also revokes sessions).
+  - TOTP is RFC 6238 on node:crypto (SHA-1, 30 s, 6 digits, ±1 step; each step accepted once), checked against the RFC vectors. Ten single-use recovery codes, stored as hashes. The QR code is generated on the server (`qrcode`) and shown as an `<img>` data URL. "Required" (off / admins / everyone) holds a session without TOTP to `/api/me` and `/api/auth` (403 `mfa_setup_required`) and the client shows a set-up screen; API keys are not affected.
+  - OIDC is the authorization code flow with PKCE, state and nonce (an encrypted cookie between start and callback), implemented with `jose`: discovery (cached an hour), client_secret_basic or _post, ID token verified against the JWKS (issuer, audience, expiry, nonce), userinfo when the token lacks email or groups. Accounts are keyed by `"<provider>:<sub>"`. Linking to an existing email needs "link by verified email" (and `email_verified`), except for accounts without a password or other sign-in (SCIM or admin-made). A groups claim adds/removes `source: 'sso'` memberships of same-named groups and can make admins (never demotes). Errors come back to the sign-in page as `?auth_error=`. Plain OAuth 2 providers without OIDC (e.g. GitHub) are not supported.
+  - SCIM 2.0 at `/scim/v2` (outside `/api`, so no cookies or CSRF): a bearer token the admin generates (only its sha256 is kept). Users and Groups with `eq` filters, PUT, PATCH (Entra's capitalised ops and "False" strings, path-less value objects) and DELETE, plus the discovery endpoints. Provisioned users are approved "user" accounts; group memberships it sets are `source: 'scim'`, so hand-added members survive PUT/PATCH. The last admin can't be deactivated or deleted. Changes go in the audit log as `scim.request`.
+  - Arena: the virtual model `arena/blind` (offered when the admin's arena list has two models the user may use) makes the orchestrator pick two at random. The user turn stores the real pair and labels `arena:A`/`arena:B`; `maskArena` hides the models in chat views, exports and shares, and run events are masked as they are emitted, until `POST …/arena-vote`. Regenerating is refused before the vote. The leaderboard computes Elo (start 1000, K 32) from the votes in order, plus thumbs per model.
+  - Notes use the access grants (`note`), but unlike workspace items admins get no rights over other people's notes. `#note` references go into the sources budget like `#url` pages and are cited (kind `note`).
+  - Channels: admins create them and pick members with grants (read = read and post; public = everyone). Messages and edits go out on the WebSocket hub (`channel:<id>`, so across instances through Redis). `@<model id>` streams that model's reply (`channel.delta` events) with the last 30 messages as context (names prefixed), the mentioning user's model access and caps, and counts as their usage (kind `channel`).
+  - Scheduled prompts (permission `features.schedules`, off by default): five-field cron in an IANA time zone (`croner`), at most every 15 minutes, 25 per user. Every instance ticks every 30 s and claims due rows with FOR UPDATE SKIP LOCKED while moving `next_run_at`, so a run happens once; the run is an ordinary completion as the owner (re-checked: active, allowed, model access) into a new chat or one continued chat, and its outcome is recorded from `run.completed`.
+  - Google Drive / OneDrive: server-side OAuth per user (read-only scopes, tokens encrypted, refreshed; a revoked token disconnects), browsing and download through the server, so no provider script runs on the app origin and the CSP stays as it is; connecting happens in a pop-up that ends on a plain page the app closes. Google formats are exported (Docs → docx, Sheets → xlsx, Slides → pptx, Drawings → PDF). The admin sets the OAuth clients; tests use a fake Google/Graph server.
+  - Fixed on the way: recovery codes disappeared as soon as two-factor turned on (the status refetch replaced the screen); a message sent before the models loaded was silently dropped (the composer now waits for a model); a schedule form opened before the models loaded had no model; a channel message typed right after sending one could be wiped.
 
 ## Critical files
 - **Desktop state and chat:**

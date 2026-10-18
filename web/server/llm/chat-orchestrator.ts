@@ -9,7 +9,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/client';
-import { messages, usageEvents, users, type MessageMeta, type UserSettings } from '../db/schema';
+import { messages, usageEvents, users, type MessageMeta, type UserSettings, notes } from '../db/schema';
 import { badRequest } from '../lib/errors';
 import { uuidv7 } from '../lib/ids';
 import type { AuthUser } from '../auth/sessions';
@@ -45,6 +45,7 @@ import type { MediaConfig } from '../media/config';
 import type { Webhooks } from '../admin/webhooks';
 import { SpanStatusCode, trace } from '@opentelemetry/api';
 import { withSpan } from '../telemetry';
+import { ARENA_LABELS, ARENA_MODEL_ID } from '../../shared/arena';
 import type { ToolExecution } from './tools';
 import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
 
@@ -150,7 +151,10 @@ export class ChatOrchestrator {
 
     const chat = await this.repo.getOwned(user.id, chatId);
     await this.deps.usage?.check(user);
-    const targetsResolved = await Promise.all(req.modelIds.map((id) => models.resolve(id, user.role, user.id)));
+    // "Arena": two eligible models, picked at random, answer without their names
+    const arena = await this.arenaPick(user, req);
+    const modelIds = arena ? arena.models : req.modelIds;
+    const targetsResolved = await Promise.all(modelIds.map((id) => models.resolve(id, user.role, user.id)));
     const limits = await settings.get('limits');
 
     const rows = await this.repo.messages(chat.id);
@@ -211,7 +215,7 @@ export class ChatOrchestrator {
         userNode = toNode(existing);
       } else {
         const meta: MessageMeta = {
-          ...(req.modelIds.length > 1 ? { models: req.modelIds } : {}),
+          ...(arena ? { models: [...ARENA_LABELS], arena: { models: arena.models } } : req.modelIds.length > 1 ? { models: req.modelIds } : {}),
           ...(req.skill ? { skill: req.skill } : {}),
           ...(refs.length ? { refs } : {}),
           ...(webSearch ? { webSearch: true } : {}),
@@ -226,6 +230,7 @@ export class ChatOrchestrator {
           parts: [...(req.content ? [{ type: 'text' as const, text: req.content }] : []), ...fileParts],
           ...(req.params.effort ? { effort: req.params.effort } : {}),
           ...(meta.models ? { models: meta.models } : {}),
+          ...(arena ? { arena: { winner: null, models: null } } : {}),
           status: 'completed',
           createdAt: now.toISOString(),
         };
@@ -279,7 +284,8 @@ export class ChatOrchestrator {
             parentId: userNode.id,
             role: 'assistant',
             parts: [],
-            modelId: t.model.model.id,
+            // Unnamed until the vote
+            modelId: arena ? ARENA_LABELS[arena.models.indexOf(t.model.model.id)] : t.model.model.id,
             status: 'streaming',
             createdAt: now.toISOString(),
           },
@@ -302,6 +308,19 @@ export class ChatOrchestrator {
       runs.finish(run, 'error');
       throw err;
     }
+  }
+
+  /** For a turn sent to the arena: the two models (in A/B order), else null. */
+  private async arenaPick(user: AuthUser, req: CompletionRequest): Promise<{ models: [string, string] } | null> {
+    if (!req.modelIds.includes(ARENA_MODEL_ID)) return null;
+    if (req.regenerate) throw badRequest('Vote on this comparison first; then you can regenerate a reply.', 'arena_vote_first');
+    if (req.modelIds.length > 1) throw badRequest('The arena picks its own two models: choose it alone.', 'arena_alone');
+    const setting = await this.deps.settings.get('arena');
+    const mine = new Set((await this.deps.models.forUser(user)).map((m) => m.id));
+    const eligible = setting.models.filter((m) => mine.has(m));
+    if (!setting.enabled || eligible.length < 2) throw badRequest('Blind comparisons are not available.', 'arena_off');
+    const shuffled = [...eligible].sort(() => Math.random() - 0.5);
+    return { models: [shuffled[0], shuffled[1]] };
   }
 
   private async execute(plan: RunPlan): Promise<void> {
@@ -734,6 +753,10 @@ export class ChatOrchestrator {
     if (!access || !sources || !rag) throw badRequest('References are not available here.', 'refs_unavailable');
     for (const r of refs) {
       if (r.type === 'chat') await this.repo.getOwned(user.id, r.id);
+      if (r.type === 'note') {
+        const [note] = await this.deps.db.select({ id: notes.id, ownerId: notes.ownerId }).from(notes).where(eq(notes.id, r.id));
+        if (!note || !(await access.rights(user, 'note', note)).read) throw badRequest('A referenced note was not found.', 'note_not_found');
+      }
       if (r.type === 'kb') {
         const ok = await readableKbIds(this.deps.db, [r.id], async (kb) => (await access.rights(user, 'knowledge', kb)).read);
         if (ok.length === 0) throw badRequest('A referenced knowledge base was not found.', 'kb_not_found');
@@ -768,9 +791,16 @@ export class ChatOrchestrator {
     }
     const urls = refs.flatMap((r) => (r.type === 'url' ? [r.url] : []));
     const chatIds = refs.flatMap((r) => (r.type === 'chat' ? [r.id] : []));
-    if (kbIds.size === 0 && urls.length === 0 && chatIds.length === 0 && !plan.webSearch) return [];
+    // Notes as they are now, if the user may still read them
+    const noteRows = [];
+    for (const r of refs) {
+      if (r.type !== 'note') continue;
+      const [note] = await this.deps.db.select().from(notes).where(eq(notes.id, r.id));
+      if (note && (await access.rights(user, 'note', note)).read) noteRows.push({ id: note.id, title: note.title || 'Untitled note', content: note.content });
+    }
+    if (kbIds.size === 0 && urls.length === 0 && chatIds.length === 0 && noteRows.length === 0 && !plan.webSearch) return [];
 
-    const built = await sources.build({ userId: user.id, query, kbIds: [...kbIds], urls, chatIds, webSearch: plan.webSearch });
+    const built = await sources.build({ userId: user.id, query, kbIds: [...kbIds], urls, chatIds, notes: noteRows, webSearch: plan.webSearch });
     for (const message of built.notices) this.deps.runs.emit(plan.run, { type: 'run.notice', code: 'sources', message });
     return built.sources;
   }

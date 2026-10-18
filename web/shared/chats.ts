@@ -223,7 +223,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
     type: z.literal('citation'),
     index: z.number().int().min(0),
     source: z.object({
-      kind: z.enum(['file', 'url', 'chat']),
+      kind: z.enum(['file', 'url', 'chat', 'note']),
       id: z.string().max(200).optional(),
       title: z.string().max(1000),
       url: z.string().max(4000).optional(),

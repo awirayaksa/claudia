@@ -3,6 +3,7 @@
  * a chat id from another user behaves exactly like one that doesn't exist.
  */
 import { and, asc, desc, eq, getTableColumns, ilike, inArray, isNull, or, sql, type SQL } from 'drizzle-orm';
+import { ARENA_LABELS } from '../../../shared/arena';
 import type { Database } from '../../db/client';
 import { chats, folders, messages, shares } from '../../db/schema';
 import { notFound } from '../../lib/errors';
@@ -91,8 +92,29 @@ export function toNode(m: MessageRow): MessageNode {
     ...(m.meta?.followUps?.length ? { followUps: m.meta.followUps } : {}),
     ...(m.meta?.refs?.length ? { refs: m.meta.refs } : {}),
     ...(m.meta?.webSearch ? { webSearch: true } : {}),
+    ...(m.meta?.arena ? { arena: { winner: m.meta.arena.winner ?? null, models: m.meta.arena.models } } : {}),
     createdAt: m.createdAt.toISOString(),
   };
+}
+
+/**
+ * What the user may see of blind comparisons: before the vote, the two
+ * replies' models are "arena:A" / "arena:B" and the real ones are left out.
+ * Every path that hands nodes to a browser goes through this.
+ */
+export function maskArena(nodes: MessageNode[]): MessageNode[] {
+  const hidden = new Map<string, [string, string]>();
+  for (const n of nodes) if (n.arena?.models && !n.arena.winner) hidden.set(n.id, n.arena.models);
+  return nodes.map((n) => {
+    if (n.arena) {
+      return n.arena.winner
+        ? { ...n, models: [...n.arena.models!] }
+        : { ...n, models: [...ARENA_LABELS], arena: { winner: null, models: null } };
+    }
+    const pair = n.parentId ? hidden.get(n.parentId) : undefined;
+    if (!pair || !n.modelId) return n;
+    return { ...n, modelId: n.modelId === pair[0] ? ARENA_LABELS[0] : ARENA_LABELS[1] };
+  });
 }
 
 /** Root → leaf. Stops at a cycle or a missing parent instead of looping. */

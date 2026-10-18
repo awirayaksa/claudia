@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { and, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ServerContext } from '../../context';
-import { chats, folders, messages } from '../../db/schema';
-import { badRequest, notFound } from '../../lib/errors';
+import { arenaVotes, chats, folders, messages } from '../../db/schema';
+import { ArenaVoteInput, type ArenaVoteResult } from '../../../shared/arena';
+import { badRequest, conflict, notFound } from '../../lib/errors';
 import { uuidv7 } from '../../lib/ids';
 import { currentUser, requireUser } from '../../auth/rbac';
 import {
@@ -18,7 +19,7 @@ import {
   UpdateChatRequest,
   type ChatDetail,
 } from '../../../shared/chats';
-import { ChatRepo, toChatSummary, toFolder, toNode, toShareView } from './repo';
+import { ChatRepo, maskArena, toChatSummary, toFolder, toNode, toShareView } from './repo';
 import { ChatTransfer, dropNulls } from './transfer';
 import { readableKbIds } from '../../rag/sources';
 
@@ -91,7 +92,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   app.get('/:id', async (req): Promise<{ chat: ChatDetail }> => {
     const { id } = IdParams.parse(req.params);
     const chat = await repo.getOwned(currentUser(req).id, id);
-    const nodes = (await repo.messages(chat.id)).map(toNode);
+    const nodes = maskArena((await repo.messages(chat.id)).map(toNode));
     const share = await repo.share(chat.id);
     return {
       chat: {
@@ -153,6 +154,31 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
   });
 
   // Rating (and an optional comment) of one reply
+  // A blind comparison's vote: records it and reveals the two models
+  app.post('/:id/messages/:messageId/arena-vote', async (req): Promise<ArenaVoteResult> => {
+    const me = currentUser(req);
+    const { id, messageId } = z.object({ id: z.uuid(), messageId: z.uuid() }).parse(req.params);
+    const { winner } = ArenaVoteInput.parse(req.body);
+    const chat = await repo.getOwned(me.id, id);
+    const [turn] = await ctx.db
+      .select()
+      .from(messages)
+      .where(and(eq(messages.id, messageId), eq(messages.chatId, chat.id), eq(messages.role, 'user')));
+    const pair = turn?.meta?.arena;
+    if (!turn || !pair) throw notFound('Comparison');
+    if (pair.winner) throw conflict('You already voted on this comparison.', 'arena_voted');
+    const replies = await ctx.db.select({ status: messages.status }).from(messages).where(eq(messages.parentId, turn.id));
+    if (replies.some((r) => r.status === 'streaming')) throw badRequest('Wait for both replies first.', 'arena_busy');
+    await ctx.db.transaction(async (tx) => {
+      await tx.insert(arenaVotes).values({ id: uuidv7(), userId: me.id, chatId: chat.id, userMessageId: turn.id, modelA: pair.models[0], modelB: pair.models[1], winner });
+      await tx
+        .update(messages)
+        .set({ meta: { ...turn.meta, arena: { ...pair, winner }, models: [...pair.models] } })
+        .where(eq(messages.id, turn.id));
+    });
+    return { winner, models: pair.models };
+  });
+
   app.put('/:id/messages/:messageId/feedback', async (req) => {
     const me = currentUser(req);
     const { id, messageId } = z.object({ id: z.uuid(), messageId: z.uuid() }).parse(req.params);

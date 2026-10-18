@@ -11,6 +11,8 @@ import type { MessageNode } from '@/types/turn.types';
 import type { Attachment } from '@/types/message.types';
 import type { Skill } from '@/types/skill.types';
 import { resolveSkillCommand } from '@/utils/skill-utils';
+import { ARENA_LABELS } from '@shared/arena';
+import { CloudButton } from '../chat/CloudPicker';
 import type { PromptView } from '@shared/workspace';
 import { fillTemplate, templateVariables } from '@shared/prompts';
 import {
@@ -19,7 +21,9 @@ import {
   useCreateChatMutation,
   useForkChatMutation,
   useMcpServersQuery,
+  useArenaVoteMutation,
   useChatsQuery,
+  useNotesQuery,
   useKnowledgeListQuery,
   useModelsQuery,
   usePermissions,
@@ -85,9 +89,11 @@ export function ChatPage() {
   const sessionEffort = useAppSelector((s) => s.composer.effortLevel);
   const skills = useAppSelector((s) => s.skills.skills);
   const { data: mcpData, refetch: refetchMcp } = useMcpServersQuery();
+  const [arenaVote] = useArenaVoteMutation();
   const { data: promptData } = usePromptsQuery({ scope: 'usable' });
   const { data: kbData } = useKnowledgeListQuery();
   const { data: recentChats } = useChatsQuery();
+  const { data: notesData } = useNotesQuery(undefined, { skip: !usePermissions()?.['features.notes'] });
   const permissions = usePermissions();
   /** References and web search for the next message. */
   const [refs, setRefs] = useState<MessageRef[]>([]);
@@ -135,7 +141,8 @@ export function ChatPage() {
 
   const models = modelsData?.models ?? [];
   const modelIds = useMemo(() => models.map((m) => m.id), [models]);
-  const modelName = (id?: string) => (id ? (models.find((m) => m.id === id)?.name ?? id) : undefined);
+  const modelName = (id?: string) =>
+    !id ? undefined : id === ARENA_LABELS[0] ? t('arena.modelA') : id === ARENA_LABELS[1] ? t('arena.modelB') : (models.find((m) => m.id === id)?.name ?? id);
   const selectedModel = useMemo(() => {
     const candidates = [chat?.modelIds[0], pendingModel, readLastModel(), modelsData?.defaultModel];
     return candidates.find((m): m is string => !!m && modelIds.includes(m)) ?? modelIds[0] ?? '';
@@ -268,10 +275,21 @@ export function ChatPage() {
       hashMenuItems(
         kbData?.knowledge ?? [],
         (recentChats?.chats ?? []).filter((c) => c.id !== chatId),
-        { kb: t('refs.kb'), chat: t('refs.chat'), url: t('refs.webPage'), urlHelp: t('refs.webPageHelp') }
+        { kb: t('refs.kb'), chat: t('refs.chat'), url: t('refs.webPage'), urlHelp: t('refs.webPageHelp'), note: t('refs.note') },
+        notesData?.notes ?? []
       ),
-    [kbData, recentChats, chatId, t]
+    [kbData, recentChats, chatId, t, notesData]
   );
+  // "Ask about this note" (from Notes) arrives as ?note=<id>&title=…
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const id = params.get('note');
+    if (!id) return;
+    addRef({ type: 'note', id, name: params.get('title') ?? undefined });
+    window.history.replaceState(null, '', window.location.pathname);
+    // Once, on arrival
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const openPrompt = (prompt: PromptView, insert: (text: string) => void) => {
     if (templateVariables(prompt.body).length > 0) setPromptForm({ prompt, insert });
     else insert(fillTemplate(prompt.body, {}, { userName: session?.user?.name, language: navigator.language }));
@@ -402,6 +420,7 @@ export function ChatPage() {
               path={path}
               running={running}
               modelName={modelName}
+              onArenaVote={(turn, winner) => chat && void arenaVote({ chatId: chat.id, messageId: turn.id, winner })}
               onSelect={(id) => chat && void updateChat({ id: chat.id, currentLeafId: id })}
               onEdit={editMessage}
               onRegenerate={regenerate}
@@ -461,7 +480,8 @@ export function ChatPage() {
           onSend={handleSend}
           onAbort={handleStop}
           isGenerating={running}
-          disabled={noModels}
+          // Until a model is chosen (models still loading) a message would have nowhere to go
+          disabled={noModels || !selectedModel}
           placeholder={t('chat.placeholder')}
           selectedModel={selectedModel}
           availableModels={modelIds}
@@ -470,9 +490,19 @@ export function ChatPage() {
           extraCommands={promptCommands}
           hashCommands={hashItems}
           toolbarExtras={
-            voice && voice.voiceInput !== 'none' ? (
-              <MicButton mode={voice.voiceInput} disabled={noModels} onText={(text) => inputRef.current?.appendText(text)} />
-            ) : undefined
+            <>
+              <CloudButton
+                disabled={noModels}
+                onImported={(file) =>
+                  inputRef.current?.addAttachments([
+                    { id: file.id, type: file.mime.startsWith('image/') ? 'image' : 'file', name: file.name, size: file.size, mimeType: file.mime },
+                  ])
+                }
+              />
+              {voice && voice.voiceInput !== 'none' && (
+                <MicButton mode={voice.voiceInput} disabled={noModels} onText={(text) => inputRef.current?.appendText(text)} />
+              )}
+            </>
           }
           hashEmptyLabel={t('refs.nothing')}
           onHashPick={(item) => {

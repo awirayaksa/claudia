@@ -1,9 +1,9 @@
 import type { FastifyInstance } from 'fastify';
-import { and, asc, desc, eq, ilike, inArray, isNull, notInArray, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, ilike, inArray, isNotNull, isNull, notInArray, or, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ServerContext } from '../../context';
 import { groupMembers, groups, sessions, users, type UserSettings } from '../../db/schema';
-import { badRequest, conflict, notFound, unauthorized } from '../../lib/errors';
+import { badRequest, conflict, forbidden, notFound, unauthorized } from '../../lib/errors';
 import { currentUser, requireAdmin, requireSignedIn } from '../../auth/rbac';
 import { hashPassword, verifyPassword } from '../../auth/passwords';
 import { revokeAllSessions } from '../../auth/sessions';
@@ -16,13 +16,30 @@ import {
 } from '../../../shared/auth';
 import { UserSettingsSchema, withDefaults } from '../../../shared/settings';
 import { countAdmins, createLocalUser, toPublicUser, webhookUser, type UserRow } from './service';
+import { userMfa } from '../../db/schema';
+import { confirmMfaSetup, disableMfa, mfaStatus, regenerateRecoveryCodes, startMfaSetup, verifyMfaCode } from '../../auth/mfa';
+import { mfaRequiredFor } from '../../auth/signin';
+import { MfaCode } from '../../../shared/auth';
 
-function toAdminUser(u: UserRow): AdminUser {
+function toAdminUser(u: UserRow, mfaEnabled = false): AdminUser {
   return {
     ...toPublicUser(u),
     createdAt: u.createdAt.toISOString(),
     lastActiveAt: u.lastActiveAt?.toISOString() ?? null,
+    active: !u.deactivatedAt,
+    mfaEnabled,
+    externalId: u.externalId,
   };
+}
+
+/** Which of these users have two-factor sign-in on. */
+async function mfaOn(ctx: ServerContext, ids: string[]): Promise<Set<string>> {
+  if (ids.length === 0) return new Set();
+  const rows = await ctx.db
+    .select({ userId: userMfa.userId })
+    .from(userMfa)
+    .where(and(inArray(userMfa.userId, ids), isNotNull(userMfa.enabledAt)));
+  return new Set(rows.map((r) => r.userId));
 }
 
 /** /api/me — the signed-in user's own account (pending users included). */
@@ -32,6 +49,43 @@ export async function meRoutes(app: FastifyInstance, ctx: ServerContext): Promis
   app.get('/', async (req) => {
     const [row] = await ctx.db.select().from(users).where(eq(users.id, currentUser(req).id));
     return { user: toPublicUser(row) };
+  });
+
+  // ─── Two-factor sign-in ───────────────────────────────────────────────────
+  app.get('/mfa', async (req) => ({ mfa: await mfaStatus(ctx, currentUser(req).id) }));
+
+  app.post('/mfa/setup', async (req) => {
+    const me = currentUser(req);
+    if ((await mfaStatus(ctx, me.id)).enabled) throw conflict('Two-factor sign-in is already on.', 'mfa_enabled');
+    return { setup: await startMfaSetup(ctx, me, 'Claudia') };
+  });
+
+  app.post('/mfa/confirm', async (req) => {
+    const me = currentUser(req);
+    const { code } = MfaCode.parse(req.body);
+    const recoveryCodes = await confirmMfaSetup(ctx, me.id, code);
+    void ctx.audit.fromRequest(req, 'mfa.enabled', { targetType: 'user', targetId: me.id });
+    return { recoveryCodes };
+  });
+
+  // Turning it off, or new recovery codes, needs a current code
+  app.post('/mfa/disable', async (req) => {
+    const me = currentUser(req);
+    const { code } = MfaCode.parse(req.body);
+    if (mfaRequiredFor(await ctx.settings.get('auth.mfa'), me.role)) {
+      throw forbidden('Two-factor sign-in is required on this server.', 'mfa_required');
+    }
+    if (!(await verifyMfaCode(ctx, me.id, code))) throw badRequest("That code doesn't match.", 'mfa_invalid_code');
+    await disableMfa(ctx, me.id);
+    void ctx.audit.fromRequest(req, 'mfa.disabled', { targetType: 'user', targetId: me.id });
+    return { ok: true };
+  });
+
+  app.post('/mfa/recovery-codes', async (req) => {
+    const me = currentUser(req);
+    const { code } = MfaCode.parse(req.body);
+    if (!(await verifyMfaCode(ctx, me.id, code))) throw badRequest("That code doesn't match.", 'mfa_invalid_code');
+    return { recoveryCodes: await regenerateRecoveryCodes(ctx, me.id) };
   });
 
   app.patch('/', async (req) => {
@@ -137,7 +191,8 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
       .limit(q.limit)
       .offset(q.offset);
     const [{ total }] = await ctx.db.select({ total: sql<number>`count(*)::int` }).from(users).where(where);
-    return { users: rows.map(toAdminUser), total: Number(total) };
+    const withMfa = await mfaOn(ctx, rows.map((r) => r.id));
+    return { users: rows.map((r) => toAdminUser(r, withMfa.has(r.id))), total: Number(total) };
   });
 
   app.post('/', async (req, reply) => {
@@ -159,6 +214,12 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
     if (body.password && !existing.passwordHash) {
       throw badRequest('This account signs in through a directory and has no password here.', 'no_password');
     }
+    if (body.active === false) {
+      if (id === currentUser(req).id) throw badRequest('You cannot deactivate your own account.', 'self_deactivate');
+      if (existing.role === 'admin' && (await countAdmins(ctx, id)) === 0) {
+        throw conflict('This is the only admin. Make someone else an admin first.', 'last_admin');
+      }
+    }
 
     const [row] = await ctx.db
       .update(users)
@@ -167,15 +228,25 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
         ...(body.role ? { role: body.role } : {}),
         ...(body.password ? { passwordHash: await hashPassword(body.password) } : {}),
         ...(body.caps !== undefined ? { caps: body.caps } : {}),
+        ...(body.active !== undefined ? { deactivatedAt: body.active ? null : (existing.deactivatedAt ?? new Date()) } : {}),
         updatedAt: new Date(),
       })
       .where(eq(users.id, id))
       .returning();
-    if (body.password) await revokeAllSessions(ctx, id);
+    if (body.password || body.active === false) await revokeAllSessions(ctx, id);
     if (body.role || body.name) {
       void ctx.webhooks.emit('user.updated', { user: webhookUser(row), previousRole: existing.role });
     }
-    return { user: toAdminUser(row) };
+    return { user: toAdminUser(row, (await mfaOn(ctx, [row.id])).has(row.id)) };
+  });
+
+  // Someone lost their phone: they sign in with the password alone and set it up again
+  app.delete('/:id/mfa', async (req) => {
+    const { id } = z.object({ id: z.uuid() }).parse(req.params);
+    const [existing] = await ctx.db.select({ id: users.id }).from(users).where(eq(users.id, id));
+    if (!existing) throw notFound('User');
+    await disableMfa(ctx, id);
+    return { ok: true };
   });
 
   app.delete('/:id', async (req) => {

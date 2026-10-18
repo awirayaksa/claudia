@@ -180,4 +180,6 @@ export interface AuthUser {
   role: UserRole;
   sessionId: string;
   hasPassword: boolean;
+  /** Two-factor sign-in is on (sessions only). */
+  mfaEnabled?: boolean;
 }

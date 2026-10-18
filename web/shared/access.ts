@@ -19,6 +19,8 @@ export const PERMISSION_KEYS = [
   'features.code',
   'features.image_gen',
   'features.voice',
+  'features.notes',
+  'features.schedules',
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 export type Permissions = Record<PermissionKey, boolean>;
@@ -39,6 +41,8 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   'features.code': true,
   'features.image_gen': true,
   'features.voice': true,
+  'features.notes': true,
+  'features.schedules': false,
 };
 
 export const PermissionsSchema = z.object(
@@ -113,7 +117,7 @@ export interface GroupMemberView {
   email: string;
   name: string;
   /** 'ldap' members are managed by the directory sync. */
-  source: 'manual' | 'ldap';
+  source: 'manual' | 'ldap' | 'sso' | 'scim';
 }
 
 /** A group as non-admins see it (for sharing). */

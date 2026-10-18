@@ -84,7 +84,7 @@ describe('bootstrap', () => {
     const { app } = await setup({ ENABLE_PASSWORD_AUTH: 'false' });
     const c = new TestClient(app);
     const session = await c.get('/api/auth/session');
-    expect(session.json().auth).toEqual({ passwordLogin: false, signup: false, ldap: false });
+    expect(session.json().auth).toEqual({ passwordLogin: false, signup: false, ldap: false, sso: [] });
     expect((await c.post('/api/auth/signup', { email: 'x@example.com', password: 'whatever-123', name: 'X' })).statusCode).toBe(403);
     expect((await c.post('/api/auth/login', { email: 'x@example.com', password: 'whatever-123' })).statusCode).toBe(403);
   });

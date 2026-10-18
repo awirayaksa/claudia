@@ -8,3 +8,4 @@ export * from './access';
 export * from './knowledge';
 export * from './extensions';
 export * from './admin';
+export * from './collab';

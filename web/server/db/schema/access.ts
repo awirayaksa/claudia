@@ -16,6 +16,8 @@ export const groups = pgTable(
     caps: jsonb('caps').$type<GroupCaps>().notNull().default({}),
     /** Directory group synced into this one at sign-in (stored lower-cased). */
     ldapDn: text('ldap_dn'),
+    /** The identity provider's id for this group (SCIM externalId). */
+    externalId: text('external_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -31,14 +33,14 @@ export const groupMembers = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
-    /** 'ldap' rows are added and removed by the directory sync. */
-    source: text('source').$type<'manual' | 'ldap'>().notNull().default('manual'),
+    /** 'ldap', 'sso' and 'scim' rows are added and removed by that sync; 'manual' ones never are. */
+    source: text('source').$type<'manual' | 'ldap' | 'sso' | 'scim'>().notNull().default('manual'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user_idx').on(t.userId)]
 );
 
-export type ResourceType = 'model' | 'prompt' | 'knowledge';
+export type ResourceType = 'model' | 'prompt' | 'knowledge' | 'note' | 'channel';
 export type PrincipalType = 'user' | 'group' | 'public';
 
 /**

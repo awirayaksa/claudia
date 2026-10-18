@@ -1,11 +1,20 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import type { AuthOptions } from '@shared/auth';
-import { errorMessage, useLdapLoginMutation, useLoginMutation, useSignupMutation } from '../api/rtk-api';
+import { errorMessage, useLdapLoginMutation, useLoginMutation, useMfaVerifyMutation, useSignupMutation } from '../api/rtk-api';
 
 type Mode = 'login' | 'signup' | 'ldap';
+
+/** What SSO sent back (?auth_error=…&auth_message=…, or ?mfa=1), read once and cleared from the address bar. */
+function takeRedirectState(): { error: string | null; mfa: boolean } {
+  const params = new URLSearchParams(window.location.search);
+  const error = params.get('auth_message') ?? (params.get('auth_error') ? 'Sign-in failed.' : null);
+  const mfa = params.get('mfa') === '1';
+  if (error || mfa) window.history.replaceState(null, '', window.location.pathname);
+  return { error, mfa };
+}
 
 export function LoginPage({ auth }: { auth: AuthOptions }) {
   const { t } = useTranslation();
@@ -18,15 +27,19 @@ export function LoginPage({ auth }: { auth: AuthOptions }) {
   const [login, loginState] = useLoginMutation();
   const [ldapLogin, ldapState] = useLdapLoginMutation();
   const [signup, signupState] = useSignupMutation();
+  const [redirect] = useState(takeRedirectState);
+  // A code is needed: after a password / directory sign-in, or back from SSO
+  const [needCode, setNeedCode] = useState(redirect.mfa);
   const busy = loginState.isLoading || signupState.isLoading || ldapState.isLoading;
-  const error = errorMessage(mode === 'login' ? loginState.error : mode === 'ldap' ? ldapState.error : signupState.error);
+  const error = errorMessage(mode === 'login' ? loginState.error : mode === 'ldap' ? ldapState.error : signupState.error) ?? redirect.error;
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (mode === 'login') await login({ email, password });
-    else if (mode === 'ldap') await ldapLogin({ username, password });
-    else await signup({ name, email, password });
+    const res = mode === 'login' ? await login({ email, password }) : mode === 'ldap' ? await ldapLogin({ username, password }) : await signup({ name, email, password });
+    if ('data' in res && res.data && 'mfaRequired' in res.data && res.data.mfaRequired) setNeedCode(true);
   };
+
+  if (needCode) return <MfaStep onCancel={() => setNeedCode(false)} />;
 
   const showForm = mode === 'ldap' ? auth.ldap : auth.passwordLogin;
   const title = mode === 'signup' ? t('auth.signUp') : t('auth.signIn');
@@ -54,8 +67,28 @@ export function LoginPage({ auth }: { auth: AuthOptions }) {
           </div>
         )}
 
+        {auth.sso.length > 0 && mode !== 'signup' && (
+          <div className="mb-4 space-y-2" data-testid="sso-buttons">
+            {auth.sso.map((p) => (
+              <a
+                key={p.id}
+                href={`/api/auth/oidc/${encodeURIComponent(p.id)}/start`}
+                className="flex w-full items-center justify-center rounded-lg border border-border bg-surface px-4 py-2 text-sm font-medium hover:border-accent"
+              >
+                {t('auth.continueWith', { name: p.name })}
+              </a>
+            ))}
+            {(auth.passwordLogin || auth.ldap) && <p className="pt-1 text-center text-xs text-text-secondary">{t('auth.or')}</p>}
+          </div>
+        )}
+        {error && !showForm && (
+          <p role="alert" className="mb-3 text-sm text-error">
+            {error}
+          </p>
+        )}
+
         {!showForm ? (
-          <p className="rounded border border-border bg-surface p-4 text-sm text-text-secondary">{t('auth.passwordDisabled')}</p>
+          auth.sso.length === 0 && <p className="rounded border border-border bg-surface p-4 text-sm text-text-secondary">{t('auth.passwordDisabled')}</p>
         ) : (
           <form onSubmit={submit} className="space-y-4 rounded-lg border border-border bg-surface p-5" noValidate>
             {mode === 'signup' && (
@@ -125,6 +158,55 @@ export function LoginPage({ auth }: { auth: AuthOptions }) {
           </p>
         )}
       </div>
+    </main>
+  );
+}
+
+/** The second step: a code from the authenticator app, or a recovery code. */
+function MfaStep({ onCancel }: { onCancel: () => void }) {
+  const { t } = useTranslation();
+  const [code, setCode] = useState('');
+  const [verify, state] = useMfaVerifyMutation();
+  const error = errorMessage(state.error);
+  // An expired ticket can't be fixed by typing: start over
+  const expired = (state.error as { code?: string } | undefined)?.code === 'mfa_expired';
+  useEffect(() => {
+    if (expired) onCancel();
+  }, [expired, onCancel]);
+
+  return (
+    <main className="flex min-h-[100dvh] items-center justify-center bg-background px-4 py-8">
+      <form
+        className="w-full max-w-sm space-y-4 rounded-lg border border-border bg-surface p-5"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void verify({ code });
+        }}
+      >
+        <h1 className="text-lg font-semibold">{t('mfa.title')}</h1>
+        <p className="text-sm text-text-secondary">{t('mfa.enterCode')}</p>
+        <Input
+          label={t('mfa.code')}
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          autoComplete="one-time-code"
+          inputMode="text"
+          autoFocus
+          required
+        />
+        {error && (
+          <p role="alert" className="text-sm text-error">
+            {error}
+          </p>
+        )}
+        <Button type="submit" className="w-full" disabled={state.isLoading || code.trim().length < 6}>
+          {t('mfa.verify')}
+        </Button>
+        <p className="text-xs text-text-secondary">{t('mfa.recoveryHint')}</p>
+        <button type="button" className="text-sm text-accent hover:underline" onClick={onCancel}>
+          {t('mfa.back')}
+        </button>
+      </form>
     </main>
   );
 }

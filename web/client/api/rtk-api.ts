@@ -4,7 +4,12 @@
  */
 import { createApi, type BaseQueryFn } from '@reduxjs/toolkit/query/react';
 import { apiFetchRaw, toApiError, ApiRequestError } from './http';
-import type { AdminUser, PublicUser, SessionInfo, SessionResponse } from '@shared/auth';
+import type { AdminUser, MfaSetup, MfaStatus, PublicUser, SessionInfo, SessionResponse, SignInResponse, SsoProviderInput, SsoProviderView } from '@shared/auth';
+import type { ArenaVoteResult, ArenaWinner, LeaderboardResponse } from '@shared/arena';
+import type { NoteDetail, NoteInput, NoteSummary } from '@shared/notes';
+import type { ChannelInput, ChannelMessageView, ChannelView } from '@shared/channels';
+import type { ScheduleInput, ScheduleView } from '@shared/schedules';
+import type { CloudAccountView, CloudListing, CloudProvider, CloudSettingsResponse, CloudSettingsUpdate } from '@shared/cloud';
 import type {
   ChatDetail,
   ChatParams,
@@ -59,6 +64,9 @@ import type {
   UserMcpServerInput,
   UserMcpServerView,
 } from '@shared/workspace';
+
+/** What can be shared, and where its access routes are. */
+export type AccessKind = 'models' | 'prompts' | 'knowledge' | 'notes' | 'channels';
 
 export interface ApiErrorShape {
   status: number;
@@ -127,12 +135,22 @@ export const api = createApi({
     'Webhooks',
     'Audit',
     'Banners',
+    'Mfa',
+    'Sso',
+    'Scim',
+    'Leaderboard',
+    'Notes',
+    'Note',
+    'Channels',
+    'Schedules',
+    'CloudAccounts',
+    'CloudSettings',
   ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
     publicConfig: b.query<PublicConfig, void>({ query: () => '/public-config' }),
     session: b.query<SessionResponse, void>({ query: () => '/auth/session', providesTags: ['Session'] }),
-    login: b.mutation<{ user: PublicUser }, { email: string; password: string }>({
+    login: b.mutation<SignInResponse, { email: string; password: string }>({
       query: (body) => ({ url: '/auth/login', method: 'POST', body }),
       invalidatesTags: ['Session'],
     }),
@@ -140,11 +158,30 @@ export const api = createApi({
       query: (body) => ({ url: '/auth/signup', method: 'POST', body }),
       invalidatesTags: ['Session'],
     }),
-    ldapLogin: b.mutation<{ user: PublicUser }, { username: string; password: string }>({
+    ldapLogin: b.mutation<SignInResponse, { username: string; password: string }>({
       query: (body) => ({ url: '/auth/ldap', method: 'POST', body }),
       invalidatesTags: ['Session'],
     }),
     logout: b.mutation<{ ok: true }, void>({ query: () => ({ url: '/auth/logout', method: 'POST' }) }),
+    /** The second step of a sign-in with two-factor on. */
+    mfaVerify: b.mutation<SignInResponse, { code: string }>({
+      query: (body) => ({ url: '/auth/mfa', method: 'POST', body }),
+      invalidatesTags: ['Session'],
+    }),
+    myMfa: b.query<{ mfa: MfaStatus }, void>({ query: () => '/me/mfa', providesTags: ['Mfa'] }),
+    mfaSetup: b.mutation<{ setup: MfaSetup }, void>({ query: () => ({ url: '/me/mfa/setup', method: 'POST' }) }),
+    // The session is refreshed once the recovery codes are put away (else they'd vanish with the setup screen)
+    mfaConfirm: b.mutation<{ recoveryCodes: string[] }, { code: string }>({
+      query: (body) => ({ url: '/me/mfa/confirm', method: 'POST', body }),
+    }),
+    mfaDisable: b.mutation<{ ok: true }, { code: string }>({
+      query: (body) => ({ url: '/me/mfa/disable', method: 'POST', body }),
+      invalidatesTags: ['Mfa', 'Session'],
+    }),
+    mfaRecoveryCodes: b.mutation<{ recoveryCodes: string[] }, { code: string }>({
+      query: (body) => ({ url: '/me/mfa/recovery-codes', method: 'POST', body }),
+      invalidatesTags: ['Mfa'],
+    }),
 
     // ─── Me ─────────────────────────────────────────────────────────────────
     updateMe: b.mutation<{ user: PublicUser }, { name: string }>({
@@ -336,13 +373,13 @@ export const api = createApi({
       query: (id) => ({ url: `/workspace/prompts/${id}`, method: 'DELETE' }),
       invalidatesTags: ['Prompts'],
     }),
-    grants: b.query<{ grants: GrantView[] }, { kind: 'models' | 'prompts' | 'knowledge'; id: string }>({
-      query: ({ kind, id }) => `${kind === 'knowledge' ? '' : '/workspace'}/${kind}/${id}/access`,
+    grants: b.query<{ grants: GrantView[] }, { kind: AccessKind; id: string }>({
+      query: ({ kind, id }) => `${kind === 'models' || kind === 'prompts' ? '/workspace' : ''}/${kind}/${id}/access`,
       providesTags: (_r, _e, { id }) => [{ type: 'Grants', id }],
     }),
-    setGrants: b.mutation<{ grants: GrantView[] }, { kind: 'models' | 'prompts' | 'knowledge'; id: string; grants: GrantInput[] }>({
+    setGrants: b.mutation<{ grants: GrantView[] }, { kind: AccessKind; id: string; grants: GrantInput[] }>({
       query: ({ kind, id, grants }) => ({
-        url: `${kind === 'knowledge' ? '' : '/workspace'}/${kind}/${id}/access`,
+        url: `${kind === 'models' || kind === 'prompts' ? '/workspace' : ''}/${kind}/${id}/access`,
         method: 'PUT',
         body: { grants },
       }),
@@ -416,6 +453,119 @@ export const api = createApi({
       invalidatesTags: ['ToolServers', 'McpServers'],
     }),
     adminPlugins: b.query<{ plugins: PluginView[] }, void>({ query: () => '/admin/plugins', providesTags: ['Plugins'] }),
+
+    // Phase 7: sign-in providers and provisioning
+    ssoProviders: b.query<{ providers: Array<SsoProviderView & { callbackUrl: string }> }, void>({ query: () => '/admin/sso', providesTags: ['Sso'] }),
+    createSsoProvider: b.mutation<unknown, SsoProviderInput>({
+      query: (body) => ({ url: '/admin/sso', method: 'POST', body }),
+      invalidatesTags: ['Sso', 'Session'],
+    }),
+    updateSsoProvider: b.mutation<unknown, Partial<SsoProviderInput> & { id: string }>({
+      query: ({ id, ...body }) => ({ url: `/admin/sso/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Sso', 'Session'],
+    }),
+    testSsoProvider: b.mutation<{ ok: boolean; issuer: string | null; error: string | null }, string>({
+      query: (id) => ({ url: `/admin/sso/${id}/test`, method: 'POST' }),
+    }),
+    deleteSsoProvider: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/admin/sso/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Sso', 'Session'],
+    }),
+    scim: b.query<{ enabled: boolean; createdAt: string | null; baseUrl: string }, void>({ query: () => '/admin/scim', providesTags: ['Scim'] }),
+    newScimToken: b.mutation<{ token: string; baseUrl: string }, void>({
+      query: () => ({ url: '/admin/scim/token', method: 'POST' }),
+      invalidatesTags: ['Scim'],
+    }),
+    disableScim: b.mutation<{ ok: true }, void>({ query: () => ({ url: '/admin/scim/token', method: 'DELETE' }), invalidatesTags: ['Scim'] }),
+    resetUserMfa: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/admin/users/${id}/mfa`, method: 'DELETE' }),
+      invalidatesTags: ['AdminUsers'],
+    }),
+
+    // Phase 7: evaluations
+    arenaVote: b.mutation<ArenaVoteResult, { chatId: string; messageId: string; winner: ArenaWinner }>({
+      query: ({ chatId, messageId, winner }) => ({ url: `/chats/${chatId}/messages/${messageId}/arena-vote`, method: 'POST', body: { winner } }),
+      invalidatesTags: (_r, _e, a) => [{ type: 'Chat', id: a.chatId }, 'Leaderboard'],
+    }),
+    leaderboard: b.query<LeaderboardResponse, void>({ query: () => '/admin/arena/leaderboard', providesTags: ['Leaderboard'] }),
+
+    // Phase 7: notes
+    notes: b.query<{ notes: NoteSummary[] }, string | void>({
+      query: (search) => (search ? `/notes?search=${encodeURIComponent(search)}` : '/notes'),
+      providesTags: ['Notes'],
+    }),
+    note: b.query<{ note: NoteDetail }, string>({ query: (id) => `/notes/${id}`, providesTags: (_r, _e, id) => [{ type: 'Note', id }] }),
+    createNote: b.mutation<{ note: NoteDetail }, NoteInput>({ query: (body) => ({ url: '/notes', method: 'POST', body }), invalidatesTags: ['Notes'] }),
+    updateNote: b.mutation<{ note: NoteDetail }, Partial<NoteInput> & { id: string }>({
+      query: ({ id, ...body }) => ({ url: `/notes/${id}`, method: 'PATCH', body }),
+      invalidatesTags: (_r, _e, a) => ['Notes', { type: 'Note', id: a.id }],
+    }),
+    deleteNote: b.mutation<{ ok: true }, string>({ query: (id) => ({ url: `/notes/${id}`, method: 'DELETE' }), invalidatesTags: ['Notes'] }),
+
+    // Phase 7: channels (live messages come over the WebSocket)
+    channels: b.query<{ channels: ChannelView[] }, void>({ query: () => '/channels', providesTags: ['Channels'] }),
+    createChannel: b.mutation<{ channel: ChannelView }, ChannelInput>({
+      query: (body) => ({ url: '/channels', method: 'POST', body }),
+      invalidatesTags: ['Channels'],
+    }),
+    updateChannel: b.mutation<{ channel: ChannelView }, Partial<ChannelInput> & { id: string }>({
+      query: ({ id, ...body }) => ({ url: `/channels/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Channels'],
+    }),
+    deleteChannel: b.mutation<{ ok: true }, string>({ query: (id) => ({ url: `/channels/${id}`, method: 'DELETE' }), invalidatesTags: ['Channels'] }),
+    channelMessages: b.query<{ messages: ChannelMessageView[]; more: boolean }, { id: string; before?: string }>({
+      query: ({ id, before }) => `/channels/${id}/messages${before ? `?before=${before}` : ''}`,
+      keepUnusedDataFor: 0,
+    }),
+    postChannelMessage: b.mutation<{ message: ChannelMessageView }, { id: string; content: string }>({
+      query: ({ id, content }) => ({ url: `/channels/${id}/messages`, method: 'POST', body: { content } }),
+    }),
+    editChannelMessage: b.mutation<{ message: ChannelMessageView }, { id: string; messageId: string; content: string }>({
+      query: ({ id, messageId, content }) => ({ url: `/channels/${id}/messages/${messageId}`, method: 'PATCH', body: { content } }),
+    }),
+    deleteChannelMessage: b.mutation<{ ok: true }, { id: string; messageId: string }>({
+      query: ({ id, messageId }) => ({ url: `/channels/${id}/messages/${messageId}`, method: 'DELETE' }),
+    }),
+
+    // Phase 7: scheduled prompts
+    schedules: b.query<{ schedules: ScheduleView[] }, void>({ query: () => '/schedules', providesTags: ['Schedules'] }),
+    createSchedule: b.mutation<{ schedule: ScheduleView }, ScheduleInput>({
+      query: (body) => ({ url: '/schedules', method: 'POST', body }),
+      invalidatesTags: ['Schedules'],
+    }),
+    updateSchedule: b.mutation<{ schedule: ScheduleView }, Partial<ScheduleInput> & { id: string }>({
+      query: ({ id, ...body }) => ({ url: `/schedules/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Schedules'],
+    }),
+    deleteSchedule: b.mutation<{ ok: true }, string>({ query: (id) => ({ url: `/schedules/${id}`, method: 'DELETE' }), invalidatesTags: ['Schedules'] }),
+    runSchedule: b.mutation<{ schedule: ScheduleView; chatId: string | null; runId: string | null }, string>({
+      query: (id) => ({ url: `/schedules/${id}/run`, method: 'POST' }),
+      invalidatesTags: ['Schedules', 'Chats'],
+    }),
+
+    // Phase 7: Google Drive / OneDrive
+    cloudAccounts: b.query<{ accounts: CloudAccountView[] }, void>({ query: () => '/cloud/accounts', providesTags: ['CloudAccounts'] }),
+    cloudFiles: b.query<CloudListing, { provider: CloudProvider; folder?: string; q?: string; page?: string }>({
+      query: ({ provider, ...q }) =>
+        `/cloud/${provider}/files?${new URLSearchParams(Object.entries(q).filter(([, v]) => v) as Array<[string, string]>)}`,
+      keepUnusedDataFor: 30,
+    }),
+    importCloudFile: b.mutation<{ file: FileView }, { provider: CloudProvider; fileId: string }>({
+      query: ({ provider, fileId }) => ({ url: `/cloud/${provider}/import`, method: 'POST', body: { fileId } }),
+      invalidatesTags: ['Files'],
+    }),
+    disconnectCloud: b.mutation<{ ok: true }, CloudProvider>({
+      query: (provider) => ({ url: `/cloud/${provider}`, method: 'DELETE' }),
+      invalidatesTags: ['CloudAccounts'],
+    }),
+    cloudSettings: b.query<CloudSettingsResponse & { redirectUris: Record<CloudProvider, string> }, void>({
+      query: () => '/admin/cloud',
+      providesTags: ['CloudSettings'],
+    }),
+    updateCloudSettings: b.mutation<CloudSettingsResponse, CloudSettingsUpdate>({
+      query: (body) => ({ url: '/admin/cloud', method: 'PUT', body }),
+      invalidatesTags: ['CloudSettings', 'CloudAccounts', 'Session'],
+    }),
 
     // Phase 6: admin operations
     analytics: b.query<AnalyticsResponse, number>({ query: (days) => `/admin/analytics?days=${days}` }),
@@ -528,7 +678,7 @@ export const api = createApi({
     }),
     adminUpdateUser: b.mutation<
       { user: AdminUser },
-      { id: string; role?: AdminUser['role']; name?: string; password?: string; caps?: UserCaps | null }
+      { id: string; role?: AdminUser['role']; name?: string; password?: string; caps?: UserCaps | null; active?: boolean }
     >({
       query: ({ id, ...body }) => ({ url: `/admin/users/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['AdminUsers', 'UserAccess'],
@@ -766,6 +916,47 @@ export const {
   useTestWebhookMutation,
   useDeleteWebhookMutation,
   useBannersQuery,
+  useMfaVerifyMutation,
+  useMyMfaQuery,
+  useMfaSetupMutation,
+  useMfaConfirmMutation,
+  useMfaDisableMutation,
+  useMfaRecoveryCodesMutation,
+  useSsoProvidersQuery,
+  useCreateSsoProviderMutation,
+  useUpdateSsoProviderMutation,
+  useTestSsoProviderMutation,
+  useDeleteSsoProviderMutation,
+  useScimQuery,
+  useNewScimTokenMutation,
+  useDisableScimMutation,
+  useResetUserMfaMutation,
+  useArenaVoteMutation,
+  useLeaderboardQuery,
+  useNotesQuery,
+  useNoteQuery,
+  useCreateNoteMutation,
+  useUpdateNoteMutation,
+  useDeleteNoteMutation,
+  useChannelsQuery,
+  useCreateChannelMutation,
+  useUpdateChannelMutation,
+  useDeleteChannelMutation,
+  useLazyChannelMessagesQuery,
+  usePostChannelMessageMutation,
+  useEditChannelMessageMutation,
+  useDeleteChannelMessageMutation,
+  useSchedulesQuery,
+  useCreateScheduleMutation,
+  useUpdateScheduleMutation,
+  useDeleteScheduleMutation,
+  useRunScheduleMutation,
+  useCloudAccountsQuery,
+  useCloudFilesQuery,
+  useImportCloudFileMutation,
+  useDisconnectCloudMutation,
+  useCloudSettingsQuery,
+  useUpdateCloudSettingsMutation,
 } = api;
 
 export interface ToolServerView {

@@ -13,6 +13,9 @@ type Section =
   | 'media'
   | 'plugins'
   | 'webhooks'
+  | 'integrations'
+  | 'signin'
+  | 'evaluations'
   | 'directory'
   | 'audit'
   | 'settings';
@@ -40,6 +43,9 @@ export function AdminLayout() {
           { id: 'media', label: t('media.title') },
           { id: 'plugins', label: t('plugins.title') },
           { id: 'webhooks', label: t('webhooks.title') },
+          { id: 'integrations', label: t('cloud.integrations') },
+          { id: 'signin', label: t('signin.title') },
+          { id: 'evaluations', label: t('arena.title') },
           { id: 'directory', label: t('admin.directory') },
           { id: 'audit', label: t('audit.title') },
           { id: 'settings', label: t('admin.settings') },

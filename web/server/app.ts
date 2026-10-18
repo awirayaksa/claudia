@@ -21,6 +21,15 @@ import { AuditLog, registerAdminAudit } from './admin/audit';
 import { Webhooks } from './admin/webhooks';
 import { adminOpsRoutes, bannerRoutes } from './admin/routes';
 import { registerRequestTracing } from './telemetry';
+import { OidcService } from './auth/providers/oidc';
+import { adminSsoRoutes, oidcRoutes } from './auth/oidc-routes';
+import { adminScimRoutes, scimRoutes } from './auth/scim';
+import { CloudFiles, type CloudEndpoints } from './cloud/cloud-files';
+import { adminCloudRoutes, cloudRoutes } from './cloud/routes';
+import { noteRoutes } from './modules/notes/routes';
+import { channelRoutes } from './modules/channels/routes';
+import { scheduleRoutes } from './modules/schedules/routes';
+import { ScheduleRunner } from './modules/schedules/service';
 import { registerAuthHooks } from './auth/rbac';
 import { authRoutes } from './auth/routes';
 import { bootstrapAdmin } from './auth/bootstrap';
@@ -92,6 +101,8 @@ export interface AppDeps {
   startJobs?: boolean;
   /** Test hook: where YouTube pages are fetched from. */
   youtubeOrigin?: string;
+  /** Test hook: Google / Microsoft endpoints for cloud files. */
+  cloudEndpoints?: Partial<CloudEndpoints>;
 }
 
 declare module 'fastify' {
@@ -248,10 +259,17 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     cluster,
     audit,
     webhooks,
+    sso: new OidcService({ db: deps.db.db, secrets, log: app.log }),
+    cloud: new CloudFiles({ db: deps.db.db, secrets, log: app.log, endpoints: deps.cloudEndpoints }),
+    schedules: null as unknown as ScheduleRunner,
     log: app.log,
   };
+  ctx.schedules = new ScheduleRunner(ctx, app.log);
   app.decorate('ctx', ctx);
   cluster.on('mcp.global', ({ id }) => mcp.reloadGlobal(String(id)));
+  cluster.on('cloud', () => ctx.cloud.reset());
+  // Read before the first request: the guards check it synchronously
+  await settings.get('auth.mfa').catch(() => {});
   // Temporary chats go after a day without activity
   const purgeTemporary = () =>
     void new ChatRepo(deps.db.db)
@@ -265,6 +283,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     runs.close();
     events.close();
     audit.close();
+    ctx.schedules.stop();
     await mcp.close();
     await extract.close();
     await cluster.close();
@@ -334,6 +353,14 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
         sandboxOrigin: sandboxOriginFor(deps.config),
       }));
       await api.register((a) => authRoutes(a, ctx), { prefix: '/auth' });
+      await api.register((a) => oidcRoutes(a, ctx), { prefix: '/auth/oidc' });
+      await api.register((a) => cloudRoutes(a, ctx), { prefix: '/cloud' });
+      await api.register((a) => noteRoutes(a, ctx), { prefix: '/notes' });
+      await api.register((a) => channelRoutes(a, ctx), { prefix: '/channels' });
+      await api.register((a) => scheduleRoutes(a, ctx), { prefix: '/schedules' });
+      await api.register((a) => adminSsoRoutes(a, ctx), { prefix: '/admin/sso' });
+      await api.register((a) => adminScimRoutes(a, ctx), { prefix: '/admin/scim' });
+      await api.register((a) => adminCloudRoutes(a, ctx), { prefix: '/admin/cloud' });
       await api.register((a) => meRoutes(a, ctx), { prefix: '/me' });
       await api.register((a) => memoryRoutes(a, ctx), { prefix: '/me/memories' });
       await api.register((a) => apiKeyRoutes(a, ctx), { prefix: '/me/api-keys' });
@@ -376,6 +403,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   );
 
   registerPluginBundles(app, ctx);
+  // Identity providers provision users here (bearer token, no cookies)
+  await app.register((a) => scimRoutes(a, ctx), { prefix: '/scim/v2' });
 
   // ─── Client (production build) ────────────────────────────────────────────
   if (deps.clientDir && fs.existsSync(path.join(deps.clientDir, 'index.html'))) {
@@ -402,7 +431,10 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await skills.seedBuiltins().catch((err) => app.log.warn({ err: String(err) }, 'seeding built-in skills failed'));
   if (deps.bootstrap !== false) await bootstrapAdmin(ctx);
   if (deps.bootstrap !== false) purgeTemporary();
-  if (deps.startJobs !== false) jobQueue.start();
+  if (deps.startJobs !== false) {
+    jobQueue.start();
+    ctx.schedules.start();
+  }
   if (deps.startMcp !== false) void mcp.startAll().catch((err) => app.log.warn({ err: String(err) }, 'starting MCP servers failed'));
   return app;
 }

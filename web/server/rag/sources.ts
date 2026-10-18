@@ -31,6 +31,8 @@ export interface SourceRequest {
   urls: string[];
   /** Chats of this user. */
   chatIds: string[];
+  /** #note references the caller may read. */
+  notes?: Array<{ id: string; title: string; content: string }>;
   webSearch: boolean;
 }
 
@@ -147,6 +149,11 @@ export class SourceBuilder {
       } catch {
         out.notices.push('A referenced chat was not found.');
       }
+    }
+
+    // Notes: the whole note if it's short, else its most relevant passages
+    for (const note of req.notes ?? []) {
+      if (note.content.trim()) add({ kind: 'note', id: note.id, title: note.title }, await this.relevant(note.content, req.query, perDoc));
     }
 
     // #url pages: the whole page if it's short, else its most relevant passages

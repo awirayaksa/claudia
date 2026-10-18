@@ -10,6 +10,7 @@ import {
   useAdminCreateUserMutation,
   useAdminDeleteUserMutation,
   useAdminUpdateUserMutation,
+  useResetUserMfaMutation,
   useAdminUsersQuery,
   useSessionQuery,
 } from '../../api/rtk-api';
@@ -23,6 +24,7 @@ export function UsersPage() {
   const { data, isLoading } = useAdminUsersQuery(search.trim() ? { search: search.trim() } : undefined);
   const { data: session } = useSessionQuery();
   const [updateUser, updateState] = useAdminUpdateUserMutation();
+  const [resetMfa] = useResetUserMfaMutation();
   const [deleteUser, deleteState] = useAdminDeleteUserMutation();
   const [creating, setCreating] = useState(false);
   const [toDelete, setToDelete] = useState<AdminUser | null>(null);
@@ -63,6 +65,11 @@ export function UsersPage() {
                 <div className="text-xs text-text-secondary">
                   {t('admin.lastActive')}: {u.lastActiveAt ? new Date(u.lastActiveAt).toLocaleString() : t('admin.never')}
                 </div>
+                <div className="mt-1 flex flex-wrap gap-1 text-xs">
+                  {!u.active && <span className="rounded bg-error/10 px-1.5 py-0.5 text-error">{t('admin.deactivated')}</span>}
+                  {u.mfaEnabled && <span className="rounded bg-success/10 px-1.5 py-0.5 text-success">{t('admin.mfaOn')}</span>}
+                  {u.externalId && <span className="rounded bg-accent/10 px-1.5 py-0.5 text-accent">{t('admin.provisioned')}</span>}
+                </div>
               </div>
               {u.role === 'pending' && (
                 <Button size="sm" onClick={() => void updateUser({ id: u.id, role: 'user' })}>
@@ -85,6 +92,16 @@ export function UsersPage() {
               {u.role === 'user' && (
                 <Button size="sm" variant="secondary" onClick={() => setAccessOf(u)}>
                   {t('access.access')}
+                </Button>
+              )}
+              {u.mfaEnabled && (
+                <Button size="sm" variant="ghost" onClick={() => void resetMfa(u.id)} title={t('admin.resetMfaHelp')}>
+                  {t('admin.resetMfa')}
+                </Button>
+              )}
+              {!self && (
+                <Button size="sm" variant="ghost" onClick={() => void updateUser({ id: u.id, active: !u.active })}>
+                  {u.active ? t('admin.deactivate') : t('admin.reactivate')}
                 </Button>
               )}
               {!self && (

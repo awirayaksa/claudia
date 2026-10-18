@@ -18,7 +18,7 @@ import {
   type ExportedMessage,
   type ImportResponse,
 } from '../../../shared/chats';
-import { ChatRepo, pathTo, toNode, type ChatRow, type FolderRow } from './repo';
+import { ChatRepo, maskArena, pathTo, toNode, type ChatRow, type FolderRow } from './repo';
 
 type MessageInsert = typeof messages.$inferInsert;
 
@@ -100,7 +100,7 @@ export class ChatTransfer {
     const folderById = new Map((await this.repo.folders(userId)).map((f) => [f.id, f]));
     const out: ExportedChat[] = [];
     for (const chat of rows) {
-      const nodes = (await this.repo.messages(chat.id)).map(toNode);
+      const nodes = maskArena((await this.repo.messages(chat.id)).map(toNode));
       out.push({
         title: chat.title,
         createdAt: chat.createdAt.toISOString(),

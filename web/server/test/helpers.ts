@@ -46,6 +46,7 @@ export async function buildTestApp(
     env?: Record<string, string>;
     orchestrator?: AppDeps['orchestrator'];
     youtubeOrigin?: string;
+    cloudEndpoints?: AppDeps['cloudEndpoints'];
   } = {}
 ) {
   const db = opts.db ?? (await openTestDatabase());
@@ -61,6 +62,7 @@ export async function buildTestApp(
     bootstrap: opts.migrate !== false,
     orchestrator: opts.orchestrator,
     youtubeOrigin: opts.youtubeOrigin,
+    cloudEndpoints: opts.cloudEndpoints,
   });
   return {
     app,

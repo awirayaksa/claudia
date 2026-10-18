@@ -54,6 +54,10 @@ export const AppSettingsSchema = {
   /** Appearance and preferences a user has until they change them. */
   'users.defaults': UserDefaultsSchema,
   audit: z.object({ retentionDays: z.number().int().min(1).max(3650) }),
+  /** Who must use two-factor sign-in. */
+  'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
+  /** Blind comparisons: a model called "Arena" answers with two of these, unnamed until the user votes. */
+  arena: z.object({ enabled: z.boolean(), models: z.array(z.string()).max(50) }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -74,6 +78,8 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   'ui.banners': { items: [] },
   'users.defaults': { appearance: {}, preferences: {} },
   audit: { retentionDays: 365 },
+  'auth.mfa': { require: 'off' },
+  arena: { enabled: false, models: [] },
 };
 
 export class AppSettings {

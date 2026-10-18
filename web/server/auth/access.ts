@@ -31,6 +31,9 @@ export interface Principal {
   role: UserRole;
 }
 
+/** Personal items (notes): admins get no rights over other people's, only what is shared with them. */
+const PERSONAL = new Set<ResourceType>(['note']);
+
 export interface ItemRights {
   read: boolean;
   write: boolean;
@@ -160,7 +163,7 @@ export class AccessService {
 
   async rights(user: Principal, type: ResourceType, item: { id: string; ownerId: string }): Promise<ItemRights> {
     if (user.role === 'pending') return { read: false, write: false, manage: false };
-    if (user.role === 'admin' || item.ownerId === user.id) return { read: true, write: true, manage: true };
+    if (item.ownerId === user.id || (user.role === 'admin' && !PERSONAL.has(type))) return { read: true, write: true, manage: true };
     const rows = await this.deps.db
       .select({ perm: accessGrants.perm })
       .from(accessGrants)
@@ -171,9 +174,10 @@ export class AccessService {
   /** Rights for many items at once (list views). */
   async rightsMany(user: Principal, type: ResourceType, items: Array<{ id: string; ownerId: string }>): Promise<Map<string, ItemRights>> {
     const out = new Map<string, ItemRights>();
-    const others = items.filter((i) => !(user.role === 'admin' || i.ownerId === user.id)).map((i) => i.id);
+    const adminAll = user.role === 'admin' && !PERSONAL.has(type);
+    const others = items.filter((i) => !(adminAll || i.ownerId === user.id)).map((i) => i.id);
     let writable = new Set<string>();
-    if (others.length > 0 && user.role === 'user') {
+    if (others.length > 0 && user.role !== 'pending') {
       const rows = await this.deps.db
         .select({ id: accessGrants.resourceId })
         .from(accessGrants)
@@ -188,7 +192,7 @@ export class AccessService {
       writable = new Set(rows.map((r) => r.id));
     }
     for (const i of items) {
-      const mine = user.role === 'admin' || i.ownerId === user.id;
+      const mine = adminAll || i.ownerId === user.id;
       out.set(i.id, { read: true, write: mine || writable.has(i.id), manage: mine });
     }
     return out;

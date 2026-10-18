@@ -3,7 +3,9 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ServerContext } from '../context';
 import { requireAdmin, requireUser } from '../auth/rbac';
-import { webhooks } from '../db/schema';
+import { arenaVotes, messages, webhooks } from '../db/schema';
+import { asc, isNotNull, sql } from 'drizzle-orm';
+import { eloRatings, type LeaderboardResponse } from '../../shared/arena';
 import { notFound } from '../lib/errors';
 import { uuidv7 } from '../lib/ids';
 import { parsePatch } from '../lib/validation';
@@ -57,6 +59,31 @@ export async function adminOpsRoutes(app: FastifyInstance, ctx: ServerContext): 
       ['day', 'requests', 'prompt_tokens', 'completion_tokens', 'cost', 'active_users'],
       data.byDay.map((d) => [d.day, d.requests, d.promptTokens, d.completionTokens, d.cost, d.activeUsers])
     );
+  });
+
+  // ─── Evaluations ───────────────────────────────────────────────────────────
+  app.get('/arena/leaderboard', async (): Promise<LeaderboardResponse> => {
+    const votes = await ctx.db
+      .select({ modelA: arenaVotes.modelA, modelB: arenaVotes.modelB, winner: arenaVotes.winner })
+      .from(arenaVotes)
+      .orderBy(asc(arenaVotes.createdAt), asc(arenaVotes.id));
+    const ratings = await ctx.db
+      .select({
+        modelId: messages.modelId,
+        up: sql<string>`count(*) filter (where ${messages.rating} = 1)`,
+        down: sql<string>`count(*) filter (where ${messages.rating} = -1)`,
+      })
+      .from(messages)
+      .where(isNotNull(messages.rating))
+      .groupBy(messages.modelId);
+    return {
+      rows: eloRatings(votes),
+      votes: votes.length,
+      ratings: ratings
+        .filter((r) => r.modelId)
+        .map((r) => ({ modelId: r.modelId!, up: Number(r.up), down: Number(r.down) }))
+        .sort((a, b) => b.up - b.down - (a.up - a.down)),
+    };
   });
 
   // ─── Webhooks ──────────────────────────────────────────────────────────────

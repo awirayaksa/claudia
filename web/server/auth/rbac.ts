@@ -5,11 +5,12 @@
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { ServerContext } from '../context';
-import { sessions, users } from '../db/schema';
+import { sessions, userMfa, users } from '../db/schema';
 import { forbidden, unauthorized } from '../lib/errors';
 import { ACCESS_COOKIE, CSRF_COOKIE, CSRF_HEADER, type AuthUser } from './sessions';
 import { safeEqualHex, verifyAccessToken } from './tokens';
 import { authenticateApiKey } from './api-keys';
+import { mfaRequiredFor } from './signin';
 
 /** The OpenAI-compatible API: Bearer API keys only, never cookies (so no CSRF check). */
 export const API_V1_PREFIX = '/api/v1/';
@@ -62,14 +63,17 @@ export function registerAuthHooks(app: FastifyInstance, ctx: ServerContext): voi
         name: users.name,
         role: users.role,
         passwordHash: users.passwordHash,
+        mfaEnabledAt: userMfa.enabledAt,
       })
       .from(users)
       .innerJoin(sessions, eq(sessions.userId, users.id))
+      .leftJoin(userMfa, eq(userMfa.userId, users.id))
       .where(
         and(
           eq(users.id, verified.claims.userId),
           eq(sessions.id, verified.claims.sessionId),
           isNull(sessions.revokedAt),
+          isNull(users.deactivatedAt),
           sql`${sessions.expiresAt} > now()`
         )
       );
@@ -84,6 +88,7 @@ export function registerAuthHooks(app: FastifyInstance, ctx: ServerContext): voi
       role: row.role,
       sessionId: verified.claims.sessionId,
       hasPassword: !!row.passwordHash,
+      mfaEnabled: !!row.mfaEnabledAt,
     };
 
     const now = Date.now();
@@ -120,15 +125,29 @@ export async function requireSignedIn(req: FastifyRequest, _reply: FastifyReply)
   requireSession(req);
 }
 
+/**
+ * When the admin requires two-factor sign-in, a session without it reaches
+ * only the routes for setting it up (/api/me, /api/auth). API keys are a
+ * separate credential and aren't affected.
+ */
+function requireMfaIfDemanded(req: FastifyRequest, user: AuthUser): void {
+  if (user.mfaEnabled || user.sessionId.startsWith('api-key:')) return;
+  if (mfaRequiredFor(req.server.ctx.settings.peek('auth.mfa'), user.role)) {
+    throw forbidden('Turn on two-factor sign-in to continue (Settings → Account).', 'mfa_setup_required');
+  }
+}
+
 /** An approved user or an admin. */
 export async function requireUser(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
   const user = requireSession(req);
   if (user.role === 'pending') throw forbidden('Your account is waiting for approval by an administrator.', 'pending');
+  requireMfaIfDemanded(req, user);
 }
 
 export async function requireAdmin(req: FastifyRequest, _reply: FastifyReply): Promise<void> {
   const user = requireSession(req);
   if (user.role !== 'admin') throw forbidden('Administrators only.');
+  requireMfaIfDemanded(req, user);
 }
 
 /** The signed-in user (call after one of the guards above). */

@@ -10,10 +10,10 @@ import type { RunEventEnvelope } from '../../shared/run-events';
  * listening port (SSE is read over real HTTP).
  */
 export async function chatFixture(
-  opts: { orchestrator?: AppDeps['orchestrator']; env?: Record<string, string>; youtubeOrigin?: string } = {}
+  opts: { orchestrator?: AppDeps['orchestrator']; env?: Record<string, string>; youtubeOrigin?: string; cloudEndpoints?: AppDeps['cloudEndpoints'] } = {}
 ) {
   const mock = await startMockOpenAI();
-  const t = await buildTestApp({ orchestrator: opts.orchestrator, env: opts.env, youtubeOrigin: opts.youtubeOrigin });
+  const t = await buildTestApp({ orchestrator: opts.orchestrator, env: opts.env, youtubeOrigin: opts.youtubeOrigin, cloudEndpoints: opts.cloudEndpoints });
   await t.app.listen({ port: 0, host: '127.0.0.1' });
   const base = `http://127.0.0.1:${(t.app.server.address() as AddressInfo).port}`;
 

@@ -25,6 +25,9 @@ import type { MediaConfig } from './media/config';
 import type { Cluster } from './cluster/cluster';
 import type { AuditLog } from './admin/audit';
 import type { Webhooks } from './admin/webhooks';
+import type { OidcService } from './auth/providers/oidc';
+import type { CloudFiles } from './cloud/cloud-files';
+import type { ScheduleRunner } from './modules/schedules/service';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -56,5 +59,11 @@ export interface ServerContext {
   cluster: Cluster;
   audit: AuditLog;
   webhooks: Webhooks;
+  /** OpenID Connect sign-in providers. */
+  sso: OidcService;
+  /** Google Drive / OneDrive. */
+  cloud: CloudFiles;
+  /** Scheduled prompts (runs due ones every 30 s). */
+  schedules: ScheduleRunner;
   log: FastifyBaseLogger;
 }

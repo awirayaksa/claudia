@@ -57,6 +57,8 @@ export interface ChatInputRef {
   setMessage: (text: string) => void;
   /** Add text at the end (with a space), e.g. dictated words. */
   appendText: (text: string) => void;
+  /** Attach files that are already stored (e.g. imported from a cloud drive). */
+  addAttachments: (attachments: Attachment[]) => void;
 }
 
 function expandFileMentions(message: string, baseDir: string): string {
@@ -187,6 +189,9 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
         }
         textareaRef.current?.focus();
       });
+    },
+    addAttachments: (more: Attachment[]) => {
+      setAttachments((prev) => [...prev, ...more.filter((a) => !prev.some((p) => p.id === a.id))]);
     },
     appendText: (text: string) => {
       setMessage((m) => (m && !/\s$/.test(m) ? `${m} ${text}` : `${m}${text}`));

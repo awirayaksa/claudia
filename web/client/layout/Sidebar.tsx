@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, useNavigate, useParams } from 'react-router-dom';
+import { SidebarExtras } from './SidebarExtras';
 import { useTranslation } from 'react-i18next';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { toggleSidebar } from '@/store/slices/uiSlice';
@@ -194,6 +195,8 @@ export function Sidebar() {
           </div>
         )}
       </div>
+
+      <SidebarExtras />
 
       <nav className="min-h-0 flex-1 overflow-y-auto px-2 pb-3 text-sm" aria-label={t('nav.recent')}>
         {archived && (

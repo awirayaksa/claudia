@@ -65,6 +65,8 @@ export interface MessageMeta {
   code?: boolean;
   /** User nodes: image generation was offered. */
   imageGen?: boolean;
+  /** User nodes of a blind comparison: the real models (A, B) and the vote. */
+  arena?: { models: [string, string]; winner?: 'a' | 'b' | 'tie' };
 }
 
 export interface MessageFeedback {

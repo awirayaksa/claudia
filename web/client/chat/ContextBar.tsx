@@ -16,11 +16,17 @@ import { BookIcon, CloseIcon } from '../components/icons';
 const URL_ITEM_ID = 'web-page';
 
 /** Items of the "#" menu: knowledge bases, recent chats, and "a web page…". */
-export function hashMenuItems(kbs: KnowledgeView[], chats: ChatSummary[], labels: { kb: string; chat: string; url: string; urlHelp: string }): Skill[] {
+export function hashMenuItems(
+  kbs: KnowledgeView[],
+  chats: ChatSummary[],
+  labels: { kb: string; chat: string; url: string; urlHelp: string; note?: string },
+  notes: Array<{ id: string; title: string }> = []
+): Skill[] {
   const item = (id: string, name: string, description: string): Skill => ({ id, name, description, body: '', builtin: false, filePath: null });
   return [
     ...kbs.map((k) => item(`kb:${k.id}`, k.name, k.description || labels.kb)),
     item(URL_ITEM_ID, labels.url, labels.urlHelp),
+    ...notes.slice(0, 20).map((n) => item(`note:${n.id}`, n.title || labels.note || 'Note', labels.note ?? '')),
     ...chats.slice(0, 20).map((c) => item(`chat:${c.id}`, c.title, labels.chat)),
   ];
 }
@@ -31,6 +37,7 @@ export function refFromItem(item: Skill): MessageRef | 'ask-url' | null {
   const [kind, id] = item.id.split(':');
   if (kind === 'kb' && id) return { type: 'kb', id, name: item.name };
   if (kind === 'chat' && id) return { type: 'chat', id, name: item.name };
+  if (kind === 'note' && id) return { type: 'note', id, name: item.name };
   return null;
 }
 

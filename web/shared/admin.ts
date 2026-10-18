@@ -12,6 +12,10 @@ export const AUDIT_ACTIONS = [
   'auth.signup',
   'api_key.created',
   'api_key.revoked',
+  'mfa.enabled',
+  'mfa.disabled',
+  /** A change made by the identity provider over SCIM. */
+  'scim.request',
   /** Any change made through /api/admin. */
   'admin.request',
 ] as const;

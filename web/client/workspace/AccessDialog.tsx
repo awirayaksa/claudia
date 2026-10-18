@@ -10,6 +10,7 @@ import {
   useMyGroupsQuery,
   usePermissions,
   useSetGrantsMutation,
+  type AccessKind,
 } from '../api/rtk-api';
 
 type Row = GrantView;
@@ -20,7 +21,7 @@ const toInput = (r: Row): GrantInput =>
     : { principalType: r.principalType, principalId: r.principalId!, perm: r.perm };
 
 /** Who else may use (or edit) a custom model or prompt. Private until shared. */
-export function AccessDialog({ kind, id, name, onClose }: { kind: 'models' | 'prompts' | 'knowledge'; id: string; name: string; onClose: () => void }) {
+export function AccessDialog({ kind, id, name, onClose }: { kind: AccessKind; id: string; name: string; onClose: () => void }) {
   const { t } = useTranslation();
   const permissions = usePermissions();
   const { data } = useGrantsQuery({ kind, id });

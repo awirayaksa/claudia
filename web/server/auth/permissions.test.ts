@@ -103,6 +103,8 @@ const attempts: Record<PermissionKey, (c: TestClient) => Promise<number>> = {
   'features.code': async (c) => completion(c, { code: true }),
   'features.image_gen': async (c) => completion(c, { imageGen: true }),
   'features.voice': async (c) => (await c.post('/api/audio/speech', { text: 'Hi' })).statusCode,
+  'features.notes': async (c) => (await c.get('/api/notes')).statusCode,
+  'features.schedules': async (c) => (await c.get('/api/schedules')).statusCode,
 };
 
 async function completion(c: TestClient, features: Record<string, boolean>): Promise<number> {

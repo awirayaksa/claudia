@@ -12,7 +12,7 @@ import type { ReasoningEffort } from '../utils/effort-utils';
 
 /** Where a `[n]` citation points. */
 export interface CitationSource {
-  kind: 'file' | 'url' | 'chat';
+  kind: 'file' | 'url' | 'chat' | 'note';
   /** File id, chat id, ... */
   id?: string;
   title: string;
@@ -63,7 +63,12 @@ export interface MessageNode {
   /** Assistant nodes: suggested next questions. */
   followUps?: string[];
   /** User turns: #kb / #url / #chat references, and whether the web was searched. */
-  refs?: Array<{ type: 'kb' | 'url' | 'chat'; id?: string; url?: string; name?: string }>;
+  refs?: Array<{ type: 'kb' | 'url' | 'chat' | 'note'; id?: string; url?: string; name?: string }>;
   webSearch?: boolean;
+  /**
+   * User turns of a blind comparison (web): the vote, and the two models in
+   * A/B order once voted (null before, when replies show as "arena:A"/"arena:B").
+   */
+  arena?: { winner: 'a' | 'b' | 'tie' | null; models: [string, string] | null };
   createdAt: string;
 }
