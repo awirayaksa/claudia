@@ -2,7 +2,8 @@ name: Build and Release
 
 # A vX.Y.Z tag (pushed by scripts/release.ps1) releases both apps: a draft
 # release is created, the desktop installer and the Claudia Web air-gap
-# bundle are attached to it, and it is published once both are there.
+# bundle are attached to it, and it is published once both are there,
+# then release-notify.yml sends the Telegram notice.
 on:
   push:
     tags:
@@ -85,28 +86,9 @@ jobs:
       - name: Publish the release
         run: gh release edit "$TAG" --draft=false --latest
 
-      - name: Send Telegram Notification
-        shell: pwsh
-        run: |
-          $version = "${{ github.ref_name }}" -replace '^v', ''
-          $repo = "${{ github.repository }}"
-          $actor = "${{ github.actor }}"
-          $releaseUrl = "https://github.com/$repo/releases/tag/v$version"
-          $imageUrl = "https://opengraph.githubassets.com/1/$repo/releases/tag/v$version"
-
-          $caption = "🚀 <b>New Release Published!</b>`n`n📦 <b>Repository:</b> $repo`n🏷️ <b>Version:</b> <code>v$version</code>`n👤 <b>Released by:</b> $actor`n`n🖥️ Claudia Desktop (Windows) and 🌐 Claudia Web (air-gap bundle)`n`n🔗 <a href='$releaseUrl'>View Release on GitHub</a>"
-
-          $buttons = '{"inline_keyboard":[[{"text":"📦 View Release","url":"' + $releaseUrl + '"},{"text":"📥 Download","url":"' + $releaseUrl + '"}]]}'
-
-          $body = @{
-            chat_id = "${{ secrets.TELEGRAM_CHAT_ID }}"
-            photo = $imageUrl
-            caption = $caption
-            parse_mode = "HTML"
-            reply_markup = $buttons
-          }
-
-          Invoke-RestMethod -Uri "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendPhoto" `
-            -Method POST `
-            -ContentType "application/json" `
-            -Body ($body | ConvertTo-Json)
+  notify:
+    needs: publish
+    uses: ./.github/workflows/release-notify.yml
+    with:
+      tag: ${{ github.ref_name }}
+    secrets: inherit
