@@ -1,0 +1,76 @@
+name: Release Notification
+
+# Sends the Telegram notice for a published release. Build and Release calls
+# it; run it by hand to send one again: gh workflow run release-notify.yml -f tag=v1.2.3
+on:
+  workflow_call:
+    inputs:
+      tag:
+        type: string
+        required: true
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag, e.g. v0.11.0
+        type: string
+        required: true
+
+jobs:
+  telegram:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram Notification
+        shell: pwsh
+        env:
+          # From the environment, so an error never prints the token in the log
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TAG: ${{ inputs.tag }}
+          REPO: ${{ github.repository }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:TAG -replace '^v', ''
+          $repo = $env:REPO
+          $releaseUrl = "https://github.com/$repo/releases/tag/v$version"
+          $imageUrl = "https://opengraph.githubassets.com/1/$repo/releases/tag/v$version"
+          $api = "https://api.telegram.org/bot$($env:TELEGRAM_BOT_TOKEN)"
+
+          $caption = "🚀 <b>New Release Published!</b>`n`n📦 <b>Repository:</b> $repo`n🏷️ <b>Version:</b> <code>v$version</code>`n👤 <b>Released by:</b> $($env:ACTOR)`n`n🖥️ Claudia Desktop (Windows) and 🌐 Claudia Web (air-gap bundle)`n`n🔗 <a href='$releaseUrl'>View Release on GitHub</a>"
+
+          $buttons = '{"inline_keyboard":[[{"text":"📦 View Release","url":"' + $releaseUrl + '"},{"text":"📥 Download","url":"' + $releaseUrl + '"}]]}'
+
+          function Send([string]$Method, [hashtable]$Body) {
+            Invoke-RestMethod -Uri "$api/$Method" -Method POST -ContentType 'application/json; charset=utf-8' `
+              -Body ([Text.Encoding]::UTF8.GetBytes(($Body | ConvertTo-Json))) | Out-Null
+          }
+
+          # GitHub makes the preview image for a new release lazily and may
+          # answer 429 at first, so Telegram can't fetch it: wait for it a
+          # little, then send the notice as text instead
+          $imageReady = $false
+          foreach ($wait in 0, 15, 30, 45) {
+            Start-Sleep -Seconds $wait
+            try {
+              $head = Invoke-WebRequest -Uri $imageUrl -Method Head -SkipHttpErrorCheck
+              if ($head.StatusCode -eq 200 -and "$($head.Headers['Content-Type'])" -like 'image/*') { $imageReady = $true; break }
+              Write-Host "Preview image not ready ($($head.StatusCode))"
+            } catch {
+              Write-Host "Preview image not ready ($($_.Exception.Message))"
+            }
+          }
+
+          $sent = $false
+          if ($imageReady) {
+            try {
+              Send 'sendPhoto' @{ chat_id = $env:TELEGRAM_CHAT_ID; photo = $imageUrl; caption = $caption; parse_mode = 'HTML'; reply_markup = $buttons }
+              $sent = $true
+              Write-Host 'Sent with the preview image'
+            } catch {
+              Write-Host "sendPhoto failed ($($_.ErrorDetails.Message)); sending text"
+            }
+          }
+          if (-not $sent) {
+            Send 'sendMessage' @{ chat_id = $env:TELEGRAM_CHAT_ID; text = $caption; parse_mode = 'HTML'; reply_markup = $buttons }
+            Write-Host 'Sent as text'
+          }
