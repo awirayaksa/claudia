@@ -61,8 +61,10 @@ Phase 5 (advanced tools):
 
 - **Code interpreter** (the Code button above the message box): the model
   runs Python with Pyodide in your browser, in a hidden frame on the sandbox
-  origin, and gets what it printed. If no tab answers (it was closed), the
-  model is told so after two minutes and the reply carries on.
+  origin, and gets what it printed. Files the code writes in its working
+  folder (`/home/pyodide`) are kept as your files and shown under the reply
+  to download (up to 10 per run, 25 MB each). If no tab answers (it was
+  closed), the model is told so after two minutes and the reply carries on.
 - **Artifacts:** HTML pages, SVG images and React components in a reply get
   a Preview button; they run on the sandbox origin in a script-only frame
   with no network, cookies, storage or access to the app.
