@@ -61,6 +61,25 @@ describe('code interpreter (tools that run in the browser)', () => {
     expect((await bob.post(`/api/runs/${runId}/tool-results`, answer)).statusCode).toBe(404);
   });
 
+  it("shows the files the code wrote under the reply (the user's own only)", async () => {
+    f = await chatFixture({ env: SANDBOX });
+    f.mock.push({ toolCalls: [{ id: 'call_file', name: 'run_python', arguments: '{"code":"open(\'out.csv\',\'w\').write(\'a,b\')"}' }] }, { text: ['Saved.'] });
+    const { chat, res } = await start(f, { features: { code: true } });
+    const runId = res.json().runId;
+    await f.readRun(f.admin, runId, 0, (e) => e.event.type === 'tool.client_request');
+
+    const csv = (await f.admin.upload('out.csv', 'a,b', 'text/csv')).json().file.id;
+    const bob = await f.newUser('bob@example.com');
+    const bobs = (await bob.upload('theirs.txt', 'x', 'text/plain')).json().file.id;
+    const answer = { callId: 'call_file', content: JSON.stringify({ result: '3', files_shared_with_user: ['out.csv'] }), fileIds: [csv, bobs] };
+    expect((await f.admin.post(`/api/runs/${runId}/tool-results`, answer)).statusCode).toBe(200);
+    await f.readRun(f.admin, runId, 0, (e) => e.event.type === 'run.completed');
+
+    const node = (await f.admin.get(`/api/chats/${chat}`)).json().chat.messages.find((m: any) => m.role === 'assistant');
+    expect(node.parts.map((p: any) => p.type)).toEqual(['tool_call', 'tool_result', 'file', 'text']);
+    expect(node.parts[2]).toMatchObject({ type: 'file', fileId: csv, name: 'out.csv' });
+  });
+
   it('carries on with an error when no browser answers (the tab was closed)', async () => {
     f = await chatFixture({ env: SANDBOX, orchestrator: { clientToolTimeoutMs: 300 } });
     f.mock.push({ toolCalls: [{ id: 'call_lost', name: 'run_python', arguments: '{"code":"1+1"}' }] }, { text: ['I could not run it.'] });

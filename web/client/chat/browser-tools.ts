@@ -2,7 +2,8 @@
  * Tools the server asks this browser to run (tool.client_request). The code
  * interpreter runs Python in a hidden frame on the sandbox origin
  * (sandbox/code-runner.html), never on the app origin: the code comes from
- * the model and may have been steered by anything it read.
+ * the model and may have been steered by anything it read. Files the code
+ * writes are uploaded as the user's files and shown under the reply.
  */
 import { useEffect } from 'react';
 import { apiFetchRaw, toApiError } from '../api/http';
@@ -12,11 +13,69 @@ import { useWebSelector } from '../hooks';
 /** One Python run's own limit (the server waits up to 120 s in all). */
 const RUN_TIMEOUT_MS = 90_000;
 
+/** A file the run wrote under /home/pyodide (path relative to it). */
+interface RunFile {
+  path: string;
+  name: string;
+  data: Uint8Array;
+}
+
 interface RunResult {
   stdout?: string;
   stderr?: string;
   result?: string | null;
   error?: string;
+  files?: RunFile[];
+  skipped?: Array<{ path: string; reason: string }>;
+}
+
+/** What became of the run's files: uploaded (with their ids) or not. */
+export interface SavedFiles {
+  saved: Array<{ path: string; id: string }>;
+  notSaved: Array<{ path: string; reason: string }>;
+}
+
+const MIME_BY_EXT: Record<string, string> = {
+  csv: 'text/csv',
+  json: 'application/json',
+  md: 'text/markdown',
+  txt: 'text/plain',
+  py: 'text/x-python',
+  html: 'text/html',
+  xml: 'application/xml',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  pdf: 'application/pdf',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  zip: 'application/zip',
+};
+
+const mimeOf = (name: string) => MIME_BY_EXT[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
+
+/**
+ * Keep the run's files as the user's files. Unlike attachments, a file the
+ * server can't extract text from is still kept: it is there to download.
+ */
+export async function saveRunFiles(r: RunResult): Promise<SavedFiles> {
+  const out: SavedFiles = { saved: [], notSaved: [...(r.skipped ?? [])] };
+  for (const f of r.files ?? []) {
+    try {
+      const form = new FormData();
+      form.append('file', new Blob([f.data as BlobPart], { type: mimeOf(f.name) }), f.name);
+      const res = await apiFetchRaw('/api/files', { method: 'POST', body: form });
+      if (res.status !== 201) throw await toApiError(res);
+      const { file } = (await res.json()) as { file: { id: string } };
+      out.saved.push({ path: f.path, id: file.id });
+    } catch (err) {
+      out.notSaved.push({ path: f.path, reason: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return out;
 }
 
 class CodeRunner {
@@ -77,21 +136,30 @@ class CodeRunner {
 let runner: CodeRunner | null = null;
 const runnerFor = (origin: string) => (runner ??= new CodeRunner(origin));
 
-/** What the model gets back from a run. */
-export function formatRun(r: RunResult): { content: string; isError: boolean } {
-  const out: Record<string, string> = {};
+/** What the model gets back from a run (and the ids of the files to show the user). */
+export function formatRun(r: RunResult, files?: SavedFiles): { content: string; isError: boolean; fileIds?: string[] } {
+  const out: Record<string, unknown> = {};
   if (r.stdout?.trim()) out.stdout = r.stdout;
   if (r.stderr?.trim()) out.stderr = r.stderr;
   if (r.result !== undefined && r.result !== null) out.result = r.result;
   if (r.error) out.error = r.error;
+  if (files?.saved.length) {
+    out.files_shared_with_user = files.saved.map((f) => f.path);
+    out.note = 'These files are shown to the user as downloads under your reply. Refer to them by name, not by a sandbox path.';
+  }
+  if (files?.notSaved.length) out.files_not_shared = files.notSaved;
   if (Object.keys(out).length === 0) out.stdout = '(no output)';
-  return { content: JSON.stringify(out), isError: !!r.error };
+  return {
+    content: JSON.stringify(out),
+    isError: !!r.error,
+    ...(files?.saved.length ? { fileIds: files.saved.map((f) => f.id) } : {}),
+  };
 }
 
 /** Requests this tab has taken on (a second tab following the run may answer too; the server takes the first). */
 const started = new Set<string>();
 
-async function answer(runId: string, callId: string, result: { content: string; isError: boolean }) {
+async function answer(runId: string, callId: string, result: { content: string; isError: boolean; fileIds?: string[] }) {
   const res = await apiFetchRaw(`/api/runs/${runId}/tool-results`, { method: 'POST', json: { callId, ...result } });
   // 404: already answered elsewhere, or timed out
   if (!res.ok && res.status !== 404) throw await toApiError(res);
@@ -110,7 +178,7 @@ export function useBrowserTools(chatId: string | undefined) {
       if (started.has(key)) continue;
       started.add(key);
       void (async () => {
-        let result: { content: string; isError: boolean };
+        let result: { content: string; isError: boolean; fileIds?: string[] };
         if (req.name !== 'run_python') {
           result = { content: JSON.stringify({ error: `This browser can't run "${req.name}".` }), isError: true };
         } else if (!sandbox) {
@@ -122,9 +190,14 @@ export function useBrowserTools(chatId: string | undefined) {
           } catch {
             /* reported below */
           }
-          result = code.trim()
-            ? formatRun(await runnerFor(sandbox).run(code).catch((err: Error) => ({ error: err.message })))
-            : { content: JSON.stringify({ error: 'No "code" to run.' }), isError: true };
+          if (code.trim()) {
+            const run: RunResult = await runnerFor(sandbox)
+              .run(code)
+              .catch((err: Error) => ({ error: err.message }));
+            result = formatRun(run, run.files?.length || run.skipped?.length ? await saveRunFiles(run) : undefined);
+          } else {
+            result = { content: JSON.stringify({ error: 'No "code" to run.' }), isError: true };
+          }
         }
         await answer(live.runId, req.callId, result).catch(() => {});
       })();

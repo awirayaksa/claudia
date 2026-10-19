@@ -360,10 +360,17 @@ export async function runRoutes(app: FastifyInstance, ctx: ServerContext): Promi
   app.post('/:id/tool-results', async (req) => {
     const { id } = IdParams.parse(req.params);
     const body = z
-      .object({ callId: z.string().min(1), content: z.string().max(1_000_000), isError: z.boolean().optional() })
+      .object({
+        callId: z.string().min(1),
+        content: z.string().max(1_000_000),
+        isError: z.boolean().optional(),
+        // Files the code wrote, already uploaded to /api/files (shown under the reply)
+        fileIds: z.array(z.uuid()).max(20).optional(),
+      })
       .parse(req.body);
     const run = await ctx.runs.find(id, currentUser(req).id);
-    if (!(await ctx.runs.submitClientTool(run, body.callId, { content: body.content, isError: body.isError }))) {
+    const result = { content: body.content, isError: body.isError, ...(body.fileIds?.length ? { fileIds: body.fileIds } : {}) };
+    if (!(await ctx.runs.submitClientTool(run, body.callId, result))) {
       throw notFound('Pending tool call');
     }
     return { ok: true };

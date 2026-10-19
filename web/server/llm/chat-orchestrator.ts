@@ -26,7 +26,7 @@ import type { StreamEndReason } from '../../../src/services/api/sse-parser';
 import type { CompletionRequest, CompletionResponse } from '../../shared/chats';
 import type { RunStatus } from '../../shared/run-events';
 import type { ModelRegistry, ResolvedModel } from './model-registry';
-import type { Run, RunHub } from './run-hub';
+import type { ClientToolResult, Run, RunHub } from './run-hub';
 import { PartsBuilder } from './parts-builder';
 import { NO_TOOLS, type RunToolset } from './tools';
 import { fallbackTitle, generateFollowUps, generateTitle } from './tasks';
@@ -732,8 +732,17 @@ export class ChatOrchestrator {
     const stopped = new Promise<{ content: string; isError: boolean }>((resolve) =>
       signal.addEventListener('abort', () => resolve({ content: JSON.stringify({ error: 'Stopped.' }), isError: true }), { once: true })
     );
-    const answer = await Promise.race([waiting, stopped]);
+    const answer: ClientToolResult = await Promise.race([waiting, stopped]);
     const timedOut = answer.isError && answer.content.includes('No browser answered');
+    // Files the code wrote: shown under the reply, if they are the user's own
+    const extraParts: MessagePart[] = [];
+    if (answer.fileIds?.length && this.deps.files) {
+      const byId = new Map((await this.deps.files.ownedByIds(plan.user.id, answer.fileIds)).map((r) => [r.id, r]));
+      for (const id of answer.fileIds) {
+        const row = byId.get(id);
+        if (row) extraParts.push({ type: 'file', fileId: row.id, name: row.name, mime: row.mime, size: row.size });
+      }
+    }
     return {
       serverId: 'browser',
       tool: call.function.name,
@@ -743,6 +752,7 @@ export class ChatOrchestrator {
         content: timedOut ? JSON.stringify({ error: NO_BROWSER_MESSAGE }) : answer.content,
         ...(answer.isError ? { isError: true } : {}),
       },
+      ...(extraParts.length ? { extraParts } : {}),
     };
   }
 

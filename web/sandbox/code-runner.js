@@ -10,7 +10,9 @@
     if (!p) return;
     pending.delete(id);
     clearTimeout(p.timer);
-    p.source.postMessage({ type: 'claudia-code-result', id, ...result }, p.origin);
+    // Hand over the files' bytes rather than copying them
+    const transfer = (result.files || []).map((f) => f.data && f.data.buffer).filter(Boolean);
+    p.source.postMessage({ type: 'claudia-code-result', id, ...result }, p.origin, transfer);
   }
 
   function start() {

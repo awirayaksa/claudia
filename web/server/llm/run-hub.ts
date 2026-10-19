@@ -58,6 +58,8 @@ export interface RunInfo {
 export interface ClientToolResult {
   content: string;
   isError?: boolean;
+  /** The user's files the tool produced (the code interpreter's output files). */
+  fileIds?: string[];
 }
 
 type Control =

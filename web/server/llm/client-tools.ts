@@ -16,8 +16,11 @@ export const CODE_TOOL: OpenAITool = {
     description:
       "Run Python 3 code (Pyodide, in the user's browser) and get back what it printed and the value of its last expression. " +
       'Use it for calculations, data analysis and checking code. The standard library is available; numpy, pandas and other ' +
-      'common packages are downloaded when first imported. There is no access to local files or private networks. Each call ' +
-      'starts fresh: define everything you need in the same call.',
+      "common packages are downloaded when first imported. There is no access to the user's files or private networks. Each call " +
+      'starts fresh: define everything you need in the same call. Files the code writes in its working folder (/home/pyodide, ' +
+      'the default for relative paths) are given to the user as downloads under your reply, and the result lists them; ' +
+      "that folder is temporary and only in the user's browser, so never tell the user a file is saved at a sandbox path. " +
+      'To give the user a file, write it with a relative path such as "report.csv".',
     parameters: {
       type: 'object',
       properties: { code: { type: 'string', description: 'The Python code to run.' } },
