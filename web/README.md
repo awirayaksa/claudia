@@ -183,6 +183,13 @@ settings, rate limits, a responsive UI) and Phase 1b:
   switch tools on under Settings → Tools. MCP-UI renders only from the sandbox
   origin, may only call tools of the server that produced it, and asks before
   tools marked destructive.
+- **Workspace files:** to save in a particular place, the user says so in the
+  message ("save it as reports/q3.md"); paths are relative to the workspace and
+  missing folders are created. Every file a Files, Word or Diagrams tool
+  creates or changes is linked under the reply (once per reply, downloading the
+  current file). Settings → Files → Workspace browses the workspace: download,
+  upload, new folder, delete. Paths are checked like the tools' (no `..`, no
+  links out); shared chats keep only the file names.
 - **Attachments:** uploads are stored in `DATA_DIR/storage`; PDF, Word,
   Excel, PowerPoint, HTML and text are parsed in a worker pool with size, time
   and zip-bomb limits, and their text reaches the model. Images are sent as

@@ -2,7 +2,8 @@
  * OpenAI-compatible mock for the browser tests. Replies depend on the last
  * user message:
  * - contains "slow": 80 words, one every 120 ms (time to stop or open a second tab);
- * - contains "save it" and a write_file tool is offered: calls it, then answers
+ * - contains "save it" and a write_file tool is offered: calls it ("save it as <path>" saves
+ *   there, else e2e-note.txt), then answers
  *   "Saved: <tool result>";
  * - contains "render math": a formula and a Mermaid diagram;
  * - otherwise: "Echo: <message>" in a few chunks ("Echo (<model>): " when the
@@ -103,7 +104,9 @@ http
 
     res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
     if (final?.role === 'user' && prompt.includes('save it') && writeTool) {
-      const args = JSON.stringify({ path: 'e2e-note.txt', content: 'hello from e2e' });
+      // "save it as reports/q3.md" saves there
+      const target = /save it as (\S+)/.exec(prompt)?.[1] ?? 'e2e-note.txt';
+      const args = JSON.stringify({ path: target, content: 'hello from e2e' });
       res.write(chunk({ tool_calls: [{ index: 0, id: 'call_e2e', type: 'function', function: { name: 'write_file', arguments: args } }] }));
       res.write(`data: ${JSON.stringify({ id: 'c', choices: [{ index: 0, delta: {}, finish_reason: 'tool_calls' }] })}\n\n`);
       res.write('data: [DONE]\n\n');

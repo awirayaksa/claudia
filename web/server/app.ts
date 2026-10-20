@@ -45,6 +45,7 @@ import { LocalStorage, type Storage } from './storage/local';
 import { ExtractPool } from './extract/pool';
 import { FileService } from './modules/files/service';
 import { fileRoutes } from './modules/files/routes';
+import { workspaceFileRoutes } from './modules/workspace-files/routes';
 import { SkillService } from './modules/skills/service';
 import { skillRoutes } from './modules/skills/routes';
 import { McpPools } from './mcp/mcp-pool';
@@ -387,6 +388,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => llmRoutes(a, ctx), { prefix: '/llm' });
       await api.register((a) => userConnectionRoutes(a, ctx), { prefix: '/connections' });
       await api.register((a) => fileRoutes(a, ctx), { prefix: '/files' });
+      await api.register((a) => workspaceFileRoutes(a, ctx), { prefix: '/workspace-files' });
       await api.register((a) => skillRoutes(a, ctx), { prefix: '/skills' });
       await api.register((a) => mcpUserRoutes(a, ctx), { prefix: '/mcp' });
       await api.register((a) => toolRoutes(a, ctx), { prefix: '/tools' });

@@ -35,7 +35,9 @@ export type MessagePart =
   | { type: 'tool_call'; callId: string; alias: string; serverId: string; tool: string; args: string }
   /** `content` is what the model sees; `uiResource` is rendered for the user. */
   | { type: 'tool_result'; callId: string; content: string; isError?: boolean; uiResource?: UIResourceContent }
-  | { type: 'citation'; index: number; source: CitationSource };
+  | { type: 'citation'; index: number; source: CitationSource }
+  /** A file a tool wrote in the user's workspace (web), by its path there ("reports/q3.md"). */
+  | { type: 'workspace_file'; path: string; size?: number };
 
 export type MessagePartType = MessagePart['type'];
 export type PartOf<T extends MessagePartType> = Extract<MessagePart, { type: T }>;

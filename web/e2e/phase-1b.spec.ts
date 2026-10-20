@@ -95,6 +95,26 @@ test.describe.serial('Claudia Web, Phase 1b', () => {
     expect(files.body.servers.find((s: { id: string }) => s.id === 'builtin-filesystem-001').enabled).toBe(true);
   });
 
+  test('a file saved where the user asked is linked under the reply and in the workspace', async () => {
+    await page.goto('/');
+    await send(page, 'please save it as reports/q3.md');
+    // Linked under the reply by its path, downloading the file
+    const link = page.locator('a[href="/api/workspace-files/content?path=reports%2Fq3.md"]');
+    await expect(link).toBeVisible();
+    await expect(page.getByText('reports/q3.md').first()).toBeVisible();
+    const body = await page.evaluate(async (href) => (await fetch(href)).text(), await link.getAttribute('href'));
+    expect(body).toBe('hello from e2e');
+    await shot(page, 'chat-workspace-file');
+
+    // Settings → Files → Workspace
+    await page.goto('/settings');
+    await page.getByRole('tab', { name: 'Files' }).click();
+    const workspace = page.getByTestId('workspace-files');
+    await workspace.getByRole('button', { name: 'reports' }).click();
+    await expect(workspace.getByRole('link', { name: 'q3.md' })).toBeVisible();
+    await shot(page, 'settings-workspace');
+  });
+
   test('a skill adds its prompt', async () => {
     const created = await api(page, 'POST', '/api/skills', {
       id: 'marker',
