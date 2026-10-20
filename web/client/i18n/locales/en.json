@@ -758,6 +758,7 @@
     "showReasoning": "Show reasoning",
     "showStatistics": "Show reply statistics",
     "streamingEnabled": "Stream replies",
+    "visualExplanations": "Visual explanations (diagrams)",
     "on": "On",
     "off": "Off",
     "temperature": "Temperature",

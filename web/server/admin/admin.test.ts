@@ -7,7 +7,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { chatFixture, type ChatFixture } from '../test/chat-fixture';
+import { chatFixture, DIAGRAMS, type ChatFixture } from '../test/chat-fixture';
 import { jobs, usageEvents, users } from '../db/schema';
 import { uuidv7 } from '../lib/ids';
 import { newWebhookSecret, signWebhook, verifyWebhook } from './webhooks';
@@ -364,6 +364,6 @@ describe('banners and default settings', () => {
     const { runId } = (await user.post(`/api/chats/${chatId}/completions`, { parentId: null, content: 'Hi', modelIds: ['mock/gpt-test'] })).json();
     await f.readRun(user, runId);
     const sent = f.mock.requests.filter((r) => r.stream).at(-1);
-    expect(sent.messages[0]).toEqual({ role: 'system', content: 'Answer in one sentence.' });
+    expect(sent.messages.slice(0, 2)).toEqual([DIAGRAMS, { role: 'system', content: 'Answer in one sentence.' }]);
   });
 });

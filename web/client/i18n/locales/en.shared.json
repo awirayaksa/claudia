@@ -119,7 +119,9 @@
     "temperatureHelp": "Controls randomness. Lower is more focused, higher is more creative (0-2, default: 0.7)",
     "tokenNote": "Token limits are managed by your API provider (OpenRouter). If you encounter token limit errors, you may need to upgrade your account or use a different model.",
     "updateUrl": "Update Check URL",
-    "updateUrlHelp": "Leave empty to disable automatic update checks"
+    "updateUrlHelp": "Leave empty to disable automatic update checks",
+    "visualExplanations": "Visual explanations",
+    "visualExplanationsHelp": "Let the model illustrate explanations with diagrams (added before your system prompt)"
   },
   "reasoning": {
     "thinking": "Thinking…",

@@ -58,6 +58,7 @@ interface StoreSchema {
       enableFileLogging: boolean;
       showReasoning: boolean;
       showStatistics: boolean;
+      visualExplanations?: boolean;
       systemPrompt: string;
       systemPromptFileName: string;
       updateCheckUrl: string;
@@ -122,6 +123,7 @@ export const store = new Store<StoreSchema>({
         enableFileLogging: true,
         showReasoning: false,
         showStatistics: false,
+        visualExplanations: true,
         systemPrompt: '',
         systemPromptFileName: '',
         updateCheckUrl: '',

@@ -36,6 +36,8 @@ interface SettingsState {
     enableFileLogging: boolean;
     showReasoning: boolean;
     showStatistics: boolean;
+    /** Have the model illustrate explanations with diagrams (on unless turned off). */
+    visualExplanations: boolean;
     systemPrompt: string;
     systemPromptFileName: string;
     updateCheckUrl: string;
@@ -65,6 +67,7 @@ const initialState: SettingsState = {
     enableFileLogging: true,
     showReasoning: false,
     showStatistics: false,
+    visualExplanations: true,
     systemPrompt: '',
     systemPromptFileName: '',
     updateCheckUrl: '',

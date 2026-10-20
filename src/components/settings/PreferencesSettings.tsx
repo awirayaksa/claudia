@@ -9,7 +9,7 @@ import { useT } from '../../i18n';
 export function PreferencesSettings() {
   const t = useT();
   const dispatch = useAppDispatch();
-  const { temperature, showReasoning, showStatistics, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
+  const { temperature, showReasoning, showStatistics, visualExplanations, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
 
   const platform = getPlatform();
 
@@ -31,6 +31,11 @@ export function PreferencesSettings() {
   const handleShowStatisticsChange = async (value: boolean) => {
     dispatch(setPreferences({ showStatistics: value }));
     await platform.config.set({ preferences: { showStatistics: value } });
+  };
+
+  const handleVisualExplanationsChange = async (value: boolean) => {
+    dispatch(setPreferences({ visualExplanations: value }));
+    await platform.config.set({ preferences: { visualExplanations: value } });
   };
 
   const handleSystemPromptChange = async (value: string) => {
@@ -153,6 +158,21 @@ export function PreferencesSettings() {
             </button>
           )}
         </div>
+        <label className="mt-4 flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            // Older saved settings don't have it: on
+            checked={visualExplanations !== false}
+            onChange={(e) => handleVisualExplanationsChange(e.target.checked)}
+            className="h-4 w-4 rounded border-border bg-surface text-accent focus:ring-2 focus:ring-accent focus:ring-offset-0"
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-text-primary">{t('preferences.visualExplanations', 'Visual explanations')}</div>
+            <div className="text-xs text-text-secondary">
+              {t('preferences.visualExplanationsHelp', 'Let the model illustrate explanations with diagrams (added before your system prompt)')}
+            </div>
+          </div>
+        </label>
       </div>
 
       <div>

@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { chatFixture, type ChatFixture } from '../../test/chat-fixture';
+import { chatFixture, DIAGRAMS, type ChatFixture } from '../../test/chat-fixture';
 
 let f: ChatFixture | undefined;
 afterEach(async () => {
@@ -55,6 +55,7 @@ describe('skills', () => {
     expect(start.statusCode).toBe(202);
     await f.readRun(f.admin, start.json().runId);
     expect(f.mock.requests.find((r) => r.stream)!.messages).toEqual([
+      DIAGRAMS,
       { role: 'system', content: 'Be brief.' },
       { role: 'system', content: 'Talk like a pirate about the sea' },
       { role: 'user', content: 'the sea' },

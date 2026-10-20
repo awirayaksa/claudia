@@ -5,7 +5,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { chatFixture, type ChatFixture } from '../../test/chat-fixture';
+import { chatFixture, DIAGRAMS, type ChatFixture } from '../../test/chat-fixture';
 import { TestClient } from '../../test/client';
 import { chats, messages } from '../../db/schema';
 import { ChatRepo, TEMPORARY_CHAT_TTL_MS, toPrefixQuery } from './repo';
@@ -96,6 +96,7 @@ describe('versions', () => {
 
     // The edited branch's history is the shared prefix only
     expect(fx.mock.requests.filter((r) => r.stream)[2].messages.map((m: any) => m.content)).toEqual([
+      DIAGRAMS.content,
       'first',
       'A1',
       'second, edited',
@@ -210,14 +211,14 @@ describe('per-chat parameters', () => {
     const one = await say(fx, fx.admin, chatId, { content: 'x' });
     const req = fx.mock.requests.filter((r) => r.stream)[0];
     expect(req).toMatchObject({ temperature: 0.4, top_p: 0.9, max_tokens: 256, presence_penalty: 0.5 });
-    expect(req.messages[0]).toEqual({ role: 'system', content: 'CHAT-PROMPT' });
+    expect(req.messages.slice(0, 2)).toEqual([DIAGRAMS, { role: 'system', content: 'CHAT-PROMPT' }]);
 
     await fx.admin.patch(`/api/chats/${chatId}`, { params: { topP: null, systemPrompt: null } });
     expect((await getChat(fx.admin, chatId)).params).toEqual({ temperature: 0.4, maxTokens: 256, presencePenalty: 0.5 });
     await say(fx, fx.admin, chatId, { content: 'y', parentId: one.assistantMessageIds[0] });
     const second = fx.mock.requests.filter((r) => r.stream)[1];
     expect(second.top_p).toBeUndefined();
-    expect(second.messages[0].role).toBe('user');
+    expect(second.messages.filter((m: any) => m.role === 'system')).toEqual([DIAGRAMS]);
 
     expect((await fx.admin.patch(`/api/chats/${chatId}`, { params: { temperature: 5 } })).statusCode).toBe(400);
   });
