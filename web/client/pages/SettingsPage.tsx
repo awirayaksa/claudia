@@ -1,8 +1,10 @@
-import { useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useBlocker } from 'react-router-dom';
 import { ThemeSettings } from '@/components/settings/ThemeSettings';
 import { PreferencesSettings } from '@/components/settings/PreferencesSettings';
 import { SkillSettings } from '@/components/settings/SkillSettings';
+import { SettingsDraftProvider, SettingsSaveBar, useSettingsDraft } from '@/components/settings/SettingsDraft';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import {
@@ -39,15 +41,36 @@ type Tab =
   | 'api'
   | 'account';
 
+/** Tabs with settings, stored with the Save button. The others act on items (add, delete) right away. */
+const SAVED_TABS = new Set<Tab>(['appearance', 'preferences', 'memory', 'tools']);
+
 export function SettingsPage() {
+  // Appearance and preferences: a draft until Save
+  return (
+    <SettingsDraftProvider>
+      <SettingsTabs />
+    </SettingsDraftProvider>
+  );
+}
+
+function SettingsTabs() {
   const { t } = useTranslation();
   const [tab, setTab] = useState<Tab>('appearance');
   const permissions = usePermissions();
+  const draft = useSettingsDraft()!;
+
+  // Leaving for another page with unsaved changes: save or discard them first
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => draft.dirty && currentLocation.pathname !== nextLocation.pathname);
+  useEffect(() => {
+    if (blocker.state === 'blocked') draft.guard(() => blocker.proceed(), () => blocker.reset());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [blocker.state]);
+
   return (
     <PageFrame title={t('settings.title')}>
       <Tabs<Tab>
         value={tab}
-        onChange={setTab}
+        onChange={(next) => draft.guard(() => setTab(next))}
         tabs={[
           { id: 'appearance', label: t('settings.appearance') },
           { id: 'preferences', label: t('settings.preferences') },
@@ -83,6 +106,7 @@ export function SettingsPage() {
         )}
         {tab === 'api' && <ApiKeysSettings />}
         {tab === 'account' && <AccountSettings />}
+        {SAVED_TABS.has(tab) && <SettingsSaveBar />}
       </div>
     </PageFrame>
   );

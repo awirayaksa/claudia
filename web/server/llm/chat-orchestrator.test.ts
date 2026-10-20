@@ -4,7 +4,7 @@
  */
 import { describe, it, expect, afterEach } from 'vitest';
 import { eq } from 'drizzle-orm';
-import { chatFixture, types, type ChatFixture } from '../test/chat-fixture';
+import { chatFixture, DIAGRAMS, types, type ChatFixture } from '../test/chat-fixture';
 import { messages, providerConnections, usageEvents } from '../db/schema';
 import type { RunToolset } from './tools';
 
@@ -54,7 +54,7 @@ describe('completions', () => {
     expect(f.mock.requests[0]).toMatchObject({
       model: 'gpt-test',
       stream: true,
-      messages: [{ role: 'user', content: 'Say hello' }],
+      messages: [DIAGRAMS, { role: 'user', content: 'Say hello' }],
     });
 
     const chat = (await f.admin.get(`/api/chats/${chatId}`)).json().chat;
@@ -93,6 +93,7 @@ describe('completions', () => {
     const req = f.mock.requests.filter((r) => r.stream)[1];
     expect(req.temperature).toBe(0.2);
     expect(req.messages).toEqual([
+      DIAGRAMS,
       { role: 'system', content: 'Be brief.' },
       { role: 'user', content: 'One' },
       { role: 'assistant', content: 'First answer' },
@@ -102,6 +103,15 @@ describe('completions', () => {
     const isTitle = (r: any) => r.messages[0].content.includes('title');
     expect(f.mock.requests.filter((r) => !r.stream && isTitle(r))).toHaveLength(1);
     expect(f.mock.requests.filter((r) => !r.stream && !isTitle(r))).toHaveLength(2);
+  });
+
+  it('leaves out the diagram guidance when the user turns visual explanations off', async () => {
+    f = await chatFixture();
+    await f.admin.patch('/api/me/settings', { preferences: { visualExplanations: false } });
+    f.mock.push({ text: ['Hi'] });
+    const chatId = await f.newChat(f.admin);
+    await f.readRun(f.admin, (await send(f, chatId, { content: 'Hello' })).json().runId);
+    expect(f.mock.requests.find((r) => r.stream)!.messages).toEqual([{ role: 'user', content: 'Hello' }]);
   });
 
   it('stops a run on request, keeping the partial reply', async () => {

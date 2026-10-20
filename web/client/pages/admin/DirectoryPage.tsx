@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
-import type { LdapLookupResult, LdapSettings } from '@shared/ldap';
+import { bindDomain, type LdapLookupResult, type LdapSettings } from '@shared/ldap';
 import {
   errorMessage,
   useLdapSettingsQuery,
@@ -29,6 +29,9 @@ export function DirectoryPage() {
 
   if (!draft || !data) return <p className="text-sm text-text-secondary">{t('app.loading')}</p>;
   const locked = new Set<string>(data.locked);
+  // Direct bind: only the server and the base DN; nothing is searched
+  const direct = draft.bindMode === 'direct';
+  const domain = bindDomain(draft.userSearchBase);
   const set = <K extends keyof LdapSettings>(key: K, value: LdapSettings[K]) => {
     setSaved(false);
     setDraft((d) => (d ? { ...d, [key]: value } : d));
@@ -75,6 +78,20 @@ export function DirectoryPage() {
           {check('startTls', t('admin.ldapStartTls'))}
           {check('tlsVerify', t('admin.ldapTlsVerify'))}
           <label className="block text-sm">
+            <span className="mb-1 block font-medium">{t('admin.ldapBindMode')}</span>
+            <select
+              className="w-full rounded border border-border bg-background px-2 py-1"
+              value={draft.bindMode}
+              disabled={locked.has('bindMode')}
+              onChange={(e) => set('bindMode', e.target.value as LdapSettings['bindMode'])}
+              data-testid="ldap-bind-mode"
+            >
+              <option value="search">{t('admin.ldapBindModeSearch')}</option>
+              <option value="direct">{t('admin.ldapBindModeDirect')}</option>
+            </select>
+            {locked.has('bindMode') && <span className="mt-1 block text-xs text-text-secondary">{t('admin.lockedByEnv')}</span>}
+          </label>
+          <label className="block text-sm">
             <span className="mb-1 block font-medium">{t('admin.ldapCaCert')}</span>
             <textarea
               className="w-full rounded border border-border bg-background px-2 py-1 font-mono text-xs"
@@ -85,35 +102,53 @@ export function DirectoryPage() {
               onChange={(e) => set('caCert', e.target.value.trim() ? e.target.value : null)}
             />
           </label>
-          {text('bindDn', t('admin.ldapBindDn'), t('admin.ldapBindDnHelp'), 'cn=claudia,ou=service,dc=example,dc=com')}
-          <Input
-            label={t('admin.ldapBindPassword')}
-            type="password"
-            autoComplete="off"
-            value={bindPassword}
-            disabled={locked.has('bindPassword')}
-            onChange={(e) => setBindPassword(e.target.value)}
-            helperText={
-              locked.has('bindPassword')
-                ? t('admin.lockedByEnv')
-                : data.hasBindPassword
-                  ? t('admin.apiKeySet')
-                  : undefined
-            }
-          />
+          {!direct && (
+            <>
+              {text('bindDn', t('admin.ldapBindDn'), t('admin.ldapBindDnHelp'), 'cn=claudia,ou=service,dc=example,dc=com')}
+              <Input
+                label={t('admin.ldapBindPassword')}
+                type="password"
+                autoComplete="off"
+                value={bindPassword}
+                disabled={locked.has('bindPassword')}
+                onChange={(e) => setBindPassword(e.target.value)}
+                helperText={
+                  locked.has('bindPassword')
+                    ? t('admin.lockedByEnv')
+                    : data.hasBindPassword
+                      ? t('admin.apiKeySet')
+                      : undefined
+                }
+              />
+            </>
+          )}
         </div>
       </Card>
 
       <Card title={t('admin.ldapUsers')}>
         <div className="space-y-3">
-          {text('userSearchBase', t('admin.ldapSearchBase'), undefined, 'ou=people,dc=example,dc=com')}
-          {text('userFilter', t('admin.ldapUserFilter'), t('admin.ldapUserFilterHelp', { placeholder: '{{username}}' }))}
-          <div className="grid gap-3 sm:grid-cols-2">
-            {text('emailAttribute', t('admin.ldapEmailAttribute'))}
-            {text('nameAttribute', t('admin.ldapNameAttribute'))}
-          </div>
-          {text('allowedGroupDn', t('admin.ldapAllowedGroup'), t('admin.ldapAllowedGroupHelp'))}
-          {check('stripDomain', t('admin.ldapStripDomain'))}
+          {direct ? (
+            <>
+              {text(
+                'userSearchBase',
+                t('admin.ldapBaseDn'),
+                domain ? t('admin.ldapBaseDnDirectHelp', { example: `username@${domain}` }) : t('admin.ldapBaseDnNoDomain'),
+                'dc=example,dc=com'
+              )}
+              <p className="text-xs text-text-secondary">{t('admin.ldapDirectNote')}</p>
+            </>
+          ) : (
+            <>
+              {text('userSearchBase', t('admin.ldapSearchBase'), undefined, 'ou=people,dc=example,dc=com')}
+              {text('userFilter', t('admin.ldapUserFilter'), t('admin.ldapUserFilterHelp', { placeholder: '{{username}}' }))}
+              <div className="grid gap-3 sm:grid-cols-2">
+                {text('emailAttribute', t('admin.ldapEmailAttribute'))}
+                {text('nameAttribute', t('admin.ldapNameAttribute'))}
+              </div>
+              {text('allowedGroupDn', t('admin.ldapAllowedGroup'), t('admin.ldapAllowedGroupHelp'))}
+              {check('stripDomain', t('admin.ldapStripDomain'))}
+            </>
+          )}
           <label className="flex items-center gap-2 text-sm">
             {t('admin.defaultRole')}
             <select
@@ -125,6 +160,7 @@ export function DirectoryPage() {
               <option value="pending">{t('admin.roles.pending')}</option>
             </select>
           </label>
+          {!direct && (
           <label className="block text-sm">
             <span className="mb-1 block">{t('admin.ldapVerifyInterval')}</span>
             <input
@@ -136,9 +172,11 @@ export function DirectoryPage() {
               onChange={(e) => set('verifyIntervalMinutes', Math.min(1440, Math.max(1, Number(e.target.value) || 1)))}
             />
           </label>
+          )}
         </div>
       </Card>
 
+      {!direct && (
       <Card title={t('access.groupSync')}>
         <div className="space-y-3">
           <p className="text-sm text-text-secondary">{t('access.groupSyncHelp')}</p>
@@ -167,6 +205,7 @@ export function DirectoryPage() {
           )}
         </div>
       </Card>
+      )}
 
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => void submit()} disabled={saveState.isLoading}>
@@ -179,11 +218,12 @@ export function DirectoryPage() {
         {saveState.error && <span className="text-sm text-error">{errorMessage(saveState.error)}</span>}
         {testState.data && (
           <span className={`text-sm ${testState.data.ok ? 'text-success' : 'text-error'}`}>
-            {testState.data.ok ? t('admin.ldapTestOk') : testState.data.error}
+            {testState.data.ok ? (direct ? t('admin.ldapTestOkDirect') : t('admin.ldapTestOk')) : testState.data.error}
           </span>
         )}
       </div>
 
+      {!direct && (
       <Card title={t('admin.ldapLookup')}>
         <form
           className="flex flex-wrap items-end gap-2"
@@ -201,6 +241,7 @@ export function DirectoryPage() {
         </form>
         <LookupResult result={lookupState.data} />
       </Card>
+      )}
     </div>
   );
 }

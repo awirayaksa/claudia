@@ -9,7 +9,7 @@ import {
   APIError,
 } from '../../../types/api.types';
 import { IAPIProvider } from '../provider.interface';
-import { streamOpenAICompatible, type StreamCallbacks } from '../sse-parser';
+import { describeApiError, streamOpenAICompatible, type StreamCallbacks } from '../sse-parser';
 
 /**
  * OpenRouter API Provider
@@ -157,7 +157,7 @@ export class OpenRouterProvider implements IAPIProvider {
       if (axiosError.response) {
         // Server responded with error
         const message =
-          axiosError.response.data?.error?.message ||
+          describeApiError(axiosError.response.data) ||
           axiosError.response.statusText ||
           'Unknown server error';
 

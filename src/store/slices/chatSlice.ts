@@ -15,6 +15,7 @@ import { ToolIntegrationService } from '../../services/mcp/tool-integration.serv
 import { v4 as uuidv4 } from 'uuid';
 import type { RootState } from '../index';
 import { ReasoningEffort, resolveEffort, coerceEffort } from '../../utils/effort-utils';
+import { withVisualExplanations } from '../../utils/visual-explanations';
 
 interface ChatState {
   messages: Message[];
@@ -102,7 +103,7 @@ export const sendMessage = createAsyncThunk(
       });
 
       // Prepend global system prompt if set (only to API payload, not stored in chat state)
-      const systemPrompt = state.settings.preferences.systemPrompt;
+      const systemPrompt = withVisualExplanations(state.settings.preferences.systemPrompt, state.settings.preferences.visualExplanations);
       if (systemPrompt) {
         messages.unshift({ role: 'system' as const, content: systemPrompt });
       }
@@ -421,7 +422,7 @@ export const sendStreamingMessage = createAsyncThunk(
     });
 
     // Prepend global system prompt if set (only to API payload, not stored in chat state)
-    const systemPrompt = state.settings.preferences.systemPrompt;
+    const systemPrompt = withVisualExplanations(state.settings.preferences.systemPrompt, state.settings.preferences.visualExplanations);
     if (systemPrompt) {
       messages.unshift({ role: 'system' as const, content: systemPrompt });
     }
@@ -508,7 +509,7 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     });
 
     // Prepend global system prompt if set (only to API payload, not stored in chat state)
-    const systemPromptText = state.settings.preferences.systemPrompt;
+    const systemPromptText = withVisualExplanations(state.settings.preferences.systemPrompt, state.settings.preferences.visualExplanations);
     if (systemPromptText) {
       messages.unshift({
         role: 'system' as const,

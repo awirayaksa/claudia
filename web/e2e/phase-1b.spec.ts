@@ -84,6 +84,8 @@ test.describe.serial('Claudia Web, Phase 1b', () => {
     await page.getByRole('tab', { name: 'Tools' }).click();
     await page.getByTestId('tool-toggle-builtin-filesystem-001').click();
     await expect(page.getByTestId('tool-toggle-builtin-filesystem-001')).toBeChecked();
+    await page.getByTestId('settings-save').click();
+    await expect(page.getByTestId('settings-save')).toBeDisabled();
     await expect(page.getByText(/ready/).first()).toBeVisible();
     await shot(page, 'settings-tools');
 

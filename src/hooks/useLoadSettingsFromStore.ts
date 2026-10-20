@@ -6,6 +6,7 @@ import {
   setPreferences,
   setProfiles,
   setCurrentProfileId,
+  settingsLoaded,
 } from '../store/slices/settingsSlice';
 import { getPlatform } from '../platform';
 
@@ -79,6 +80,7 @@ export function useLoadSettingsFromStore() {
           dispatch(setPreferences(config.preferences));
         }
       }
+      dispatch(settingsLoaded());
     } catch (error) {
       console.error('Failed to load settings:', error);
     }

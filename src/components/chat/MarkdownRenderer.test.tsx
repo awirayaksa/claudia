@@ -5,7 +5,7 @@
  * records how it was set up.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { createAppStore } from '../../store';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -80,6 +80,39 @@ describe('MarkdownRenderer mermaid', () => {
     expect(container.querySelector('[data-testid="mermaid-diagram"]')).toBeNull();
     expect(container.textContent).toContain('flowchart oops');
     expect(mermaid.render).not.toHaveBeenCalled();
+  });
+});
+
+describe('MarkdownRenderer svg', () => {
+  it('shows an svg block as an image, adding the namespace models leave out', () => {
+    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 680 240"><title>Merge</title><circle r="5"/></svg>\n```');
+    const img = container.querySelector('[data-testid="svg-diagram"] img') as HTMLImageElement;
+    expect(img.alt).toBe('Merge');
+    expect(img.style.maxWidth).toBe('680px');
+    expect(decodeURIComponent(img.src)).toContain('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240">');
+  });
+
+  it('recognizes svg in an xml block', () => {
+    const { container } = renderMarkdown('```xml\n<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>\n```');
+    expect(container.querySelector('[data-testid="svg-diagram"]')).not.toBeNull();
+  });
+
+  it('keeps the space for the image while the svg is incomplete (still streaming), with the source on request', () => {
+    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 680 200"><circle r="5"/>\n```');
+    const pending = container.querySelector('[data-testid="svg-diagram-pending"]') as HTMLElement;
+    expect(pending.style.aspectRatio).toBe('680 / 200');
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).not.toContain('<circle r="5"/>');
+
+    fireEvent.click(within(container).getByText('Show source'));
+    expect(container.textContent).toContain('<circle r="5"/>');
+  });
+
+  it('shows the source when the svg is whole but not an image', () => {
+    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 10 10"><oops</svg>\n```');
+    fireEvent.error(container.querySelector('img')!);
+    expect(container.querySelector('[data-testid="svg-diagram"]')).toBeNull();
+    expect(container.textContent).toContain('<oops</svg>');
   });
 });
 

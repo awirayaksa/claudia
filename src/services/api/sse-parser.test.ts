@@ -90,6 +90,19 @@ describe('readErrorMessage', () => {
     );
     expect(await readErrorMessage(new Response('', { status: 500, statusText: 'Internal' }))).toBe('HTTP 500: Internal');
   });
+
+  it('includes the upstream error OpenRouter wraps', async () => {
+    const body = (raw: unknown) =>
+      new Response(
+        JSON.stringify({ error: { message: 'Provider returned error', code: 400, metadata: { raw, provider_name: 'Alibaba' } } }),
+        { status: 400 }
+      );
+    expect(await readErrorMessage(body('{"error":{"message":"Range of max_tokens is wrong"}}'))).toBe(
+      'Provider returned error (Alibaba: Range of max_tokens is wrong)'
+    );
+    expect(await readErrorMessage(body('upstream timeout'))).toBe('Provider returned error (Alibaba: upstream timeout)');
+    expect(await readErrorMessage(body({ code: 'x' }))).toBe('Provider returned error (Alibaba: {"code":"x"})');
+  });
 });
 
 describe('streamOpenAICompatible', () => {

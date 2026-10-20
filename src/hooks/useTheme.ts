@@ -1,38 +1,16 @@
-import { useEffect, useCallback, useRef } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useAppDispatch, useAppSelector } from '../store';
 import { setAppearance } from '../store/slices/settingsSlice';
-import { getPlatform } from '../platform';
 
 export type Theme = 'light' | 'dark' | 'system';
 
 export function useTheme() {
   const dispatch = useAppDispatch();
   const { theme } = useAppSelector((state) => state.settings.appearance);
-  const { currentProfileId } = useAppSelector((state) => state.settings);
-  const isInitialMount = useRef(true);
 
-  // Reset initial mount flag when profile switches so we don't write back the just-loaded theme
+  // Apply theme to document root. It's stored when the settings page saves (SettingsDraft).
   useEffect(() => {
-    isInitialMount.current = true;
-  }, [currentProfileId]);
-
-  // Apply theme to document root
-  useEffect(() => {
-    const root = document.documentElement;
-    root.setAttribute('data-theme', theme);
-
-    // Skip saving on initial mount to prevent overwriting loaded settings
-    if (isInitialMount.current) {
-      isInitialMount.current = false;
-      return;
-    }
-
-    // Save theme to electron store only after initial load
-    getPlatform().config.set({
-      appearance: { theme },
-    }).catch((error) => {
-      console.error('Failed to save theme:', error);
-    });
+    document.documentElement.setAttribute('data-theme', theme);
   }, [theme]);
 
   // Set theme

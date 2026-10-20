@@ -109,6 +109,103 @@ describe('web client', () => {
     expect(screen.getByText('How can I help?')).toBeInTheDocument();
   });
 
+  it('saves appearance and preferences with the Save button, and asks before leaving with changes', async () => {
+    cleanup();
+    let settings: Record<string, any> = { appearance: { theme: 'light' } };
+    const patches: unknown[] = [];
+    stubApi({
+      '/api/auth/session': { user: { id: 'u', email: 'a@example.com', name: 'Ada', role: 'admin', hasPassword: true }, auth },
+      '/api/me/settings': (init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+          const patch = JSON.parse(String(init.body));
+          patches.push(patch);
+          settings = { ...settings, appearance: { ...settings.appearance, ...patch.appearance } };
+        }
+        return { settings };
+      },
+      '/api/models': { models: [], defaultModel: null },
+      '/api/chats': { chats: [] },
+      '/api/folders': { folders: [] },
+    });
+    window.history.pushState({}, '', '/settings');
+    renderApp();
+    const save = await screen.findByTestId('settings-save');
+    // The user's settings arrive after the page opened: nothing to save yet
+    await waitFor(() => expect(document.documentElement.getAttribute('data-theme')).toBe('light'));
+    expect(save).toBeDisabled();
+
+    // A change shows at once but isn't stored
+    fireEvent.click(screen.getByRole('button', { name: /Dark/ }));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('dark');
+    expect(save).toBeEnabled();
+    expect(patches).toEqual([]);
+
+    // Leaving: Cancel stays, Discard goes and puts the saved theme back
+    const leave = () => fireEvent.click(screen.getAllByRole('link').find((a) => a.getAttribute('href') === '/')!);
+    leave();
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(window.location.pathname).toBe('/settings');
+    leave();
+    fireEvent.click(await screen.findByTestId('unsaved-discard'));
+    await waitFor(() => expect(window.location.pathname).toBe('/'));
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light');
+    expect(patches).toEqual([]);
+
+    // Saved with the button: only what changed
+    window.history.pushState({}, '', '/settings');
+    cleanup();
+    renderApp();
+    fireEvent.click(await screen.findByRole('button', { name: /Dark/ }));
+    fireEvent.click(screen.getByTestId('settings-save'));
+    await waitFor(() => expect(patches).toEqual([{ appearance: { theme: 'dark' } }]));
+    expect(screen.getByTestId('settings-save')).toBeDisabled();
+    window.history.pushState({}, '', '/');
+  });
+
+  it('keeps the memory switch until Save, and drops it when leaving the tab without saving', async () => {
+    cleanup();
+    let settings: Record<string, any> = {};
+    const patches: unknown[] = [];
+    stubApi({
+      '/api/auth/session': { user: { id: 'u', email: 'a@example.com', name: 'Ada', role: 'admin', hasPassword: true }, auth },
+      '/api/me/settings': (init?: RequestInit) => {
+        if (init?.method === 'PATCH') {
+          const patch = JSON.parse(String(init.body));
+          patches.push(patch);
+          settings = { ...settings, ...patch };
+        }
+        return { settings };
+      },
+      '/api/me/memories': { memories: [] },
+      '/api/models': { models: [], defaultModel: null },
+      '/api/chats': { chats: [] },
+      '/api/folders': { folders: [] },
+    });
+    window.history.pushState({}, '', '/settings');
+    renderApp();
+    fireEvent.click(await screen.findByRole('tab', { name: 'Memory' }));
+    const toggle = await screen.findByTestId('memory-enabled');
+    await waitFor(() => expect(toggle).toBeChecked());
+
+    // Switched off, then away to another tab: Discard drops it
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(screen.getByTestId('settings-save')).toBeEnabled();
+    fireEvent.click(screen.getByRole('tab', { name: 'Tools' }));
+    fireEvent.click(await screen.findByTestId('unsaved-discard'));
+    fireEvent.click(await screen.findByRole('tab', { name: 'Memory' }));
+    expect(await screen.findByTestId('memory-enabled')).toBeChecked();
+    expect(patches).toEqual([]);
+
+    // Saved with the button
+    fireEvent.click(screen.getByTestId('memory-enabled'));
+    fireEvent.click(screen.getByTestId('settings-save'));
+    await waitFor(() => expect(patches).toEqual([{ memory: { enabled: false } }]));
+    await waitFor(() => expect(screen.getByTestId('settings-save')).toBeDisabled());
+    expect(screen.getByTestId('memory-enabled')).not.toBeChecked();
+    window.history.pushState({}, '', '/');
+  });
+
   it('never gives MCP-UI iframes same-origin access', () => {
     setPlatform(createWebPlatform({ sandboxOrigin: 'https://sandbox.example.com/' }));
     const { uiSandbox, capabilities } = getPlatform();

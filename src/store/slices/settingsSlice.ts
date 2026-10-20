@@ -3,7 +3,7 @@ import { ProviderType, OpenWebUIConfig, OpenRouterConfig, CustomProviderConfig, 
 import { ProfileMeta } from '../../types/profile.types';
 import { ReasoningEffort } from '../../utils/effort-utils';
 
-interface SettingsState {
+export interface SettingsState {
   api: {
     provider: ProviderType;
     openwebui?: OpenWebUIConfig;
@@ -36,6 +36,8 @@ interface SettingsState {
     enableFileLogging: boolean;
     showReasoning: boolean;
     showStatistics: boolean;
+    /** Have the model illustrate explanations with diagrams (on unless turned off). */
+    visualExplanations: boolean;
     systemPrompt: string;
     systemPromptFileName: string;
     updateCheckUrl: string;
@@ -44,6 +46,8 @@ interface SettingsState {
   };
   profiles: ProfileMeta[];
   currentProfileId: string | null;
+  /** Counts loads of the stored settings (start, profile switches), so drafts can start over from them. */
+  loads: number;
 }
 
 const initialState: SettingsState = {
@@ -65,6 +69,7 @@ const initialState: SettingsState = {
     enableFileLogging: true,
     showReasoning: false,
     showStatistics: false,
+    visualExplanations: true,
     systemPrompt: '',
     systemPromptFileName: '',
     updateCheckUrl: '',
@@ -72,6 +77,7 @@ const initialState: SettingsState = {
   },
   profiles: [],
   currentProfileId: null,
+  loads: 0,
 };
 
 const settingsSlice = createSlice({
@@ -99,6 +105,9 @@ const settingsSlice = createSlice({
     setCurrentProfileId: (state, action: PayloadAction<string | null>) => {
       state.currentProfileId = action.payload;
     },
+    settingsLoaded: (state) => {
+      state.loads += 1;
+    },
     setModelContextLengths: (state, action: PayloadAction<Record<string, number>>) => {
       state.api.modelContextLengths = action.payload;
     },
@@ -113,6 +122,7 @@ export const {
   loadSettings,
   setProfiles,
   setCurrentProfileId,
+  settingsLoaded,
   setModelContextLengths,
 } = settingsSlice.actions;
 

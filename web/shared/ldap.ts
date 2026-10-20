@@ -13,6 +13,12 @@ export const LdapSettings = z.object({
   startTls: z.boolean(),
   /** Check the server's certificate (only turn off for testing). */
   tlsVerify: z.boolean(),
+  /**
+   * search: a service account finds the user's entry, which then binds with
+   * the password. direct: the user binds as user@domain (Active Directory),
+   * the domain taken from the base DN's dc= parts; no service account, no search.
+   */
+  bindMode: z.enum(['search', 'direct']),
   /** PEM of the CA that signed the directory's certificate, if not a public one. */
   caCert: z.string().max(20_000).nullable(),
   /** Service account that searches for users; empty = anonymous search. */
@@ -55,6 +61,15 @@ export const LdapSettings = z.object({
   adminGroupDn: z.string().trim().max(500).nullable(),
 });
 export type LdapSettings = z.infer<typeof LdapSettings>;
+
+/** Direct bind's sign-in domain: example.com from the dc= parts of a DN (dc=example,dc=com); null without any. */
+export function bindDomain(baseDn: string): string | null {
+  const parts = baseDn
+    .split(',')
+    .map((p) => /^dc\s*=\s*(.+)$/i.exec(p.trim())?.[1]?.trim().toLowerCase())
+    .filter((p): p is string => !!p);
+  return parts.length > 0 ? parts.join('.') : null;
+}
 
 export const LdapSettingsUpdate = LdapSettings.partial().extend({
   /** Omitted = keep the stored one; '' = remove it. */

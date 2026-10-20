@@ -56,43 +56,17 @@ export function ThemeSettings() {
     }
   }, [customization?.iconPath, icon]);
 
-  // Handler for accent color change
-  const handleColorChange = async (color: string) => {
-    const newCustomization = { ...customization, accentColor: color };
-    dispatch(setAppearance({ customization: newCustomization }));
-
-    // Save to electron store
-    try {
-      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
-    } catch (error) {
-      console.error('Failed to save accent color:', error);
-    }
+  // The theme, accent color and title are a draft until the settings page saves them (SettingsDraft)
+  const handleColorChange = (color: string) => {
+    dispatch(setAppearance({ customization: { ...customization, accentColor: color } }));
   };
 
-  // Handler for resetting accent color
-  const handleResetColor = async () => {
-    const newCustomization = { ...customization, accentColor: undefined };
-    dispatch(setAppearance({ customization: newCustomization }));
-
-    // Save to electron store
-    try {
-      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
-    } catch (error) {
-      console.error('Failed to reset accent color:', error);
-    }
+  const handleResetColor = () => {
+    dispatch(setAppearance({ customization: { ...customization, accentColor: undefined } }));
   };
 
-  // Handler for app title change
-  const handleTitleChange = async (title: string) => {
-    const newCustomization = { ...customization, appTitle: title || undefined };
-    dispatch(setAppearance({ customization: newCustomization }));
-
-    // Save to electron store
-    try {
-      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
-    } catch (error) {
-      console.error('Failed to save app title:', error);
-    }
+  const handleTitleChange = (title: string) => {
+    dispatch(setAppearance({ customization: { ...customization, appTitle: title || undefined } }));
   };
 
   // Handler for icon upload
@@ -109,7 +83,7 @@ export function ThemeSettings() {
       // Save to Redux and electron store
       const newCustomization = { ...customization, iconPath: destPath };
       dispatch(setAppearance({ customization: newCustomization }));
-      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { customization: newCustomization } });
 
       // Try to apply immediately
       const result = await icon.apply(destPath);
@@ -135,7 +109,7 @@ export function ThemeSettings() {
     try {
       const newCustomization = { ...customization, iconPath: undefined };
       dispatch(setAppearance({ customization: newCustomization }));
-      await platform.config.set({ appearance: { ...appearance, customization: newCustomization } });
+      await platform.config.set({ appearance: { customization: newCustomization } });
       await icon.reset();
       setIconPreview(null);
       setRestartRequired(false);

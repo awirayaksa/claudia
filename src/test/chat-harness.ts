@@ -1,7 +1,7 @@
 import { configureStore } from '@reduxjs/toolkit';
 import { vi } from 'vitest';
 import chatReducer from '../store/slices/chatSlice';
-import settingsReducer from '../store/slices/settingsSlice';
+import settingsReducer, { setPreferences } from '../store/slices/settingsSlice';
 import mcpReducer from '../store/slices/mcpSlice';
 import composerReducer from '../store/slices/composerSlice';
 import type { StreamCallbacks } from '../services/api/streaming.service';
@@ -96,7 +96,7 @@ export function makeChatStore(servers: MCPServerState[] = []) {
     }
   }
   const mcpInitial = mcpReducer(undefined, { type: '@@init' });
-  return configureStore({
+  const store = configureStore({
     reducer: { chat: chatReducer, settings: settingsReducer, mcp: mcpReducer, composer: composerReducer },
     preloadedState: {
       mcp: {
@@ -108,6 +108,9 @@ export function makeChatStore(servers: MCPServerState[] = []) {
     },
     middleware: (gdm) => gdm({ serializableCheck: false }),
   });
+  // Requests are compared exactly: no diagram guidance unless a test turns it on
+  store.dispatch(setPreferences({ visualExplanations: false }));
+  return store;
 }
 
 /**

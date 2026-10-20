@@ -7,6 +7,7 @@ import { PreferencesSettings } from './PreferencesSettings';
 import { SkillSettings } from './SkillSettings';
 import { ProfileSwitcher } from './ProfileSwitcher';
 import { ProfilesSettings } from './ProfilesSettings';
+import { SettingsDraftProvider, useSettingsDraft } from './SettingsDraft';
 import { useStore } from 'react-redux';
 import { useAppSelector, useAppDispatch, type RootState } from '../../store';
 import { setSettingsOpen } from '../../store/slices/uiSlice';
@@ -18,14 +19,15 @@ type TabId = 'profiles' | 'api' | 'mcp' | 'plugins' | 'appearance' | 'preference
 interface SettingsContextValue {
   isDirty: boolean;
   setIsDirty: (dirty: boolean) => void;
-  requestSave: () => void;
+  /** Saves the open tab's own changes (API settings); false if that failed. */
+  requestSave: () => Promise<boolean>;
   registerSave: (fn: () => Promise<boolean>) => void;
 }
 
 export const SettingsContext = createContext<SettingsContextValue>({
   isDirty: false,
   setIsDirty: () => {},
-  requestSave: () => {},
+  requestSave: async () => true,
   registerSave: () => {},
 });
 
@@ -46,21 +48,36 @@ const tabs: { id: TabId; label: string }[] = [
 ];
 
 export function SettingsPanel() {
-  const dispatch = useAppDispatch();
   const { settingsOpen } = useAppSelector((state) => state.ui);
+  if (!settingsOpen) return null;
+  // Appearance and preferences: a draft from opening the panel until Save
+  return (
+    <SettingsDraftProvider>
+      <SettingsPanelContent />
+    </SettingsDraftProvider>
+  );
+}
+
+function SettingsPanelContent() {
+  const dispatch = useAppDispatch();
+  const draft = useSettingsDraft()!;
   const { currentProfileId } = useAppSelector((state) => state.settings);
   const [activeTab, setActiveTab] = useState<TabId>('api');
   const [isDirty, setIsDirty] = useState(false);
   const [saveRef, setSaveRef] = useState<(() => Promise<boolean>) | null>(null);
+  // The open tab's own changes (API settings), next to the draft's
+  const tabChanges = { dirty: isDirty, save: saveRef ?? undefined, discard: () => setIsDirty(false) };
 
   const handleClose = useCallback(() => {
-    if (isDirty) {
-      const confirmed = window.confirm('You have unsaved changes. Are you sure you want to discard them?');
-      if (!confirmed) return;
-    }
-    dispatch(setSettingsOpen(false));
-    setIsDirty(false);
-  }, [dispatch, isDirty]);
+    draft.guard(
+      () => {
+        dispatch(setSettingsOpen(false));
+        setIsDirty(false);
+      },
+      undefined,
+      { dirty: isDirty, save: saveRef ?? undefined, discard: () => setIsDirty(false) }
+    );
+  }, [dispatch, draft, isDirty, saveRef]);
 
   const reduxStore = useStore<RootState>();
 
@@ -68,6 +85,9 @@ export function SettingsPanel() {
     let success = true;
     if (saveRef) {
       success = await saveRef();
+    }
+    if (success) {
+      success = await draft.save();
     }
     if (success) {
       dispatch(setSettingsOpen(false));
@@ -95,27 +115,29 @@ export function SettingsPanel() {
     setSaveRef(() => fn);
   }, []);
 
-  const requestSave = useCallback(() => {
-    saveRef?.();
-  }, [saveRef]);
+  const requestSave = useCallback(async () => (saveRef ? saveRef() : true), [saveRef]);
 
-  // Reset dirty state when switching tabs
+  // Unsaved changes: save or discard them first; the new tab starts clean
   const handleTabChange = (id: TabId) => {
-    setActiveTab(id);
-    setIsDirty(false);
-    setSaveRef(null);
+    draft.guard(
+      () => {
+        setActiveTab(id);
+        setIsDirty(false);
+        setSaveRef(null);
+      },
+      undefined,
+      tabChanges
+    );
   };
 
   useEffect(() => {
-    if (!settingsOpen) return;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') handleClose();
+      // While asking about unsaved changes, Escape closes that dialog
+      if (e.key === 'Escape' && !draft.prompting) handleClose();
     };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
-  }, [settingsOpen, handleClose]);
-
-  if (!settingsOpen) return null;
+  }, [draft.prompting, handleClose]);
 
   return (
     <SettingsContext.Provider value={{ isDirty, setIsDirty, requestSave, registerSave }}>
@@ -149,7 +171,7 @@ export function SettingsPanel() {
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ fontSize: 15, fontWeight: 600, color: '#1a1a19' }}>Settings</div>
-              <ProfileSwitcher onOpenProfilesTab={() => setActiveTab('profiles')} />
+              <ProfileSwitcher onOpenProfilesTab={() => handleTabChange('profiles')} />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <span style={{ fontSize: 12, color: '#6f6b66' }}>Esc to close</span>
@@ -316,7 +338,7 @@ export function SettingsPanel() {
                 display: 'flex',
                 alignItems: 'center',
                 gap: 6,
-                visibility: isDirty ? 'visible' : 'hidden',
+                visibility: isDirty || draft.dirty ? 'visible' : 'hidden',
               }}
             >
               <span style={{ color: '#c98a1f' }}>●</span> Unsaved changes

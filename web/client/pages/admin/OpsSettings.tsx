@@ -126,7 +126,7 @@ export function DefaultsEditor({ value, onChange }: { value: UserDefaults; onCha
             <option value="large">{t('defaults.sizes.large')}</option>
           </select>
         </label>
-        {(['showReasoning', 'showStatistics', 'streamingEnabled'] as const).map((k) => (
+        {(['showReasoning', 'showStatistics', 'streamingEnabled', 'visualExplanations'] as const).map((k) => (
           <label key={k} className="text-sm">
             <span className="mb-1 block">{t(`defaults.${k}`)}</span>
             <select

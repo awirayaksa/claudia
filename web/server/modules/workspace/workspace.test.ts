@@ -3,7 +3,7 @@
  * usage caps.
  */
 import { describe, it, expect, afterEach } from 'vitest';
-import { chatFixture, type ChatFixture } from '../../test/chat-fixture';
+import { chatFixture, DIAGRAMS, type ChatFixture } from '../../test/chat-fixture';
 import { startMockMcp, type MockMcp } from '../../test/mock-mcp';
 import type { TestClient } from '../../test/client';
 import { DEFAULT_PERMISSIONS } from '../../../shared/access';
@@ -51,7 +51,7 @@ describe('custom models', () => {
     expect(req.model).toBe('gpt-test');
     expect(req.temperature).toBe(0.2);
     expect(req.max_tokens).toBe(321);
-    expect(req.messages[0]).toEqual({ role: 'system', content: 'You are a pirate. The user is admin.' });
+    expect(req.messages.slice(0, 2)).toEqual([DIAGRAMS, { role: 'system', content: 'You are a pirate. The user is admin.' }]);
 
     // A per-message temperature still wins
     f.mock.push({ text: ['Arr.'] });

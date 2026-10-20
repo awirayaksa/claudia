@@ -12,6 +12,7 @@ import {
   textResult,
   tool,
 } from '../../test/chat-harness';
+import { VISUAL_EXPLANATIONS_PROMPT } from '../../utils/visual-explanations';
 
 const providerRef: { current: any } = { current: null };
 vi.mock('../../services/api/provider.service', () => ({
@@ -154,14 +155,17 @@ describe('sendStreamingMessageWithTools', () => {
     providerRef.current = provider;
     stubPlatform(async () => textResult(''));
     const store = makeChatStore();
-    store.dispatch({ type: 'settings/setPreferences', payload: { systemPrompt: 'GLOBAL' } });
+    store.dispatch({ type: 'settings/setPreferences', payload: { systemPrompt: 'GLOBAL', visualExplanations: true } });
 
     await store.dispatch(
       sendStreamingMessageWithTools({ content: 'hi', model: 'm', skillPrompt: 'SKILL' }) as any
     );
 
+    // The diagram guidance leads the global prompt
     expect(requests[0].messages.slice(0, 2)).toEqual([
-      expect.objectContaining({ role: 'system', content: 'GLOBAL' }),
+      expect.objectContaining({ role: 'system', content: `${VISUAL_EXPLANATIONS_PROMPT}
+
+GLOBAL` }),
       expect.objectContaining({ role: 'system', content: 'SKILL' }),
     ]);
     // No tools: tool_choice is 'none' and tools are omitted

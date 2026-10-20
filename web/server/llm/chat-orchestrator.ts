@@ -18,6 +18,7 @@ import { ChatRepo, pathTo, toNode, type ChatRow } from '../modules/chats/repo';
 import { toOpenAIMessages, type ResolvedFile, type ToOpenAIOptions } from '../../../src/services/chat/message-builder';
 import { fitToContext } from '../../../src/services/chat/context-budget';
 import { coerceEffort, resolveEffort, type ReasoningEffort } from '../../../src/utils/effort-utils';
+import { VISUAL_EXPLANATIONS_PROMPT } from '../../../src/utils/visual-explanations';
 import type { ChatCompletionRequest, ChatMessage } from '../../../src/types/api.types';
 import type { ToolCall } from '../../../src/types/message.types';
 import type { MessageNode, MessagePart, PartOf } from '../../../src/types/turn.types';
@@ -332,9 +333,10 @@ export class ChatOrchestrator {
     const vars: SystemValues = { userName: user.name };
     const sys = (content: string): ChatMessage => ({ role: 'system', content: fillSystemVariables(content, vars) });
 
-    // System prompts, most general first: the user's, the custom model's,
-    // memories, the skill, each folder's, the chat's
+    // System prompts, most general first: the diagram guidance, the user's,
+    // the custom model's, memories, the skill, each folder's, the chat's
     const before: ChatMessage[] = [];
+    if (prefs.visualExplanations !== false) before.push({ role: 'system', content: VISUAL_EXPLANATIONS_PROMPT });
     if (typeof prefs.systemPrompt === 'string' && prefs.systemPrompt.trim()) before.push(sys(prefs.systemPrompt));
     const after: ChatMessage[] = [];
     const userText = plan.userNode.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');

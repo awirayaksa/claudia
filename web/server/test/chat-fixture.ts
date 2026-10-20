@@ -4,6 +4,7 @@ import { TestClient } from './client';
 import { startMockOpenAI } from './mock-openai';
 import type { AppDeps } from '../app';
 import type { RunEventEnvelope } from '../../shared/run-events';
+import { VISUAL_EXPLANATIONS_PROMPT } from '../../../src/utils/visual-explanations';
 
 /**
  * An app with an admin, a connection to the mock OpenAI endpoint and a
@@ -102,3 +103,6 @@ export async function readRunFrom(
 export type ChatFixture = Awaited<ReturnType<typeof chatFixture>>;
 
 export const types = (events: RunEventEnvelope[]) => events.map((e) => e.event.type);
+
+/** The diagram guidance, sent first unless a user turns visual explanations off. */
+export const DIAGRAMS = { role: 'system', content: VISUAL_EXPLANATIONS_PROMPT } as const;
