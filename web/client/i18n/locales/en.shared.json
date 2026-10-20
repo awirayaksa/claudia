@@ -75,6 +75,7 @@
   },
   "mermaid": {
     "diagram": "Diagram",
+    "drawing": "Drawing diagram…",
     "showDiagram": "Show diagram",
     "showSource": "Show source"
   },

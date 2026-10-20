@@ -5,7 +5,7 @@
  * records how it was set up.
  */
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { createAppStore } from '../../store';
 import { MarkdownRenderer } from './MarkdownRenderer';
@@ -97,10 +97,22 @@ describe('MarkdownRenderer svg', () => {
     expect(container.querySelector('[data-testid="svg-diagram"]')).not.toBeNull();
   });
 
-  it('shows the source while the svg is incomplete (still streaming)', () => {
-    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 10 10"><circle r="5"/>\n```');
-    expect(container.querySelector('[data-testid="svg-diagram"]')).toBeNull();
+  it('keeps the space for the image while the svg is incomplete (still streaming), with the source on request', () => {
+    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 680 200"><circle r="5"/>\n```');
+    const pending = container.querySelector('[data-testid="svg-diagram-pending"]') as HTMLElement;
+    expect(pending.style.aspectRatio).toBe('680 / 200');
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.textContent).not.toContain('<circle r="5"/>');
+
+    fireEvent.click(within(container).getByText('Show source'));
     expect(container.textContent).toContain('<circle r="5"/>');
+  });
+
+  it('shows the source when the svg is whole but not an image', () => {
+    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 10 10"><oops</svg>\n```');
+    fireEvent.error(container.querySelector('img')!);
+    expect(container.querySelector('[data-testid="svg-diagram"]')).toBeNull();
+    expect(container.textContent).toContain('<oops</svg>');
   });
 });
 

@@ -75,6 +75,7 @@
   },
   "mermaid": {
     "diagram": "مخطط",
+    "drawing": "جارٍ رسم المخطط…",
     "showDiagram": "عرض المخطط",
     "showSource": "عرض المصدر"
   },

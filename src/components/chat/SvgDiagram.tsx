@@ -20,17 +20,19 @@ function svgUrl(code: string): string | null {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
 }
 
-/** Not wider than drawn, so small images aren't blown up. */
-function drawnWidth(code: string): number | undefined {
+/** The drawn size, so the image isn't blown up and its space is kept while it streams in. */
+function drawnSize(code: string): { width?: number; height?: number } {
   const root = /<svg[^>]*>/i.exec(code)?.[0] ?? '';
-  const width = /\swidth="(\d+(?:\.\d+)?)(?:px)?"/i.exec(root)?.[1] ?? /\sviewBox="\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)/i.exec(root)?.[1];
-  return width ? Number(width) : undefined;
+  const box = /\sviewBox="\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/i.exec(root);
+  const width = Number(/\swidth="(\d+(?:\.\d+)?)(?:px)?"/i.exec(root)?.[1] ?? box?.[1]) || undefined;
+  const height = Number(/\sheight="(\d+(?:\.\d+)?)(?:px)?"/i.exec(root)?.[1] ?? box?.[2]) || undefined;
+  return { width, height };
 }
 
 interface SvgDiagramProps {
   code: string;
   isDark: boolean;
-  /** Shown instead while the image can't be drawn (still streaming, or invalid). */
+  /** The code block, shown on request or when the image can't be drawn. */
   fallback: React.ReactNode;
 }
 
@@ -40,19 +42,19 @@ export function SvgDiagram({ code, isDark, fallback }: SvgDiagramProps) {
   const [failed, setFailed] = useState<string | null>(null);
   const [showSource, setShowSource] = useState(false);
 
-  if (!url || failed === url || showSource) {
+  if (url && failed === url) return <>{fallback}</>;
+  if (showSource) {
     return (
       <div>
         {fallback}
-        {url && failed !== url && (
-          <button className="mt-1 text-xs text-text-secondary hover:text-text-primary" onClick={() => setShowSource(false)}>
-            {t('mermaid.showDiagram', 'Show diagram')}
-          </button>
-        )}
+        <button className="mt-1 text-xs text-text-secondary hover:text-text-primary" onClick={() => setShowSource(false)}>
+          {t('mermaid.showDiagram', 'Show diagram')}
+        </button>
       </div>
     );
   }
 
+  const { width, height } = drawnSize(code);
   const title = /<title[^>]*>([^<]{1,200})<\/title>/i.exec(code)?.[1]?.trim();
   return (
     // Models draw for a light page: in the dark theme the image gets a light card
@@ -60,13 +62,24 @@ export function SvgDiagram({ code, isDark, fallback }: SvgDiagramProps) {
       className={`my-2 overflow-x-auto whitespace-normal rounded-md p-3 font-sans ${isDark ? 'bg-white' : 'border border-border bg-background'}`}
       data-testid="svg-diagram"
     >
-      <img
-        src={url}
-        alt={title || t('mermaid.diagram', 'Diagram')}
-        className="mx-auto block h-auto w-full"
-        style={{ maxWidth: drawnWidth(code) }}
-        onError={() => setFailed(url)}
-      />
+      {url ? (
+        <img
+          src={url}
+          alt={title || t('mermaid.diagram', 'Diagram')}
+          className="mx-auto block h-auto w-full"
+          style={{ maxWidth: width }}
+          onError={() => setFailed(url)}
+        />
+      ) : (
+        // Still streaming: the code is drawn once it's whole
+        <div
+          className={`mx-auto flex w-full animate-pulse items-center justify-center rounded text-xs ${isDark ? 'bg-neutral-100 text-neutral-500' : 'bg-surface text-text-secondary'}`}
+          style={{ maxWidth: width, aspectRatio: width && height ? `${width} / ${height}` : '680 / 240' }}
+          data-testid="svg-diagram-pending"
+        >
+          {t('mermaid.drawing', 'Drawing diagram…')}
+        </div>
+      )}
       <button
         className={`mt-1 text-xs ${isDark ? 'text-neutral-500 hover:text-neutral-800' : 'text-text-secondary hover:text-text-primary'}`}
         onClick={() => setShowSource(true)}
