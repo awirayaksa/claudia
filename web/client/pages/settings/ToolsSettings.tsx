@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useSettingsSection } from '@/components/settings/SettingsDraft';
 import { errorMessage, useMcpServersQuery, useSetMcpServerEnabledMutation } from '../../api/rtk-api';
 import { OwnToolServers } from './OwnToolServers';
 
@@ -7,6 +9,17 @@ export function ToolsSettings() {
   const { t } = useTranslation();
   const { data, isLoading } = useMcpServersQuery();
   const [setEnabled, state] = useSetMcpServerEnabledMutation();
+  // Switched on or off but not saved yet, by server
+  const [draft, setDraft] = useState<Record<string, boolean>>({});
+  const changed = (data?.servers ?? []).filter((s) => s.id in draft && draft[s.id] !== s.enabled);
+  useSettingsSection('tools', {
+    dirty: changed.length > 0,
+    save: async () => {
+      for (const s of changed) await setEnabled({ id: s.id, enabled: draft[s.id] }).unwrap();
+      setDraft({});
+    },
+    discard: () => setDraft({}),
+  });
 
   return (
     <div className="space-y-4 p-5">
@@ -20,9 +33,9 @@ export function ToolsSettings() {
               type="checkbox"
               className="mt-1"
               aria-label={s.name}
-              checked={s.enabled}
+              checked={draft[s.id] ?? s.enabled}
               disabled={state.isLoading}
-              onChange={(e) => void setEnabled({ id: s.id, enabled: e.target.checked })}
+              onChange={(e) => setDraft((d) => ({ ...d, [s.id]: e.target.checked }))}
               data-testid={`tool-toggle-${s.id}`}
             />
             <div className="min-w-0 flex-1">

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { useSettingsSection } from '@/components/settings/SettingsDraft';
 import {
   errorMessage,
   useAddMemoryMutation,
@@ -26,7 +27,18 @@ export function MemorySettings() {
   const [text, setText] = useState('');
   const [editing, setEditing] = useState<{ id: string; content: string } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
-  const enabled = settings?.settings.memory?.enabled !== false;
+  const saved = settings?.settings.memory?.enabled !== false;
+  // The switch is a setting: stored with the page's Save (the memories below are saved as you edit them)
+  const [draft, setDraft] = useState<boolean | null>(null);
+  const enabled = draft ?? saved;
+  useSettingsSection('memory', {
+    dirty: draft !== null && draft !== saved,
+    save: async () => {
+      await updateSettings({ memory: { enabled } }).unwrap();
+      setDraft(null);
+    },
+    discard: () => setDraft(null),
+  });
 
   return (
     <div className="space-y-4 p-5">
@@ -35,7 +47,7 @@ export function MemorySettings() {
         <input
           type="checkbox"
           checked={enabled}
-          onChange={(e) => void updateSettings({ memory: { enabled: e.target.checked } })}
+          onChange={(e) => setDraft(e.target.checked)}
           data-testid="memory-enabled"
         />
         {t('memory.enabled')}

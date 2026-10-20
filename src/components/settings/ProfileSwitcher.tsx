@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useAppSelector } from '../../store';
 import { useSettingsContext } from './SettingsPanel';
+import { useSettingsDraft } from './SettingsDraft';
 import { useLoadSettingsFromStore } from '../../hooks/useLoadSettingsFromStore';
 
 interface ProfileSwitcherProps {
@@ -9,7 +10,8 @@ interface ProfileSwitcherProps {
 
 export function ProfileSwitcher({ onOpenProfilesTab }: ProfileSwitcherProps) {
   const { profiles, currentProfileId } = useAppSelector((state) => state.settings);
-  const { isDirty, setIsDirty } = useSettingsContext();
+  const { isDirty, setIsDirty, requestSave } = useSettingsContext();
+  const draft = useSettingsDraft();
   const { reload } = useLoadSettingsFromStore();
   const [open, setOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -31,21 +33,25 @@ export function ProfileSwitcher({ onOpenProfilesTab }: ProfileSwitcherProps) {
       setOpen(false);
       return;
     }
-    if (isDirty) {
-      const confirmed = window.confirm('You have unsaved changes. Are you sure you want to discard them?');
-      if (!confirmed) {
-        setOpen(false);
-        return;
+    const switchTo = async () => {
+      setOpen(false);
+      try {
+        await window.electron.profile.switch(id);
+        await reload();
+        setIsDirty(false);
+      } catch (error) {
+        console.error('Failed to switch profile:', error);
       }
+    };
+    if (draft) {
+      draft.guard(() => void switchTo(), () => setOpen(false), { dirty: isDirty, save: requestSave, discard: () => setIsDirty(false) });
+      return;
     }
-    setOpen(false);
-    try {
-      await window.electron.profile.switch(id);
-      await reload();
-      setIsDirty(false);
-    } catch (error) {
-      console.error('Failed to switch profile:', error);
+    if (isDirty && !window.confirm('You have unsaved changes. Are you sure you want to discard them?')) {
+      setOpen(false);
+      return;
     }
+    await switchTo();
   };
 
   return (

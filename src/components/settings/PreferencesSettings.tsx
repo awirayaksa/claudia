@@ -13,56 +13,22 @@ export function PreferencesSettings() {
 
   const platform = getPlatform();
 
-  const handleTemperatureChange = async (value: number) => {
-    dispatch(setPreferences({ temperature: value }));
-    await platform.config.set({ preferences: { temperature: value } });
-  };
-
-  const handleReasoningEffortChange = async (value: ReasoningEffort | null) => {
-    dispatch(setPreferences({ reasoningEffort: value }));
-    await platform.config.set({ preferences: { reasoningEffort: value } });
-  };
-
-  const handleShowReasoningChange = async (value: boolean) => {
-    dispatch(setPreferences({ showReasoning: value }));
-    await platform.config.set({ preferences: { showReasoning: value } });
-  };
-
-  const handleShowStatisticsChange = async (value: boolean) => {
-    dispatch(setPreferences({ showStatistics: value }));
-    await platform.config.set({ preferences: { showStatistics: value } });
-  };
-
-  const handleVisualExplanationsChange = async (value: boolean) => {
-    dispatch(setPreferences({ visualExplanations: value }));
-    await platform.config.set({ preferences: { visualExplanations: value } });
-  };
-
-  const handleSystemPromptChange = async (value: string) => {
-    dispatch(setPreferences({ systemPrompt: value, systemPromptFileName: '' }));
-    await platform.config.set({ preferences: { systemPrompt: value, systemPromptFileName: '' } });
-  };
+  // Changes are a draft until the settings page saves them (SettingsDraft)
+  const handleTemperatureChange = (value: number) => dispatch(setPreferences({ temperature: value }));
+  const handleReasoningEffortChange = (value: ReasoningEffort | null) => dispatch(setPreferences({ reasoningEffort: value }));
+  const handleShowReasoningChange = (value: boolean) => dispatch(setPreferences({ showReasoning: value }));
+  const handleShowStatisticsChange = (value: boolean) => dispatch(setPreferences({ showStatistics: value }));
+  const handleVisualExplanationsChange = (value: boolean) => dispatch(setPreferences({ visualExplanations: value }));
+  const handleSystemPromptChange = (value: string) => dispatch(setPreferences({ systemPrompt: value, systemPromptFileName: '' }));
 
   const handleSelectFile = async () => {
     if (!platform.systemPrompt) return;
     const result = await platform.systemPrompt.selectFile();
-    if (result) {
-      dispatch(setPreferences({ systemPrompt: result.content, systemPromptFileName: result.fileName }));
-      await platform.config.set({ preferences: { systemPrompt: result.content, systemPromptFileName: result.fileName } });
-    }
+    if (result) dispatch(setPreferences({ systemPrompt: result.content, systemPromptFileName: result.fileName }));
   };
 
-  const handleReset = async () => {
-    dispatch(setPreferences({ systemPrompt: '', systemPromptFileName: '' }));
-    await platform.config.set({ preferences: { systemPrompt: '', systemPromptFileName: '' } });
-  };
-
-  const handleUpdateCheckUrlChange = async (value: string) => {
-    dispatch(setPreferences({ updateCheckUrl: value }));
-    await platform.config.set({ preferences: { updateCheckUrl: value } });
-    // Restart the periodic check with the new URL
-    await platform.updater?.restartCheck();
-  };
+  const handleReset = () => dispatch(setPreferences({ systemPrompt: '', systemPromptFileName: '' }));
+  const handleUpdateCheckUrlChange = (value: string) => dispatch(setPreferences({ updateCheckUrl: value }));
 
   return (
     <div className="space-y-6" style={{ padding: '22px 28px' }}>

@@ -277,5 +277,13 @@
     "result": "Result:",
     "running": "Executing...",
     "success": "Success"
+  },
+  "unsaved": {
+    "discard": "Discard",
+    "message": "You changed some settings without saving them. Save the changes, or discard them?",
+    "save": "Save",
+    "saved": "Saved",
+    "saveFailed": "Your changes couldn't be saved. Try again.",
+    "title": "Unsaved changes"
   }
 }
