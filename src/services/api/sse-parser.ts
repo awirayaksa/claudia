@@ -138,14 +138,38 @@ export class OpenAIStreamParser {
   }
 }
 
+/**
+ * Message from an OpenAI-style error body. OpenRouter wraps upstream failures
+ * as "Provider returned error" and puts the real cause in error.metadata.
+ */
+export function describeApiError(data: any): string | undefined {
+  const error = data?.error;
+  const message: string | undefined =
+    (typeof error === 'string' ? error : error?.message) || data?.message || data?.detail;
+  const raw = error?.metadata?.raw;
+  if (!message || raw === undefined || raw === null || raw === '') return message;
+
+  let detail: string;
+  if (typeof raw === 'string') {
+    try {
+      detail = describeApiError(JSON.parse(raw)) || raw;
+    } catch {
+      detail = raw;
+    }
+  } else {
+    detail = describeApiError(raw) || JSON.stringify(raw);
+  }
+  const provider = error.metadata.provider_name;
+  return `${message} (${provider ? `${provider}: ` : ''}${detail.trim().slice(0, 500)})`;
+}
+
 /** Best error message from a failed HTTP response. */
 export async function readErrorMessage(response: Response): Promise<string> {
   const fallback = `HTTP ${response.status}: ${response.statusText}`;
   try {
     const text = await response.text();
     try {
-      const data = JSON.parse(text);
-      return data.error?.message || data.message || data.detail || fallback;
+      return describeApiError(JSON.parse(text)) || fallback;
     } catch {
       return text.trim() ? `${fallback} - ${text.trim().slice(0, 300)}` : fallback;
     }
