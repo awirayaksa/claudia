@@ -12,10 +12,15 @@ import { notFound } from '../../lib/errors';
 import { uuidv7 } from '../../lib/ids';
 import type { MessageNode, MessagePart } from '../../../../src/types/turn.types';
 import type { SharedChat } from '../../../shared/chats';
+import { workspaceMime } from '../../../shared/workspace-files';
 import { ChatRepo, maskArena, pathTo, toNode, type ChatRow, type ShareRow } from '../chats/repo';
 
 function cleanPart(p: MessagePart): MessagePart {
   if (p.type === 'file') return { type: 'file', fileId: '', name: p.name, mime: p.mime, ...(p.size !== undefined ? { size: p.size } : {}) };
+  // The link would open the viewer's own workspace: keep the name only
+  if (p.type === 'workspace_file') {
+    return { type: 'file', fileId: '', name: p.path, mime: workspaceMime(p.path), ...(p.size !== undefined ? { size: p.size } : {}) };
+  }
   if (p.type === 'tool_result' && p.uiResource) {
     const { uiResource: _ui, ...rest } = p;
     return rest;

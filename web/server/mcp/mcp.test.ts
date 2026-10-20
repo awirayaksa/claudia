@@ -138,8 +138,39 @@ describe('built-in tool servers', () => {
     expect(fs.readFileSync(path.join(ws, 'hi.txt'), 'utf-8')).toBe('from the model');
 
     const [row] = await f.db.db.select().from(messages).where(eq(messages.id, start.json().assistantMessageIds[0]));
-    expect(row.parts.map((p) => p.type)).toEqual(['tool_call', 'tool_result', 'text']);
+    // The written file is linked under the result
+    expect(row.parts.map((p) => p.type)).toEqual(['tool_call', 'tool_result', 'workspace_file', 'text']);
     expect(row.parts[0]).toMatchObject({ serverId: FS, tool: 'write_file' });
+    expect(row.parts[2]).toEqual({ type: 'workspace_file', path: 'hi.txt', size: 14 });
+  });
+
+  it('link each file a reply writes once, at the path the user asked for', async () => {
+    f = await chatFixture();
+    await f.admin.post(`/api/mcp/servers/${FS}/enable`);
+    const write = (id: string, p: string, content: string) => ({ id, name: 'write_file', arguments: JSON.stringify({ path: p, content }) });
+    f.mock.push(
+      { toolCalls: [write('c1', 'reports/2026/q3.md', '# Q3')] },
+      // Written again, then only read: still one link
+      { toolCalls: [write('c2', 'reports/2026/q3.md', '# Q3, final'), { id: 'c3', name: 'read_file', arguments: '{"path":"reports/2026/q3.md"}' }] },
+      { toolCalls: [{ id: 'c4', name: 'write_file', arguments: '{"path":"../outside.txt","content":"x"}' }] },
+      { text: ['Saved to reports/2026/q3.md.'] }
+    );
+    const chatId = await f.newChat(f.admin);
+    const start = await f.admin.post(`/api/chats/${chatId}/completions`, {
+      parentId: null,
+      modelIds: ['mock/gpt-test'],
+      content: 'Write the Q3 report to reports/2026/q3.md',
+      toolIds: [FS],
+    });
+    await f.readRun(f.admin, start.json().runId);
+
+    const [row] = await f.db.db.select().from(messages).where(eq(messages.id, start.json().assistantMessageIds[0]));
+    const links = row.parts.filter((p) => p.type === 'workspace_file');
+    expect(links).toEqual([{ type: 'workspace_file', path: 'reports/2026/q3.md', size: 4 }]);
+    // The link downloads the current file
+    const res = await f.admin.get(`/api/workspace-files/content?path=${encodeURIComponent('reports/2026/q3.md')}`);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toBe('# Q3, final');
   });
 
   it('are not offered unless requested and switched on', async () => {

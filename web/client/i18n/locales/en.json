@@ -1049,5 +1049,18 @@
       "monthly1": "The 1st of each month at 9:00",
       "custom": "Custom"
     }
+  },
+  "workspaceFiles": {
+    "title": "Workspace",
+    "help": "Files the built-in Files, Word and Diagrams tools read and write. To save something in a particular place, say so in your message, e.g. \"save it as reports/q3.md\". Files a reply writes are also linked under it.",
+    "top": "Workspace",
+    "empty": "This folder is empty.",
+    "newFolder": "New folder",
+    "folderName": "Folder name",
+    "upload": "Upload files",
+    "uploading": "Uploading {{name}}…",
+    "deleteTitle": "Delete \"{{name}}\"?",
+    "deleteFileBody": "The file is deleted from your workspace. Replies that link to it can no longer download it.",
+    "deleteFolderBody": "The folder and everything in it are deleted from your workspace."
   }
 }

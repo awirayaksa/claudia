@@ -232,6 +232,11 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
       section: z.string().max(1000).optional(),
     }),
   }),
+  z.object({
+    type: z.literal('workspace_file'),
+    path: z.string().max(4000),
+    size: z.number().int().min(0).optional(),
+  }),
 ]);
 
 const USAGE = z

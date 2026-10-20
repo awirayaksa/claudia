@@ -27,6 +27,7 @@ import type { ConnectionInput, ConnectionView, ModelsResponse, UserConnectionsRe
 import type { AdminMcpServerView, McpServerInput, McpServerView } from '@shared/mcp';
 import type { LdapLookupResult, LdapSettingsResponse, LdapSettingsUpdate, LdapTestResult } from '@shared/ldap';
 import type { FileView } from '@shared/files';
+import type { WorkspaceEntry } from '@shared/workspace-files';
 import type { AppSettingsResponse, UserSettingsInput } from '@shared/settings';
 import type { PublicConfig } from '@shared/api';
 import type { MediaSettingsResponse, MediaSettingsUpdate } from '@shared/media';
@@ -114,6 +115,7 @@ export const api = createApi({
     'AdminMcpServers',
     'Ldap',
     'Files',
+    'WorkspaceFiles',
     'Tags',
     'Shares',
     'WorkspaceModels',
@@ -321,6 +323,19 @@ export const api = createApi({
     deleteFile: b.mutation<{ ok: true }, string>({
       query: (id) => ({ url: `/files/${id}`, method: 'DELETE' }),
       invalidatesTags: ['Files'],
+    }),
+    // The workspace of the built-in Files, Word and Diagrams tools (path: a folder, '' for the top)
+    workspaceFiles: b.query<{ path: string; entries: WorkspaceEntry[] }, string>({
+      query: (path) => `/workspace-files?path=${encodeURIComponent(path)}`,
+      providesTags: ['WorkspaceFiles'],
+    }),
+    createWorkspaceFolder: b.mutation<{ path: string }, { parent: string; name: string }>({
+      query: (body) => ({ url: '/workspace-files/folders', method: 'POST', body }),
+      invalidatesTags: ['WorkspaceFiles'],
+    }),
+    deleteWorkspaceEntry: b.mutation<{ ok: true }, string>({
+      query: (path) => ({ url: `/workspace-files?path=${encodeURIComponent(path)}`, method: 'DELETE' }),
+      invalidatesTags: ['WorkspaceFiles'],
     }),
     myConnections: b.query<UserConnectionsResponse, void>({ query: () => '/connections', providesTags: ['MyConnections'] }),
     createMyConnection: b.mutation<{ connection: ConnectionView }, Partial<ConnectionInput>>({
@@ -822,6 +837,9 @@ export const {
   useSetMcpServerEnabledMutation,
   useFilesQuery,
   useDeleteFileMutation,
+  useWorkspaceFilesQuery,
+  useCreateWorkspaceFolderMutation,
+  useDeleteWorkspaceEntryMutation,
   useMyConnectionsQuery,
   useCreateMyConnectionMutation,
   useUpdateMyConnectionMutation,

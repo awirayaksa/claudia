@@ -8,7 +8,7 @@ import { MAX_UPLOAD_BYTES } from '../../../shared/files';
 const IdParams = z.object({ id: z.uuid() });
 
 /** RFC 6266 filename for Content-Disposition (ASCII fallback + UTF-8). */
-function dispositionFilename(name: string): string {
+export function dispositionFilename(name: string): string {
   const ascii = name.replace(/[^\x20-\x7e]|["\\]/g, '_');
   return `filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }

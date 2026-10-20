@@ -18,6 +18,7 @@ import {
 import { PageFrame, Tabs } from '../components/PageFrame';
 import { ToolsSettings } from './settings/ToolsSettings';
 import { FilesSettings } from './settings/FilesSettings';
+import { WorkspaceFiles } from './settings/WorkspaceFiles';
 import { DataSettings } from './settings/DataSettings';
 import { ConnectionsManager } from './admin/ConnectionsPage';
 import { MemorySettings } from './settings/MemorySettings';
@@ -66,7 +67,14 @@ export function SettingsPage() {
         {tab === 'memory' && <MemorySettings />}
         {tab === 'tools' && <ToolsSettings />}
         {tab === 'skills' && <SkillSettings />}
-        {tab === 'files' && <FilesSettings />}
+        {tab === 'files' && (
+          <>
+            <FilesSettings />
+            <div className="border-t border-border p-5">
+              <WorkspaceFiles />
+            </div>
+          </>
+        )}
         {tab === 'data' && <DataSettings />}
         {tab === 'connections' && (
           <div className="p-5">

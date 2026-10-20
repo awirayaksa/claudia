@@ -4,6 +4,7 @@
  */
 import type { Message, ToolCall, ToolResult } from '@/types/message.types';
 import type { MessageNode, PartOf } from '@/types/turn.types';
+import { workspaceFileUrl, workspaceMime } from '@shared/workspace-files';
 
 /** Root → leaf over all known nodes. */
 export function visiblePath(nodes: MessageNode[], leafId: string | null): MessageNode[] {
@@ -28,19 +29,38 @@ export function nodeText(node: MessageNode, type: 'text' | 'reasoning' = 'text',
     .join(separator);
 }
 
-/** File parts as attachments (user uploads, and images a reply generated). */
+/** File parts as attachments (user uploads, images a reply generated, files a tool wrote in the workspace). */
 function attachmentsOf(node: MessageNode) {
-  return node.parts
-    .filter((p): p is PartOf<'file'> => p.type === 'file')
-    .map((p, i) => ({
-      id: p.fileId || `${node.id}:${i}`,
-      type: p.mime.startsWith('image/') ? ('image' as const) : ('file' as const),
-      name: p.name,
-      size: p.size ?? 0,
-      mimeType: p.mime,
-      // Imported and shared chats keep names only
-      ...(p.fileId ? { url: `/api/files/${p.fileId}/content` } : {}),
-    }));
+  return node.parts.flatMap((p, i) => {
+    if (p.type === 'file') {
+      return [
+        {
+          id: p.fileId || `${node.id}:${i}`,
+          type: p.mime.startsWith('image/') ? ('image' as const) : ('file' as const),
+          name: p.name,
+          size: p.size ?? 0,
+          mimeType: p.mime,
+          // Imported and shared chats keep names only
+          ...(p.fileId ? { url: `/api/files/${p.fileId}/content` } : {}),
+        },
+      ];
+    }
+    if (p.type === 'workspace_file') {
+      const mime = workspaceMime(p.path);
+      // Named by its path, so the user sees where it was saved
+      return [
+        {
+          id: `${node.id}:${i}`,
+          type: mime.startsWith('image/') ? ('image' as const) : ('file' as const),
+          name: p.path,
+          size: p.size ?? 0,
+          mimeType: mime,
+          url: workspaceFileUrl(p.path),
+        },
+      ];
+    }
+    return [];
+  });
 }
 
 export function toDisplayMessage(node: MessageNode): Message {

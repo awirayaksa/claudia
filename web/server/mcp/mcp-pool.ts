@@ -24,11 +24,16 @@ import type { AppSettings } from '../modules/settings/app-settings';
 import type { RunToolset, ToolExecution } from '../llm/tools';
 import { builtinConfigFor, builtinServers, isBuiltinId, redactWorkspacePath, userWorkspace, type BuiltinDeps } from './builtin';
 import { forbidden, notFound } from '../lib/errors';
+import { changedFiles, snapshotWorkspace } from '../workspace/files';
 import { guardedTransport, type GuardedTransport } from '../net/safe-fetch';
 import type { AccessService } from '../auth/access';
 
 const USER_IDLE_MS = 10 * 60_000;
 const TOOL_TIMEOUT_MS = 120_000;
+
+/** Built-ins that write files in the workspace; their tools that only read are not watched. */
+const WRITING_BUILTINS = new Set(['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001']);
+const READ_ONLY_TOOL = /^(read|get|list|search)_/;
 
 /** What is stored (encrypted) for a configured server. */
 export interface StoredMcpConfig {
@@ -373,6 +378,8 @@ export class McpPools {
     const ready = (await this.serversFor(userId)).filter((s) => usable(s) && s.status === 'ready');
     const sources: ToolSource[] = ready.map((s) => ({ id: s.id, name: s.name, tools: s.tools }));
     const aliases = buildToolAliases(sources);
+    // Workspace files already shown under this reply (a document edited five times is shown once)
+    const shown = new Set<string>();
 
     return {
       definitions: aliasesToOpenAI(aliases),
@@ -401,8 +408,14 @@ export class McpPools {
             t.unref?.();
             signal.addEventListener('abort', () => reject(new Error('Stopped.')), { once: true });
           });
+          // Files a built-in writes are shown under the reply, as links to the workspace
+          const workspace = WRITING_BUILTINS.has(a.serverId) && !READ_ONLY_TOOL.test(a.tool) ? userWorkspace(this.deps.dataDir, userId) : null;
+          const before = workspace ? await snapshotWorkspace(workspace) : null;
           const raw = await Promise.race([this.callTool(userId, a.serverId, a.tool, args), timeout]);
           const normalized = normalizeToolResult(raw as Parameters<typeof normalizeToolResult>[0]);
+          const after = workspace && before && !normalized.isError ? await snapshotWorkspace(workspace) : null;
+          const written = before && after ? changedFiles(before, after).filter((f) => !shown.has(f.path)) : [];
+          for (const f of written) shown.add(f.path);
           return {
             serverId: a.serverId,
             tool: a.tool,
@@ -414,6 +427,7 @@ export class McpPools {
               ...(normalized.isError ? { isError: true } : {}),
               ...(normalized.uiResource ? { uiResource: normalized.uiResource } : {}),
             },
+            ...(written.length ? { extraParts: written.map((f) => ({ type: 'workspace_file' as const, path: f.path, size: f.size })) } : {}),
           };
         } catch (err) {
           return fail(err instanceof Error ? err.message : String(err));
