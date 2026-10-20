@@ -42,7 +42,7 @@ export function SchedulesPage() {
               <code className="text-xs text-text-secondary">
                 {s.cron} · {s.timezone}
               </code>
-              <label className="ml-auto flex items-center gap-1 text-sm">
+              <label className="ms-auto flex items-center gap-1 text-sm">
                 <input type="checkbox" checked={s.enabled} onChange={(e) => void update({ id: s.id, enabled: e.target.checked })} />
                 {t('webhooks.enabled')}
               </label>
@@ -129,7 +129,7 @@ function ScheduleForm({ schedule, onClose }: { schedule: ScheduleView | null; on
       size="lg"
       footer={
         <div className="flex items-center justify-end gap-2">
-          {err && <span className="mr-auto text-sm text-error">{errorMessage(err)}</span>}
+          {err && <span className="me-auto text-sm text-error">{errorMessage(err)}</span>}
           <Button variant="secondary" onClick={onClose}>
             {t('app.cancel')}
           </Button>
@@ -195,7 +195,7 @@ function ScheduleForm({ schedule, onClose }: { schedule: ScheduleView | null; on
         <fieldset>
           <legend className="mb-1 font-medium">{t('schedules.where')}</legend>
           {(['new', 'same'] as const).map((m) => (
-            <label key={m} className="mr-4 inline-flex items-center gap-1">
+            <label key={m} className="me-4 inline-flex items-center gap-1">
               <input type="radio" name="chatMode" checked={draft.chatMode === m} onChange={() => set({ chatMode: m })} />
               {t(`schedules.chatMode.${m}`)}
             </label>

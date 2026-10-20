@@ -80,7 +80,7 @@ export function AccessDialog({ kind, id, name, onClose }: { kind: AccessKind; id
             r.principalType === 'public' ? null : (
               <li key={`${r.principalType}:${r.principalId}`} className="flex items-center gap-2 px-3 py-1.5 text-sm">
                 <span className="min-w-0 flex-1 truncate">
-                  <span className="mr-1 text-xs text-text-secondary">{t(`access.principal.${r.principalType}`)}</span>
+                  <span className="me-1 text-xs text-text-secondary">{t(`access.principal.${r.principalType}`)}</span>
                   {r.label}
                 </span>
                 <select
@@ -136,7 +136,7 @@ export function AccessDialog({ kind, id, name, onClose }: { kind: AccessKind; id
                     <li key={u.id}>
                       <button
                         type="button"
-                        className="w-full px-3 py-1.5 text-left text-sm hover:bg-background"
+                        className="w-full px-3 py-1.5 text-start text-sm hover:bg-background"
                         onClick={() => {
                           add({ principalType: 'user', principalId: u.id, perm: 'read', label: `${u.name} (${u.email})` });
                           setSearch('');

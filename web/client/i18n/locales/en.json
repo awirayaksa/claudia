@@ -65,7 +65,9 @@
     "backToChats": "Back to chats",
     "newSubfolder": "New folder inside",
     "topLevel": "Top level",
-    "workspace": "Workspace"
+    "workspace": "Workspace",
+    "language": "Language",
+    "languageAuto": "Automatic (browser)"
   },
   "chat": {
     "placeholder": "Message Claudia…",

@@ -398,6 +398,16 @@ shared desktop components is in `en.shared.json`, generated from their
 language, copy both to `<lang>.json` and `<lang>.shared.json` (e.g. `de`)
 and translate the values; keep `{{placeholders}}`. The browser's preferred
 languages pick it, and anything not yet translated shows in English.
+Languages: English, Arabic (`ar`).
+
+Right-to-left languages such as Arabic mirror the whole page (`dir="rtl"`),
+so layout classes are logical: `ms-`/`me-`, `ps-`/`pe-`, `start-`/`end-`,
+`border-s`/`border-e`, `text-start`/`text-end` rather than left and right.
+Code stays left-to-right, and message text follows its own direction. In a
+right-to-left translation, wrap left-to-right snippets such as
+`<prefix>/<model>` in `⁦…⁩` so they keep their order. Languages
+with more plural forms than English (Arabic has `_zero`, `_one`, `_two`,
+`_few`, `_many`, `_other`) give each form.
 
 ## Note for Windows developers
 

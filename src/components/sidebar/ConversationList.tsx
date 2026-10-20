@@ -204,7 +204,7 @@ export function ConversationList({ width }: { width?: number }) {
   };
 
   return (
-    <div className="flex h-full flex-col bg-surface border-r border-border flex-shrink-0" style={{ width: width ?? 288 }}>
+    <div className="flex h-full flex-col bg-surface border-e border-border flex-shrink-0" style={{ width: width ?? 288 }}>
       {/* New Chat — ghost button, orange is reserved for Send */}
       <div className="p-3 pb-2">
         <Button
@@ -214,7 +214,7 @@ export function ConversationList({ width }: { width?: number }) {
           size="sm"
           disabled={!!currentConversationId && messages.length === 0}
         >
-          <svg className="h-4 w-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-4 w-4 me-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
           </svg>
           New Chat
@@ -336,7 +336,7 @@ export function ConversationList({ width }: { width?: number }) {
                   </svg>
                 </button>
                 {showFooterMenu && (
-                  <div className="absolute bottom-8 right-0 z-50 min-w-[160px] rounded-lg border border-border bg-surface shadow-lg py-1">
+                  <div className="absolute bottom-8 end-0 z-50 min-w-[160px] rounded-lg border border-border bg-surface shadow-lg py-1">
                     <button
                       className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-text-primary hover:bg-surface-hover transition-colors"
                       onClick={handleToggleSelectionMode}

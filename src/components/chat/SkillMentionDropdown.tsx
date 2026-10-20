@@ -93,7 +93,7 @@ export function SkillMentionDropdown({
                 key={skill.id}
                 ref={isActive ? activeItemRef : null}
                 type="button"
-                className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-left text-sm transition-colors ${
+                className={`flex w-full items-center gap-2 rounded px-3 py-1.5 text-start text-sm transition-colors ${
                   isActive
                     ? 'bg-accent text-white'
                     : 'text-text-primary hover:bg-background'

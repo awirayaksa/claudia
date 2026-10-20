@@ -313,7 +313,7 @@ export function TextSelectionMenu({ containerRef, model }: TextSelectionMenuProp
               <button
                 onClick={hidePopup}
                 aria-label={t('selection.close', 'Close')}
-                className="ml-2 flex-shrink-0 rounded p-0.5 text-text-secondary hover:bg-background hover:text-text-primary transition-colors"
+                className="ms-2 flex-shrink-0 rounded p-0.5 text-text-secondary hover:bg-background hover:text-text-primary transition-colors"
               >
                 <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -380,7 +380,7 @@ export function TextSelectionMenu({ containerRef, model }: TextSelectionMenuProp
                   </div>
                 )}
                 {popup.isLoading && popup.response && (
-                  <span className="inline-block h-4 w-0.5 animate-pulse bg-accent align-middle ml-0.5" />
+                  <span className="inline-block h-4 w-0.5 animate-pulse bg-accent align-middle ms-0.5" />
                 )}
               </div>
             )}

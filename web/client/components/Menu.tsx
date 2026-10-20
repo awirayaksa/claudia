@@ -7,6 +7,8 @@ export interface MenuItem {
   /** Indent (submenu entries, e.g. folders under "Move to"). */
   inset?: boolean;
   disabled?: boolean;
+  /** One of a set of choices: shows a check mark when chosen. */
+  checked?: boolean;
 }
 
 /** A button that opens a small list of actions. Closes on outside click and Escape. */
@@ -60,7 +62,7 @@ export function Menu({
         <div
           role="menu"
           className={`absolute z-50 min-w-44 rounded-md border border-border bg-surface py-1 text-sm shadow-lg ${
-            align === 'right' ? 'right-0' : 'left-0'
+            align === 'right' ? 'end-0' : 'start-0'
           } ${placement === 'below' ? 'top-full mt-1' : 'bottom-full mb-1'}`}
         >
           {items.map((item, i) =>
@@ -73,11 +75,12 @@ export function Menu({
             ) : (
               <button
                 key={i}
-                role="menuitem"
+                role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+                aria-checked={item.checked}
                 type="button"
                 disabled={item.disabled}
-                className={`block w-full px-3 py-1.5 text-left hover:bg-background disabled:opacity-50 ${
-                  item.inset ? 'pl-6' : ''
+                className={`block w-full px-3 py-1.5 text-start hover:bg-background disabled:opacity-50 ${
+                  item.inset ? 'ps-6' : ''
                 } ${item.danger ? 'text-error' : 'text-text-primary'}`}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -86,6 +89,11 @@ export function Menu({
                 }}
               >
                 {item.label}
+                {item.checked && (
+                  <span className="float-end ps-3 text-accent" aria-hidden="true">
+                    ✓
+                  </span>
+                )}
               </button>
             )
           )}

@@ -29,7 +29,7 @@ export function PermissionChecks({
             />
             <span>
               {t(`access.permissions.${key}`)}
-              {fromDefaults && <span className="ml-1 text-xs text-text-secondary">({t('access.everyone')})</span>}
+              {fromDefaults && <span className="ms-1 text-xs text-text-secondary">({t('access.everyone')})</span>}
             </span>
           </label>
         );

@@ -63,14 +63,14 @@ export function AuditPage() {
             onChange={(e) => setActor(e.target.value)}
           />
         </label>
-        <a className="ml-auto text-sm text-accent underline" href={exportUrl} download>
+        <a className="ms-auto text-sm text-accent underline" href={exportUrl} download>
           {t('analytics.exportCsv')}
         </a>
       </div>
 
       {error && <p className="text-sm text-error">{errorMessage(error)}</p>}
       <div className="overflow-x-auto rounded-lg border border-border">
-        <table className="w-full text-left text-sm">
+        <table className="w-full text-start text-sm">
           <thead className="bg-surface text-xs text-text-secondary">
             <tr>
               <th className="px-3 py-2 font-normal">{t('audit.time')}</th>
@@ -113,7 +113,7 @@ function AuditRow({ entry, open, onToggle }: { entry: AuditEntry; open: boolean;
         <td className="max-w-[14rem] truncate px-3 py-2">{entry.actorEmail ?? <span className="text-text-secondary">{t('audit.anonymous')}</span>}</td>
         <td className={`px-3 py-2 ${failed ? 'text-error' : ''}`}>
           <span className={entry.route ? 'font-mono text-xs' : ''}>{label}</span>
-          {entry.targetId && <span className="ml-2 font-mono text-xs text-text-secondary">{entry.targetId}</span>}
+          {entry.targetId && <span className="ms-2 font-mono text-xs text-text-secondary">{entry.targetId}</span>}
         </td>
         <td className="whitespace-nowrap px-3 py-2 font-mono text-xs text-text-secondary">{entry.ip}</td>
       </tr>

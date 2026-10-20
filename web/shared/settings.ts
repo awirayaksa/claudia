@@ -35,6 +35,12 @@ export const UserSettingsSchema = z.object({
     .partial(),
   defaultModel: z.string().max(500).optional(),
   memory: z.object({ enabled: z.boolean() }).optional(),
+  /** The web app's language ("ar"); null follows the browser. */
+  language: z
+    .string()
+    .regex(/^[a-z]{2,3}(-[A-Za-z0-9]{2,8})?$/)
+    .nullable()
+    .optional(),
 });
 export type UserSettingsInput = z.infer<typeof UserSettingsSchema>;
 

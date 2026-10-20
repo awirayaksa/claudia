@@ -79,11 +79,11 @@ export function ProjectSelector({ onManageProjects }: ProjectSelectorProps) {
           />
 
           {/* Menu */}
-          <div className="absolute left-0 right-0 top-full mt-1 z-20 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
+          <div className="absolute start-0 end-0 top-full mt-1 z-20 max-h-64 overflow-y-auto rounded-lg border border-border bg-surface shadow-lg">
             {/* All Conversations option */}
             <button
               onClick={() => handleSelectProject(null)}
-              className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors ${
+              className={`flex w-full items-center gap-2 px-3 py-2 text-start text-sm transition-colors ${
                 currentProjectId === null
                   ? 'bg-accent text-white'
                   : 'text-text-primary hover:bg-background'
@@ -124,7 +124,7 @@ export function ProjectSelector({ onManageProjects }: ProjectSelectorProps) {
                 <button
                   key={project.id}
                   onClick={() => handleSelectProject(project.id)}
-                  className={`flex w-full items-start gap-2 px-3 py-2 text-left text-sm transition-colors ${
+                  className={`flex w-full items-start gap-2 px-3 py-2 text-start text-sm transition-colors ${
                     currentProjectId === project.id
                       ? 'bg-accent text-white'
                       : 'text-text-primary hover:bg-background'
@@ -175,7 +175,7 @@ export function ProjectSelector({ onManageProjects }: ProjectSelectorProps) {
                 setIsOpen(false);
                 onManageProjects();
               }}
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-accent hover:bg-background transition-colors"
+              className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm text-accent hover:bg-background transition-colors"
             >
               <svg
                 className="h-4 w-4"

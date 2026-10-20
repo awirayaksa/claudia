@@ -23,6 +23,7 @@ import { useWebDispatch } from '../hooks';
 import { Menu, type MenuItem } from '../components/Menu';
 import { ArchiveIcon, ChevronIcon, DotsIcon, FolderIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, TagIcon } from '../components/icons';
 import { FolderSettings } from './FolderSettings';
+import { LanguageMenu } from './LanguageMenu';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -261,6 +262,7 @@ export function Sidebar() {
         >
           <ArchiveIcon />
         </button>
+        <LanguageMenu />
         <Menu
           label={t('nav.settings')}
           trigger={<DotsIcon />}
@@ -339,7 +341,7 @@ function FolderItem({
   return (
     <li>
       <div className="group flex items-center gap-1 rounded px-1 hover:bg-background">
-        <button className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-left" onClick={onToggle} aria-expanded={open}>
+        <button className="flex min-w-0 flex-1 items-center gap-1.5 py-1.5 text-start" onClick={onToggle} aria-expanded={open}>
           <ChevronIcon open={open} />
           <FolderIcon />
           {renaming ? (
@@ -378,7 +380,7 @@ function FolderItem({
           />
         </div>
       </div>
-      {open && <ul className="ml-4 space-y-0.5 border-l border-border pl-1">{children}</ul>}
+      {open && <ul className="ms-4 space-y-0.5 border-s border-border ps-1">{children}</ul>}
       {settings && <FolderSettings folder={folder} onClose={() => setSettings(false)} />}
       <ConfirmDialog
         isOpen={confirm}
@@ -497,7 +499,7 @@ function ChatItem({ chat, tree, active }: { chat: ChatSummary; tree: Tree; activ
               )}
               <span className="truncate">{chat.title}</span>
               {chat.tags.length > 0 && (
-                <span className="ml-auto flex shrink-0 items-center text-text-secondary" title={chat.tags.map((x) => `#${x}`).join(' ')}>
+                <span className="ms-auto flex shrink-0 items-center text-text-secondary" title={chat.tags.map((x) => `#${x}`).join(' ')}>
                   <TagIcon />
                 </span>
               )}

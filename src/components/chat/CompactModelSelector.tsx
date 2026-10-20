@@ -107,7 +107,7 @@ export function CompactModelSelector({
         aria-haspopup="listbox"
         aria-expanded={isOpen}
       >
-        <span className="flex-1 truncate text-left">{truncatedName}</span>
+        <span className="flex-1 truncate text-start">{truncatedName}</span>
         <svg
           className={`h-4 w-4 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`}
           fill="none"
@@ -143,7 +143,7 @@ export function CompactModelSelector({
                     ref={isSelected ? selectedItemRef : null}
                     type="button"
                     onClick={() => handleSelectModel(model)}
-                    className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors hover:bg-background ${isSelected ? 'bg-background text-accent' : 'text-text-primary'
+                    className={`flex w-full items-center justify-between rounded px-3 py-2 text-start text-sm transition-colors hover:bg-background ${isSelected ? 'bg-background text-accent' : 'text-text-primary'
                       }`}
                     role="option"
                     aria-selected={isSelected}

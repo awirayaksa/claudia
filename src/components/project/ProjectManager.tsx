@@ -172,7 +172,7 @@ export function ProjectManager({ isOpen, onClose }: ProjectManagerProps) {
               size="sm"
             >
               <svg
-                className="h-4 w-4 mr-2"
+                className="h-4 w-4 me-2"
                 fill="none"
                 stroke="currentColor"
                 viewBox="0 0 24 24"

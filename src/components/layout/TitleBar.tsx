@@ -33,7 +33,7 @@ export function TitleBar() {
       style={{ WebkitAppRegion: 'drag' } as any}
     >
       {/* App title and icon */}
-      <div className="flex items-center gap-2 pl-1">
+      <div className="flex items-center gap-2 ps-1">
         {/* Menu button */}
         <button
           onClick={handleShowMenu}

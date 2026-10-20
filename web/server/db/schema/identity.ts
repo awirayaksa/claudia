@@ -14,6 +14,8 @@ export interface UserSettings {
   mcp?: { enabled: Record<string, boolean> };
   /** Saved memories are added to every chat (default on). */
   memory?: { enabled: boolean };
+  /** The web app's language; null (or unset) follows the browser. */
+  language?: string | null;
 }
 
 export const users = pgTable(

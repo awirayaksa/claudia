@@ -45,7 +45,7 @@ export function Input({
             error
               ? 'border-error focus:ring-error'
               : 'border-border hover:border-accent',
-            shouldShowToggle && 'pr-10',
+            shouldShowToggle && 'pe-10',
             className
           )}
           {...props}
@@ -54,7 +54,7 @@ export function Input({
           <button
             type="button"
             onClick={() => setIsPasswordVisible(!isPasswordVisible)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-text-primary transition-colors"
+            className="absolute end-2 top-1/2 -translate-y-1/2 p-1 text-text-secondary hover:text-text-primary transition-colors"
             tabIndex={-1}
           >
             {isPasswordVisible ? (

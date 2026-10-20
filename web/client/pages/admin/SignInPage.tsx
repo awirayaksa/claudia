@@ -85,7 +85,7 @@ function SsoProviders() {
             <div className="flex flex-wrap items-center gap-2">
               <span className="font-medium">{p.name}</span>
               <code className="text-xs text-text-secondary">{p.issuer}</code>
-              <label className="ml-auto flex items-center gap-1 text-sm">
+              <label className="ms-auto flex items-center gap-1 text-sm">
                 <input type="checkbox" checked={p.enabled} onChange={(e) => void update({ id: p.id, enabled: e.target.checked })} />
                 {t('webhooks.enabled')}
               </label>
@@ -207,7 +207,7 @@ function ProviderForm({ provider, onClose }: { provider: ProviderRow | null; onC
       title={provider ? t('signin.editProvider') : t('signin.addProvider')}
       footer={
         <div className="flex items-center justify-end gap-2">
-          {err && <span className="mr-auto text-sm text-error">{errorMessage(err)}</span>}
+          {err && <span className="me-auto text-sm text-error">{errorMessage(err)}</span>}
           <Button variant="secondary" onClick={onClose}>
             {t('app.cancel')}
           </Button>

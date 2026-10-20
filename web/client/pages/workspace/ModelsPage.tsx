@@ -49,7 +49,7 @@ export function ModelsPage() {
               <div className="min-w-0 flex-1">
                 <div className="truncate font-medium">
                   {m.name}
-                  {!m.active && <span className="ml-2 text-xs font-normal text-text-secondary">({t('workspace.inactive')})</span>}
+                  {!m.active && <span className="ms-2 text-xs font-normal text-text-secondary">({t('workspace.inactive')})</span>}
                 </div>
                 <div className="truncate text-xs text-text-secondary">
                   {m.baseModelId}

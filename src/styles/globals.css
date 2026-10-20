@@ -178,6 +178,18 @@ body {
   );
 }
 
+/* Right-to-left pages (Arabic in the web app): code stays left-to-right, and text
+   boxes take each line's direction from its text (else the page's) */
+[dir='rtl'] code,
+[dir='rtl'] kbd,
+[dir='rtl'] pre {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+textarea {
+  unicode-bidi: plaintext;
+}
+
 /* Prevent code block overflow */
 .markdown pre code {
   display: block;

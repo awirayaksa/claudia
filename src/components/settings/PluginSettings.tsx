@@ -191,7 +191,7 @@ export function PluginSettings() {
           <p>
             <strong className="text-text-primary">Extension plugins</strong> can provide:
           </p>
-          <ul className="ml-4 list-disc space-y-1">
+          <ul className="ms-4 list-disc space-y-1">
             <li>Custom remark/rehype plugins</li>
             <li>Custom React components for markdown elements</li>
             <li>Pre-processing of markdown content</li>

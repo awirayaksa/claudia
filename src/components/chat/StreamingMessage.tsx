@@ -33,7 +33,7 @@ export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessa
         {onAbort && (
           <button
             onClick={onAbort}
-            className="ml-2 rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface hover:text-error transition-colors"
+            className="ms-2 rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface hover:text-error transition-colors"
             title={t('chat.stop', 'Stop generating')}
           >
             ✕ Stop
@@ -41,7 +41,7 @@ export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessa
         )}
       </div>
 
-      <div className="pl-[30px]">
+      <div className="ps-[30px]">
         {/* Streaming reasoning */}
         {showReasoning && throttledReasoning && (
           <ReasoningMessage reasoning={throttledReasoning} isStreaming={true} />
@@ -50,7 +50,7 @@ export function StreamingMessage({ content, reasoning, onAbort }: StreamingMessa
         {/* Streaming content */}
         <div className="text-[14px] leading-[1.7] text-text-primary">
           <MarkdownRenderer content={throttledContent} isUser={false} />
-          <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-accent align-middle"></span>
+          <span className="ms-0.5 inline-block h-4 w-0.5 animate-pulse bg-accent align-middle"></span>
         </div>
 
         {/* Generating indicator */}

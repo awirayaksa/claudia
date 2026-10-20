@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeAll, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { setPlatform, getPlatform } from '@/platform';
 import { createWebPlatform, WEB_UI_SANDBOX_PERMISSIONS } from './platform/web.platform';
@@ -14,12 +14,13 @@ beforeAll(() => {
   window.HTMLElement.prototype.scrollIntoView ??= function () {};
 });
 
-/** Answer API calls from a small route table. */
+/** Answer API calls from a small route table (a function answers from the request). */
 function stubApi(routes: Record<string, unknown>) {
-  const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input).replace(/^https?:\/\/[^/]+/, '');
     const path = url.split('?')[0];
-    const body = routes[path];
+    const route = routes[path];
+    const body = typeof route === 'function' ? route(init) : route;
     if (body === undefined) return new Response(JSON.stringify({ error: { code: 'not_found', message: path } }), { status: 404 });
     return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
   });
@@ -71,6 +72,41 @@ describe('web client', () => {
     await waitFor(() => expect(screen.getByText(/Add a connection in Admin/)).toBeInTheDocument());
     expect(screen.getAllByText('Ada').length).toBeGreaterThan(0);
     expect(screen.getByPlaceholderText('Message Claudia…')).toBeInTheDocument();
+  });
+
+  it("follows the language saved in the user's settings, and the sidebar menu changes it", async () => {
+    cleanup(); // the earlier screens are still mounted
+    let settings: Record<string, unknown> = { language: 'ar' };
+    const fetchMock = stubApi({
+      '/api/auth/session': { user: { id: 'u', email: 'a@example.com', name: 'Ada', role: 'admin', hasPassword: true }, auth },
+      '/api/me/settings': (init?: RequestInit) => {
+        if (init?.method === 'PATCH') settings = { ...settings, ...JSON.parse(String(init.body)) };
+        return { settings };
+      },
+      '/api/models': { models: [], defaultModel: null },
+      '/api/chats': { chats: [] },
+      '/api/folders': { folders: [] },
+    });
+    renderApp();
+    expect(await screen.findByText('كيف يمكنني المساعدة؟')).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe('rtl');
+
+    fireEvent.click(screen.getByRole('button', { name: 'اللغة' }));
+    expect(screen.getByRole('menuitemradio', { name: 'العربية' })).toHaveAttribute('aria-checked', 'true');
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'English' }));
+    expect(await screen.findByText('How can I help?')).toBeInTheDocument();
+    expect(document.documentElement.dir).toBe('ltr');
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith('/api/me/settings', expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ language: 'en' }) }))
+    );
+    expect(localStorage.getItem('claudia.language')).toBe('en');
+
+    // Automatic: back to the browser's language, nothing remembered
+    fireEvent.click(screen.getByRole('button', { name: 'Language' }));
+    fireEvent.click(screen.getByRole('menuitemradio', { name: 'Automatic (browser)' }));
+    await waitFor(() => expect(settings.language).toBeNull());
+    expect(localStorage.getItem('claudia.language')).toBeNull();
+    expect(screen.getByText('How can I help?')).toBeInTheDocument();
   });
 
   it('never gives MCP-UI iframes same-origin access', () => {

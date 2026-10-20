@@ -70,7 +70,7 @@ function NewChannel({ onClose }: { onClose: () => void }) {
       title={t('channels.new')}
       footer={
         <div className="flex items-center justify-end gap-2">
-          {state.error && <span className="mr-auto text-sm text-error">{errorMessage(state.error)}</span>}
+          {state.error && <span className="me-auto text-sm text-error">{errorMessage(state.error)}</span>}
           <Button variant="secondary" onClick={onClose}>
             {t('app.cancel')}
           </Button>

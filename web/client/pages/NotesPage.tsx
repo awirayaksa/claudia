@@ -31,7 +31,7 @@ export function NotesPage() {
 
   return (
     <div className="flex h-full min-h-0" data-testid="notes">
-      <aside className={`w-full shrink-0 flex-col border-r border-border md:flex md:w-72 ${id ? 'hidden' : 'flex'}`}>
+      <aside className={`w-full shrink-0 flex-col border-e border-border md:flex md:w-72 ${id ? 'hidden' : 'flex'}`}>
         <div className="flex items-center gap-2 border-b border-border p-3">
           <h1 className="flex-1 font-semibold">{t('notes.title')}</h1>
           <Button size="sm" onClick={() => void newNote()}>
@@ -53,7 +53,7 @@ export function NotesPage() {
           {data?.notes.map((n) => (
             <li key={n.id}>
               <button
-                className={`block w-full px-3 py-2 text-left hover:bg-surface ${n.id === id ? 'bg-surface' : ''}`}
+                className={`block w-full px-3 py-2 text-start hover:bg-surface ${n.id === id ? 'bg-surface' : ''}`}
                 onClick={() => navigate(`/notes/${n.id}`)}
               >
                 <div className="flex items-center gap-1 truncate text-sm font-medium">
@@ -115,7 +115,7 @@ function NoteEditor({ id, onBack }: { id: string; onBack: () => void }) {
         <span className="text-xs text-text-secondary" role="status">
           {readOnly ? t('notes.readOnly') : updateState.isLoading ? t('notes.saving') : updateState.isSuccess ? t('notes.saved') : ''}
         </span>
-        <div className="ml-auto flex flex-wrap gap-2">
+        <div className="ms-auto flex flex-wrap gap-2">
           <Button size="sm" variant="secondary" aria-pressed={preview} onClick={() => setPreview((p) => !p)}>
             {preview ? t('notes.edit') : t('notes.preview')}
           </Button>

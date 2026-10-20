@@ -45,7 +45,7 @@ export const PinIcon = () => (
   </svg>
 );
 export const ChevronIcon = ({ open }: { open: boolean }) => (
-  <svg {...base} style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 150ms' }}>
+  <svg {...base} className="rtl:-scale-x-100" style={{ transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 150ms' }}>
     <path d="m9 6 6 6-6 6" />
   </svg>
 );

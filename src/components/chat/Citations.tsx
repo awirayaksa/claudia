@@ -56,7 +56,7 @@ export function Citations({
               type="button"
               aria-expanded={active === c.index}
               onClick={() => onActiveChange(active === c.index ? null : c.index)}
-              className={`flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2 py-0.5 text-left transition-colors ${
+              className={`flex max-w-[16rem] items-center gap-1.5 rounded-full border px-2 py-0.5 text-start transition-colors ${
                 active === c.index ? 'border-accent bg-accent/10 text-text-primary' : 'border-border text-text-secondary hover:border-accent'
               }`}
               title={sourceLabel(c.source)}

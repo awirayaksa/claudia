@@ -76,8 +76,8 @@ export const ConversationItem = React.memo(function ConversationItem({
     <div
       className={`group relative flex items-center gap-2 rounded-lg mx-1 px-2 py-1 cursor-pointer transition-colors ${
         isActive
-          ? 'border-l-2 border-l-accent bg-[#f3ece4] text-text-primary'
-          : 'border-l-2 border-l-transparent hover:border-l-accent text-text-primary'
+          ? 'border-s-2 border-s-accent bg-[#f3ece4] text-text-primary'
+          : 'border-s-2 border-s-transparent hover:border-s-accent text-text-primary'
       }`}
       onClick={handleClick}
     >
@@ -192,14 +192,14 @@ export const ConversationItem = React.memo(function ConversationItem({
               />
 
               {/* Menu */}
-              <div className="absolute right-0 top-full mt-1 w-36 bg-surface border border-border rounded-lg shadow-lg z-20">
+              <div className="absolute end-0 top-full mt-1 w-36 bg-surface border border-border rounded-lg shadow-lg z-20">
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
                     setIsEditing(true);
                     setShowMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background transition-colors rounded-t-lg"
+                  className="w-full px-3 py-2 text-start text-sm text-text-primary hover:bg-background transition-colors rounded-t-lg"
                 >
                   Rename
                 </button>
@@ -209,7 +209,7 @@ export const ConversationItem = React.memo(function ConversationItem({
                     onStar(conversation.id);
                     setShowMenu(false);
                   }}
-                  className="w-full px-3 py-2 text-left text-sm text-text-primary hover:bg-background transition-colors"
+                  className="w-full px-3 py-2 text-start text-sm text-text-primary hover:bg-background transition-colors"
                 >
                   {conversation.starred ? 'Unstar' : 'Star'}
                 </button>
@@ -218,7 +218,7 @@ export const ConversationItem = React.memo(function ConversationItem({
                     e.stopPropagation();
                     handleDelete();
                   }}
-                  className="w-full px-3 py-2 text-left text-sm text-error hover:bg-background transition-colors rounded-b-lg"
+                  className="w-full px-3 py-2 text-start text-sm text-error hover:bg-background transition-colors rounded-b-lg"
                 >
                   Delete
                 </button>
