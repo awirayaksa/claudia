@@ -83,6 +83,27 @@ describe('MarkdownRenderer mermaid', () => {
   });
 });
 
+describe('MarkdownRenderer svg', () => {
+  it('shows an svg block as an image, adding the namespace models leave out', () => {
+    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 680 240"><title>Merge</title><circle r="5"/></svg>\n```');
+    const img = container.querySelector('[data-testid="svg-diagram"] img') as HTMLImageElement;
+    expect(img.alt).toBe('Merge');
+    expect(img.style.maxWidth).toBe('680px');
+    expect(decodeURIComponent(img.src)).toContain('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 240">');
+  });
+
+  it('recognizes svg in an xml block', () => {
+    const { container } = renderMarkdown('```xml\n<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg"><rect/></svg>\n```');
+    expect(container.querySelector('[data-testid="svg-diagram"]')).not.toBeNull();
+  });
+
+  it('shows the source while the svg is incomplete (still streaming)', () => {
+    const { container } = renderMarkdown('```svg\n<svg viewBox="0 0 10 10"><circle r="5"/>\n```');
+    expect(container.querySelector('[data-testid="svg-diagram"]')).toBeNull();
+    expect(container.textContent).toContain('<circle r="5"/>');
+  });
+});
+
 describe('MarkdownRenderer citations', () => {
   it('turns [n] of known sources into buttons that report the number', async () => {
     const picked: number[] = [];

@@ -13,6 +13,7 @@ import { Message } from '../../types/message.types';
 import { normalizeMath } from '../../utils/math-delimiters';
 import { citationIndex, linkCitations } from '../../utils/citations';
 import { MermaidDiagram } from './MermaidDiagram';
+import { SvgDiagram, isSvgBlock } from './SvgDiagram';
 import { useT } from '../../i18n';
 import { copyText } from '../../utils/clipboard';
 
@@ -116,6 +117,9 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
 
           if (codeBlock && language === 'mermaid') {
             return <MermaidDiagram code={source} isDark={isDark} fallback={codeBlock} />;
+          }
+          if (codeBlock && isSvgBlock(language, source)) {
+            return <SvgDiagram code={source} isDark={isDark} fallback={codeBlock} />;
           }
           return codeBlock ?? (
             <code

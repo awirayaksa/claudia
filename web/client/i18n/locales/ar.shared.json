@@ -74,6 +74,7 @@
     "noSkills": "لم يتم العثور على مهارات"
   },
   "mermaid": {
+    "diagram": "مخطط",
     "showDiagram": "عرض المخطط",
     "showSource": "عرض المصدر"
   },

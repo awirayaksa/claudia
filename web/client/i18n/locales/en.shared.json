@@ -74,6 +74,7 @@
     "noSkills": "No skills found"
   },
   "mermaid": {
+    "diagram": "Diagram",
     "showDiagram": "Show diagram",
     "showSource": "Show source"
   },
