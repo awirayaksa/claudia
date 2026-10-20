@@ -352,6 +352,12 @@ describe('banners and default settings', () => {
     });
     await user.patch('/api/me/settings', { appearance: { theme: 'light' } });
     expect((await user.get('/api/me/settings')).json().settings.appearance.theme).toBe('light');
+    // The language menu: a language code, or null to follow the browser
+    await user.patch('/api/me/settings', { language: 'ar' });
+    expect((await user.get('/api/me/settings')).json().settings).toMatchObject({ language: 'ar', appearance: { theme: 'light' } });
+    await user.patch('/api/me/settings', { language: null });
+    expect((await user.get('/api/me/settings')).json().settings.language).toBeNull();
+    expect((await user.patch('/api/me/settings', { language: '<b>ar</b>' })).statusCode).toBe(400);
 
     f.mock.push({ text: ['Ok.'] });
     const chatId = await f.newChat(user);

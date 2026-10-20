@@ -23,6 +23,7 @@ import { useWebDispatch } from '../hooks';
 import { Menu, type MenuItem } from '../components/Menu';
 import { ArchiveIcon, ChevronIcon, DotsIcon, FolderIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, TagIcon } from '../components/icons';
 import { FolderSettings } from './FolderSettings';
+import { LanguageMenu } from './LanguageMenu';
 
 function useDebounced<T>(value: T, ms: number): T {
   const [v, setV] = useState(value);
@@ -261,6 +262,7 @@ export function Sidebar() {
         >
           <ArchiveIcon />
         </button>
+        <LanguageMenu />
         <Menu
           label={t('nav.settings')}
           trigger={<DotsIcon />}

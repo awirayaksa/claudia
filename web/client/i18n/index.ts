@@ -4,8 +4,9 @@
  * - `shared`: the components shared with the desktop app (locales/<lang>.shared.json,
  *   generated in English by `node scripts/shared-strings.mjs`), plugged into their
  *   `t()` with setTranslator.
- * A language is offered once its <lang>.json exists; the browser's preferred
- * languages pick it, English otherwise. Missing strings fall back to English.
+ * A language is offered once its <lang>.json exists. The user's choice (the
+ * language menu, saved in their settings and in this browser) picks it, else the
+ * browser's preferred languages, else English. Missing strings fall back to English.
  * Right-to-left languages (Arabic) set dir="rtl" on the page.
  */
 import i18n from 'i18next';
@@ -36,9 +37,52 @@ export function pickLanguage(preferred: readonly string[] = typeof navigator ===
   return 'en';
 }
 
+/** A language's name in itself ("English", "العربية"). */
+export function languageName(lng: string): string {
+  try {
+    return new Intl.DisplayNames([lng], { type: 'language' }).of(lng) ?? lng;
+  } catch {
+    return lng;
+  }
+}
+
+// This browser's copy of the user's choice, so the sign-in screen and the first paint use it
+const STORAGE_KEY = 'claudia.language';
+
+/** The language the user chose, or null to follow the browser. */
+export function languageChoice(): string | null {
+  try {
+    const lng = localStorage.getItem(STORAGE_KEY);
+    return lng && LANGUAGES.includes(lng) ? lng : null;
+  } catch {
+    return null;
+  }
+}
+
+const choiceListeners = new Set<() => void>();
+
+/** Call `listener` whenever the choice changes (it can change without the language changing). */
+export function subscribeLanguageChoice(listener: () => void): () => void {
+  choiceListeners.add(listener);
+  return () => choiceListeners.delete(listener);
+}
+
+/** Switch to `lng` (null: follow the browser) and remember it in this browser. */
+export function setLanguageChoice(lng: string | null): void {
+  const choice = lng && LANGUAGES.includes(lng) ? lng : null;
+  try {
+    if (choice) localStorage.setItem(STORAGE_KEY, choice);
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // Storage blocked: the choice still applies until the page is reloaded
+  }
+  void i18n.changeLanguage(choice ?? pickLanguage());
+  for (const l of choiceListeners) l();
+}
+
 void i18n.use(initReactI18next).init({
   resources,
-  lng: pickLanguage(),
+  lng: languageChoice() ?? pickLanguage(),
   fallbackLng: 'en',
   ns: ['common', 'shared'],
   defaultNS,

@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Citations } from '@/components/chat/Citations';
-import i18n, { LANGUAGES, pickLanguage, resources } from './index';
+import i18n, { LANGUAGES, languageChoice, languageName, pickLanguage, resources, setLanguageChoice } from './index';
 // @ts-expect-error plain ES module script
 import { CATALOG, render as renderCatalog } from '../../scripts/shared-strings.mjs';
 
@@ -104,5 +104,16 @@ describe('translations', () => {
 
     await act(() => i18n.changeLanguage('en'));
     expect(document.documentElement.dir).toBe('ltr');
+  });
+
+  it("a chosen language is remembered in this browser; no choice follows the browser's", async () => {
+    await act(() => setLanguageChoice('ar'));
+    expect(i18n.language).toBe('ar');
+    expect(languageChoice()).toBe('ar');
+    await act(() => setLanguageChoice('xx')); // not a language we have
+    expect(languageChoice()).toBeNull();
+    expect(i18n.language).toBe(pickLanguage());
+    expect(languageName('ar')).toBe('العربية');
+    expect(languageName('en')).toBe('English');
   });
 });

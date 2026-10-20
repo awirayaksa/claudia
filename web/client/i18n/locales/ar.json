@@ -69,7 +69,9 @@
     "backToChats": "العودة إلى المحادثات",
     "newSubfolder": "مجلد جديد بداخله",
     "topLevel": "المستوى الأعلى",
-    "workspace": "مساحة العمل"
+    "workspace": "مساحة العمل",
+    "language": "اللغة",
+    "languageAuto": "تلقائي (المتصفح)"
   },
   "chat": {
     "placeholder": "راسل Claudia…",

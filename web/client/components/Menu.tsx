@@ -7,6 +7,8 @@ export interface MenuItem {
   /** Indent (submenu entries, e.g. folders under "Move to"). */
   inset?: boolean;
   disabled?: boolean;
+  /** One of a set of choices: shows a check mark when chosen. */
+  checked?: boolean;
 }
 
 /** A button that opens a small list of actions. Closes on outside click and Escape. */
@@ -73,7 +75,8 @@ export function Menu({
             ) : (
               <button
                 key={i}
-                role="menuitem"
+                role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
+                aria-checked={item.checked}
                 type="button"
                 disabled={item.disabled}
                 className={`block w-full px-3 py-1.5 text-start hover:bg-background disabled:opacity-50 ${
@@ -86,6 +89,11 @@ export function Menu({
                 }}
               >
                 {item.label}
+                {item.checked && (
+                  <span className="float-end ps-3 text-accent" aria-hidden="true">
+                    ✓
+                  </span>
+                )}
               </button>
             )
           )}

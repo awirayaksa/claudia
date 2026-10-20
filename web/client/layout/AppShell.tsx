@@ -5,6 +5,7 @@ import { useLoadSettingsFromStore } from '@/hooks/useLoadSettingsFromStore';
 import { toggleSidebar } from '@/store/slices/uiSlice';
 import { useAppDispatch, useAppSelector } from '@/store';
 import { Sidebar } from './Sidebar';
+import { useLanguageSync } from './LanguageMenu';
 import { BannerBar } from './BannerBar';
 import { MenuIcon } from '../components/icons';
 import { useMcpSync } from '../chat/useMcpSync';
@@ -27,6 +28,8 @@ export function AppShell() {
   useMcpSync();
   // The admin's renderer plugins
   usePlugins(true);
+  // The language saved in the user's settings
+  useLanguageSync();
 
   // The user's appearance and preferences into the shared settings slice
   useEffect(() => {
