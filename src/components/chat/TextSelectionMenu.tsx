@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { getPlatform } from '../../platform';
 import { useT } from '../../i18n';
+import { copyText } from '../../utils/clipboard';
 
 interface MenuState {
   visible: boolean;
@@ -200,7 +201,7 @@ export function TextSelectionMenu({ containerRef, model }: TextSelectionMenuProp
   }, [menu, hideMenu, streamResponse]);
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(menu.selectedText);
+    void copyText(menu.selectedText);
     hideMenu();
   }, [menu, hideMenu]);
 

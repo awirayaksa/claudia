@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
+import { copyText } from '@/utils/clipboard';
 import type { MfaSetup } from '@shared/auth';
 import {
   errorMessage,
@@ -31,7 +32,7 @@ export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone?: () 
         ))}
       </ul>
       <div className="flex flex-wrap gap-2">
-        <Button size="sm" variant="secondary" onClick={() => void navigator.clipboard?.writeText(text).then(() => setCopied(true))}>
+        <Button size="sm" variant="secondary" onClick={() => void copyText(text).then((ok) => setCopied(ok))}>
           {copied ? t('app.copied') : t('app.copy')}
         </Button>
         <a

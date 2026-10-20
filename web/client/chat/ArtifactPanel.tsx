@@ -9,6 +9,7 @@ import { ARTIFACT_EXTENSIONS, type Artifact } from '@/utils/artifacts';
 import { usePublicConfigQuery } from '../api/rtk-api';
 import { CloseIcon } from '../components/icons';
 import { saveBlob } from './download';
+import { copyText } from '@/utils/clipboard';
 
 export function ArtifactPanel({ artifact, onClose }: { artifact: Artifact; onClose: () => void }) {
   const { t } = useTranslation();
@@ -59,7 +60,7 @@ export function ArtifactPanel({ artifact, onClose }: { artifact: Artifact; onClo
           )}
           <button
             className="rounded px-2 py-1 text-sm text-text-secondary hover:text-text-primary"
-            onClick={() => void navigator.clipboard?.writeText(artifact.code).then(() => setCopied(true))}
+            onClick={() => void copyText(artifact.code).then((ok) => setCopied(ok))}
           >
             {copied ? t('apiKeys.copied') : t('apiKeys.copy')}
           </button>

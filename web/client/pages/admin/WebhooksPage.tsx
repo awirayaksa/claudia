@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { copyText } from '@/utils/clipboard';
 import { WEBHOOK_EVENTS, type WebhookTestResult, type WebhookView } from '@shared/admin';
 import {
   errorMessage,
@@ -231,7 +232,7 @@ function SecretModal({ secret, onClose }: { secret: string; onClose: () => void 
           size="sm"
           variant="secondary"
           onClick={() => {
-            void navigator.clipboard?.writeText(secret).then(() => setCopied(true));
+            void copyText(secret).then((ok) => setCopied(ok));
           }}
         >
           {copied ? t('app.copied') : t('app.copy')}

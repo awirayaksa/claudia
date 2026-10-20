@@ -12,6 +12,7 @@ import { errorMessage, usePermissions, useShareChatMutation, useUnshareChatMutat
 import { Menu } from '../components/Menu';
 import { DotsIcon, GhostIcon, ShareIcon, SlidersIcon } from '../components/icons';
 import { downloadFrom } from './download';
+import { copyText } from '@/utils/clipboard';
 
 export function ChatHeader({
   chat,
@@ -249,7 +250,7 @@ function ShareDialog({ chat, open, onClose }: { chat: ChatDetail; open: boolean;
               <button
                 className="rounded bg-accent px-3 py-1.5 text-white"
                 onClick={async () => {
-                  await navigator.clipboard?.writeText(url).catch(() => {});
+                  if (!(await copyText(url))) return;
                   setCopied(true);
                   setTimeout(() => setCopied(false), 1500);
                 }}
