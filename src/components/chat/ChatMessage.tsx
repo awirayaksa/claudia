@@ -11,6 +11,7 @@ import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { format } from 'date-fns';
 import { useAppSelector } from '../../store';
 import { useT } from '../../i18n';
+import { copyText } from '../../utils/clipboard';
 
 interface ChatMessageProps {
   message: Message;
@@ -57,12 +58,11 @@ export const ChatMessage = React.memo(function ChatMessage({
   const formattedTime = format(new Date(message.timestamp), 'h:mm a');
 
   const handleCopy = async () => {
-    try {
-      await navigator.clipboard.writeText(message.content);
+    if (await copyText(message.content)) {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy text:', err);
+    } else {
+      console.error('Failed to copy text');
     }
   };
 

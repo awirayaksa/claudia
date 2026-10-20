@@ -14,6 +14,7 @@ import { normalizeMath } from '../../utils/math-delimiters';
 import { citationIndex, linkCitations } from '../../utils/citations';
 import { MermaidDiagram } from './MermaidDiagram';
 import { useT } from '../../i18n';
+import { copyText } from '../../utils/clipboard';
 
 // Single-dollar math is off so prices stay text; normalizeMath turns $x$, \(x\) and \[x\] into $$
 const MATH_OPTIONS = { singleDollarTextMath: false };
@@ -89,7 +90,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
                 <span className="text-xs font-medium text-text-secondary">{language}</span>
                 <button
                   onClick={() => {
-                    navigator.clipboard.writeText(source);
+                    void copyText(source);
                   }}
                   className="text-xs text-text-secondary hover:text-text-primary transition-colors"
                 >

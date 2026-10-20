@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
+import { copyText } from '@/utils/clipboard';
 import { errorMessage, useApiKeysQuery, useCreateApiKeyMutation, useDeleteApiKeyMutation } from '../../api/rtk-api';
 
 /** Keys for the OpenAI-compatible API at /api/v1. */
@@ -78,7 +79,7 @@ export function ApiKeysSettings() {
               size="sm"
               variant="secondary"
               onClick={() => {
-                void navigator.clipboard?.writeText(secret).then(() => setCopied(true));
+                void copyText(secret).then((ok) => setCopied(ok));
               }}
             >
               {copied ? t('apiKeys.copied') : t('apiKeys.copy')}
