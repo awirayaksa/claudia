@@ -165,7 +165,7 @@ function WebhookForm({ webhook, onClose, onCreated }: { webhook: WebhookView | n
       title={webhook ? t('webhooks.edit') : t('webhooks.new')}
       footer={
         <div className="flex items-center justify-end gap-2">
-          {err && <span className="mr-auto text-sm text-error">{errorMessage(err)}</span>}
+          {err && <span className="me-auto text-sm text-error">{errorMessage(err)}</span>}
           <Button variant="secondary" onClick={onClose}>
             {t('app.cancel')}
           </Button>

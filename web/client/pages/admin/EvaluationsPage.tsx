@@ -58,15 +58,15 @@ export function EvaluationsPage() {
         <h2 className="font-semibold">{t('arena.leaderboard')}</h2>
         <p className="mb-3 mt-1 text-sm text-text-secondary">{t('arena.leaderboardHelp', { count: board?.votes ?? 0 })}</p>
         {board && board.rows.length > 0 ? (
-          <table className="w-full text-left text-sm" data-testid="leaderboard">
+          <table className="w-full text-start text-sm" data-testid="leaderboard">
             <thead className="text-xs text-text-secondary">
               <tr>
                 <th className="py-1 font-normal">#</th>
                 <th className="font-normal">{t('arena.model')}</th>
-                <th className="text-right font-normal">{t('arena.rating')}</th>
-                <th className="text-right font-normal">{t('arena.wins')}</th>
-                <th className="text-right font-normal">{t('arena.losses')}</th>
-                <th className="text-right font-normal">{t('arena.ties')}</th>
+                <th className="text-end font-normal">{t('arena.rating')}</th>
+                <th className="text-end font-normal">{t('arena.wins')}</th>
+                <th className="text-end font-normal">{t('arena.losses')}</th>
+                <th className="text-end font-normal">{t('arena.ties')}</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
@@ -74,10 +74,10 @@ export function EvaluationsPage() {
                 <tr key={r.modelId} className="border-t border-border">
                   <td className="py-1.5">{i + 1}</td>
                   <td className="truncate">{r.modelId}</td>
-                  <td className="text-right font-medium">{r.rating}</td>
-                  <td className="text-right">{r.wins}</td>
-                  <td className="text-right">{r.losses}</td>
-                  <td className="text-right">{r.ties}</td>
+                  <td className="text-end font-medium">{r.rating}</td>
+                  <td className="text-end">{r.wins}</td>
+                  <td className="text-end">{r.losses}</td>
+                  <td className="text-end">{r.ties}</td>
                 </tr>
               ))}
             </tbody>
@@ -90,20 +90,20 @@ export function EvaluationsPage() {
       {board && board.ratings.length > 0 && (
         <section className="rounded-lg border border-border bg-surface p-4">
           <h2 className="mb-3 font-semibold">{t('arena.thumbs')}</h2>
-          <table className="w-full text-left text-sm">
+          <table className="w-full text-start text-sm">
             <thead className="text-xs text-text-secondary">
               <tr>
                 <th className="py-1 font-normal">{t('arena.model')}</th>
-                <th className="text-right font-normal">👍</th>
-                <th className="text-right font-normal">👎</th>
+                <th className="text-end font-normal">👍</th>
+                <th className="text-end font-normal">👎</th>
               </tr>
             </thead>
             <tbody className="tabular-nums">
               {board.ratings.map((r) => (
                 <tr key={r.modelId} className="border-t border-border">
                   <td className="py-1.5">{r.modelId}</td>
-                  <td className="text-right">{r.up}</td>
-                  <td className="text-right">{r.down}</td>
+                  <td className="text-end">{r.up}</td>
+                  <td className="text-end">{r.down}</td>
                 </tr>
               ))}
             </tbody>

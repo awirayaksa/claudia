@@ -81,7 +81,7 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between text-left"
+        className="flex w-full items-center justify-between text-start"
       >
         <div className="flex items-center gap-2">
           <span className="text-lg">🔧</span>
@@ -97,7 +97,7 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
             <span>{statusConfig.label}</span>
           </span>
         </div>
-        <span className="ml-4 text-text-secondary">
+        <span className="ms-4 text-text-secondary">
           {isExpanded ? '▼' : '▶'}
         </span>
       </button>

@@ -232,7 +232,7 @@ function Members({ groupId }: { groupId: string }) {
               <li key={u.id}>
                 <button
                   type="button"
-                  className="w-full px-3 py-1.5 text-left text-sm hover:bg-background"
+                  className="w-full px-3 py-1.5 text-start text-sm hover:bg-background"
                   onClick={() => {
                     void add({ id: groupId, userId: u.id });
                     setSearch('');

@@ -55,7 +55,7 @@ export function ToolServersPage() {
                   <span className="text-xs text-text-secondary">
                     {s.transport} · {t(`mcp.status.${s.status}`, { defaultValue: s.status })}
                   </span>
-                  {!s.enabled && <span className="ml-2 text-xs text-text-secondary">(off)</span>}
+                  {!s.enabled && <span className="ms-2 text-xs text-text-secondary">(off)</span>}
                 </div>
                 <div className="truncate text-sm text-text-secondary">{s.url ?? [s.command, ...s.args].join(' ')}</div>
                 <div className="text-xs text-text-secondary">

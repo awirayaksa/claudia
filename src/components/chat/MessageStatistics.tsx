@@ -27,7 +27,7 @@ export function MessageStatistics({ usage }: MessageStatisticsProps) {
       {/* Collapsible header button */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between text-left"
+        className="flex w-full items-center justify-between text-start"
       >
         <div className="flex items-center gap-2">
           <span className="text-lg">📊</span>
@@ -39,7 +39,7 @@ export function MessageStatistics({ usage }: MessageStatisticsProps) {
             {(usage.cost !== undefined && usage.cost !== null) && ` • ${formatCost(usage.cost)}`}
           </span>
         </div>
-        <span className="ml-4 text-text-secondary">
+        <span className="ms-4 text-text-secondary">
           {isExpanded ? '▼' : '▶'}
         </span>
       </button>

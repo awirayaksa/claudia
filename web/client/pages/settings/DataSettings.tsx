@@ -119,7 +119,7 @@ export function DataSettings() {
             {summary.converted.problems.length > 0 && (
               <details className="mt-1 text-text-secondary">
                 <summary>{t('settings.importProblems', { count: summary.converted.problems.length })}</summary>
-                <ul className="mt-1 list-disc pl-5">
+                <ul className="mt-1 list-disc ps-5">
                   {summary.converted.problems.slice(0, 50).map((p, i) => (
                     <li key={i}>
                       {p.file ? `${p.file}: ` : ''}

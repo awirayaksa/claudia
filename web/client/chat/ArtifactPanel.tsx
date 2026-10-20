@@ -40,8 +40,8 @@ export function ArtifactPanel({ artifact, onClose }: { artifact: Artifact; onClo
     `rounded px-2.5 py-1 text-sm ${on ? 'bg-background font-medium text-text-primary' : 'text-text-secondary hover:text-text-primary'}`;
 
   return (
-    <div className="fixed inset-0 z-40 flex justify-end md:left-auto md:w-[min(48rem,55vw)]" role="dialog" aria-label={artifact.title} data-testid="artifact-panel">
-      <div className="flex h-full w-full flex-col border-l border-border bg-surface shadow-xl">
+    <div className="fixed inset-0 z-40 flex justify-end md:start-auto md:w-[min(48rem,55vw)]" role="dialog" aria-label={artifact.title} data-testid="artifact-panel">
+      <div className="flex h-full w-full flex-col border-s border-border bg-surface shadow-xl">
         <div className="flex items-center gap-2 border-b border-border px-3 py-2">
           <div className="min-w-0 flex-1">
             <div className="truncate font-medium">{artifact.title}</div>

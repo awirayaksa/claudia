@@ -83,7 +83,7 @@ export function ChannelPage() {
         </h1>
         {channel?.description && <span className="truncate text-sm text-text-secondary">{channel.description}</span>}
         {channel?.canManage && (
-          <div className="ml-auto flex gap-2">
+          <div className="ms-auto flex gap-2">
             <Button size="sm" variant="secondary" onClick={() => setSharing(true)}>
               {t('channels.members')}
             </Button>
@@ -147,7 +147,7 @@ function ChannelMessage({ channelId, message: m, mine, canModerate }: { channelI
         <span className="text-xs text-text-secondary">{new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
         {m.editedAt && <span className="text-xs text-text-secondary">{t('channels.edited')}</span>}
         {!m.deleted && (mine || canModerate) && !editing && (
-          <span className="ml-auto hidden gap-2 text-xs group-hover:flex group-focus-within:flex">
+          <span className="ms-auto hidden gap-2 text-xs group-hover:flex group-focus-within:flex">
             {mine && (
               <button className="text-text-secondary hover:text-text-primary" onClick={() => setEditing(true)}>
                 {t('app.edit')}
@@ -223,10 +223,10 @@ function Composer({ channelId }: { channelId: string }) {
   return (
     <div className="relative border-t border-border p-3">
       {matches.length > 0 && (
-        <ul className="absolute bottom-full left-3 mb-1 w-72 overflow-hidden rounded-md border border-border bg-surface shadow-lg" role="listbox" aria-label={t('channels.mentionModel')}>
+        <ul className="absolute bottom-full start-3 mb-1 w-72 overflow-hidden rounded-md border border-border bg-surface shadow-lg" role="listbox" aria-label={t('channels.mentionModel')}>
           {matches.map((m, i) => (
             <li key={m.id} role="option" aria-selected={i === active}>
-              <button className={`block w-full truncate px-3 py-1.5 text-left text-sm ${i === active ? 'bg-accent text-white' : 'hover:bg-background'}`} onClick={() => pick(m.id)}>
+              <button className={`block w-full truncate px-3 py-1.5 text-start text-sm ${i === active ? 'bg-accent text-white' : 'hover:bg-background'}`} onClick={() => pick(m.id)}>
                 {m.name} <span className="text-xs opacity-70">@{m.id}</span>
               </button>
             </li>

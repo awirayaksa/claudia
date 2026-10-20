@@ -119,7 +119,7 @@ function Browser({ provider, account, onPicked }: { provider: CloudProvider; acc
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-text-secondary">{account}</span>
         <form
-          className="ml-auto flex gap-2"
+          className="ms-auto flex gap-2"
           onSubmit={(e) => {
             e.preventDefault();
             setQ(search.trim());
@@ -155,7 +155,7 @@ function Browser({ provider, account, onPicked }: { provider: CloudProvider; acc
         {data?.items.map((item) => (
           <li key={item.id}>
             <button
-              className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-background disabled:opacity-50"
+              className="flex w-full items-center gap-2 px-3 py-2 text-start text-sm hover:bg-background disabled:opacity-50"
               onClick={() => void open(item)}
               disabled={importState.isLoading}
             >

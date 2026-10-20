@@ -162,7 +162,7 @@ function RefChips({ node }: { node: MessageNode }) {
     <div className="-mt-2 mb-4 flex flex-wrap justify-end gap-1.5 text-xs" data-testid="message-refs">
       {node.refs?.map((r, i) => (
         <span key={i} className="max-w-[16rem] truncate rounded-full border border-border px-2 py-0.5 text-text-secondary" title={r.url ?? r.name}>
-          <span className="mr-1 text-accent">#</span>
+          <span className="me-1 text-accent">#</span>
           {label(r)}
         </span>
       ))}
@@ -216,7 +216,7 @@ function ArtifactChips({ node, onOpen }: { node: MessageNode; onOpen: (a: Artifa
   const artifacts = findArtifacts(nodeText(node));
   if (artifacts.length === 0) return null;
   return (
-    <div className="-mt-1 mb-4 flex flex-wrap gap-1.5 pl-[30px] text-xs" data-testid="artifacts">
+    <div className="-mt-1 mb-4 flex flex-wrap gap-1.5 ps-[30px] text-xs" data-testid="artifacts">
       {artifacts.map((a, i) => (
         <button
           key={i}
@@ -362,7 +362,7 @@ function FeedbackForm({ onSend, onCancel }: { onSend: (f: { comment?: string; re
   const [comment, setComment] = useState('');
   return (
     <form
-      className="mb-3 ml-[30px] rounded-lg border border-border bg-surface p-3 text-sm"
+      className="mb-3 ms-[30px] rounded-lg border border-border bg-surface p-3 text-sm"
       aria-label={t('chat.feedbackTitle')}
       onSubmit={(e) => {
         e.preventDefault();
@@ -409,13 +409,13 @@ function FeedbackForm({ onSend, onCancel }: { onSend: (f: { comment?: string; re
 function FollowUps({ items, onPick }: { items: string[]; onPick: (q: string) => void }) {
   const { t } = useTranslation();
   return (
-    <div className="mb-2 ml-[30px] mt-1" data-testid="follow-ups">
+    <div className="mb-2 ms-[30px] mt-1" data-testid="follow-ups">
       <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-text-secondary">{t('chat.followUps')}</p>
       <div className="flex flex-col items-start gap-1.5">
         {items.map((q) => (
           <button
             key={q}
-            className="rounded-lg border border-border px-3 py-1.5 text-left text-sm hover:border-accent hover:text-accent"
+            className="rounded-lg border border-border px-3 py-1.5 text-start text-sm hover:border-accent hover:text-accent"
             onClick={() => onPick(q)}
           >
             {q}

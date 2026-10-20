@@ -87,7 +87,7 @@ export function ConnectionsManager({ scope }: { scope: Scope }) {
                     {t(`admin.types.${c.type}`)} · {scope === 'own' ? '@' : ''}
                     {c.prefix}/…
                   </span>
-                  {!c.enabled && <span className="ml-2 text-xs text-text-secondary">(off)</span>}
+                  {!c.enabled && <span className="ms-2 text-xs text-text-secondary">(off)</span>}
                 </div>
                 <div className="truncate text-sm text-text-secondary">
                   {c.baseUrl || '—'}

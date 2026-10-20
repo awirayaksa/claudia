@@ -97,7 +97,7 @@ export function Modal({
         </div>
 
         {/* Content */}
-        <div className="min-h-0 flex-1 overflow-y-auto pl-6 pr-4 py-4">{children}</div>
+        <div className="min-h-0 flex-1 overflow-y-auto ps-6 pe-4 py-4">{children}</div>
 
         {/* Footer */}
         {footer && (

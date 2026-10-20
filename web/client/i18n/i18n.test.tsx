@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Citations } from '@/components/chat/Citations';
-import i18n, { LANGUAGES, pickLanguage } from './index';
+import i18n, { LANGUAGES, pickLanguage, resources } from './index';
 // @ts-expect-error plain ES module script
 import { CATALOG, render as renderCatalog } from '../../scripts/shared-strings.mjs';
 
@@ -59,5 +59,50 @@ describe('language choice', () => {
     expect(pickLanguage(['xx-YY', 'en-GB'])).toBe('en');
     expect(pickLanguage(['zz'])).toBe('en');
     expect(pickLanguage([])).toBe('en');
+    expect(pickLanguage(['ar-EG', 'en'])).toBe('ar');
+  });
+});
+
+/** { "a.b": text } with plural forms ("x_one", "x_few"…) under their base key "x". */
+function texts(catalog: Record<string, unknown> = {}, prefix = ''): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  for (const [k, v] of Object.entries(catalog)) {
+    if (typeof v === 'string') {
+      const key = prefix + k.replace(/_(zero|one|two|few|many|other)$/, '');
+      out.set(key, [...(out.get(key) ?? []), v]);
+    } else {
+      for (const [kk, vv] of texts(v as Record<string, unknown>, `${prefix}${k}.`)) out.set(kk, vv);
+    }
+  }
+  return out;
+}
+const placeholders = (s: string) => s.match(/\{\{[^}]+\}\}/g) ?? [];
+
+describe('translations', () => {
+  const others = LANGUAGES.filter((l) => l !== 'en');
+
+  it.each(others)('%s only has texts English has, with its placeholders', (lng) => {
+    for (const ns of ['common', 'shared'] as const) {
+      const english = texts(resources.en[ns]);
+      for (const [key, values] of texts(resources[lng][ns])) {
+        expect(english.has(key), `${lng} ${ns}: "${key}" is not in English`).toBe(true);
+        const allowed = new Set(english.get(key)!.flatMap(placeholders));
+        for (const p of values.flatMap(placeholders)) expect(allowed, `${lng} ${ns}: ${key} has ${p}`).toContain(p);
+      }
+    }
+  });
+
+  it('Arabic turns the page right-to-left and uses its plural forms', async () => {
+    await act(() => i18n.changeLanguage('ar'));
+    expect(document.documentElement.dir).toBe('rtl');
+    expect(document.documentElement.lang).toBe('ar');
+    expect(i18n.t('nav.tagCount', { count: 2 })).toBe('محادثتان');
+    expect(i18n.t('nav.tagCount', { count: 3 })).toBe('3 محادثات');
+    expect(i18n.t('nav.tagCount', { count: 11 })).toBe('11 محادثة');
+    const { t } = await import('@/i18n');
+    expect(t('common.cancel', 'Cancel')).toBe('إلغاء');
+
+    await act(() => i18n.changeLanguage('en'));
+    expect(document.documentElement.dir).toBe('ltr');
   });
 });

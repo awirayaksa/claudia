@@ -87,7 +87,7 @@ export const ChatMessage = React.memo(function ChatMessage({
         <div className="max-w-[65%]">
           {/* Muted beige bubble — already-sent context, not primary focus */}
           <div className="rounded-[14px] bg-[#f1ede6] px-[14px] py-[10px] text-sm leading-relaxed text-[#2e2b27]">
-            <div className="whitespace-pre-wrap">{message.content}</div>
+            <div className="whitespace-pre-wrap" dir="auto">{message.content}</div>
             {/* Attachments */}
             {message.attachments && message.attachments.length > 0 && (
               <div className="mt-2 space-y-2">
@@ -150,7 +150,7 @@ export const ChatMessage = React.memo(function ChatMessage({
           )}
         </div>
 
-        <div className="pl-[30px]">
+        <div className="ps-[30px]">
           {/* Reasoning Block */}
           {showReasoning && message.reasoning && (
             <ReasoningMessage reasoning={message.reasoning} />

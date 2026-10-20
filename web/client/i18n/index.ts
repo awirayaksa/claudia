@@ -6,6 +6,7 @@
  *   `t()` with setTranslator.
  * A language is offered once its <lang>.json exists; the browser's preferred
  * languages pick it, English otherwise. Missing strings fall back to English.
+ * Right-to-left languages (Arabic) set dir="rtl" on the page.
  */
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
@@ -48,10 +49,14 @@ void i18n.use(initReactI18next).init({
 // Shared components: their English text is the default, so a missing translation shows English
 const shared = (key: string, english: string, vars?: Record<string, string | number>) =>
   i18n.t(key, { ns: 'shared', defaultValue: english, ...vars });
-setTranslator(shared);
-i18n.on('languageChanged', () => {
+function applyLanguage() {
   document.documentElement.lang = i18n.language;
+  // Arabic and other right-to-left languages mirror the layout (the classes are logical: ms-, ps-, start-, text-start…)
+  document.documentElement.dir = i18n.dir();
   setTranslator(shared);
-});
+}
+// init has already picked the language (the resources are bundled), so apply it now too
+applyLanguage();
+i18n.on('languageChanged', applyLanguage);
 
 export default i18n;

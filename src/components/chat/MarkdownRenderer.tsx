@@ -84,7 +84,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
 
           const source = String(children).replace(/\n$/, '');
           const codeBlock = !inline && language ? (
-            <div className="my-2 overflow-hidden rounded-md">
+            <div className="my-2 overflow-hidden rounded-md" dir="ltr">
               <div className="flex items-center justify-between bg-surface-hover px-3 py-1.5">
                 <span className="text-xs font-medium text-text-secondary">{language}</span>
                 <button
@@ -131,22 +131,22 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
         },
         // Paragraphs
         p({ children }: { children?: ReactNode }) {
-          return <p className="mb-2 last:mb-0">{children}</p>;
+          return <p className="mb-2 last:mb-0" dir="auto">{children}</p>;
         },
         // Lists
         ul({ children }: { children?: ReactNode }) {
-          return <ul className="mb-2 ml-4 list-disc space-y-1">{children}</ul>;
+          return <ul className="mb-2 ms-4 list-disc space-y-1">{children}</ul>;
         },
         ol({ children }: { children?: ReactNode }) {
-          return <ol className="mb-2 ml-4 list-decimal space-y-1">{children}</ol>;
+          return <ol className="mb-2 ms-4 list-decimal space-y-1">{children}</ol>;
         },
         li({ children }: { children?: ReactNode }) {
-          return <li className="text-sm">{children}</li>;
+          return <li className="text-sm" dir="auto">{children}</li>;
         },
         // Headings
         h1({ children }: { children?: ReactNode }) {
           return (
-            <h1 className={`mb-2 mt-4 text-xl font-bold first:mt-0 ${isUser ? 'text-white' : 'text-text-primary'}`}>
+            <h1 dir="auto" className={`mb-2 mt-4 text-xl font-bold first:mt-0 ${isUser ? 'text-white' : 'text-text-primary'}`}>
               {children}
             </h1>
           );
@@ -154,7 +154,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
         h2({ children }: { children?: ReactNode }) {
           if (isUser) {
             return (
-              <h2 className="mb-2 mt-3 text-lg font-bold first:mt-0 text-white">
+              <h2 dir="auto" className="mb-2 mt-3 text-lg font-bold first:mt-0 text-white">
                 {children}
               </h2>
             );
@@ -162,7 +162,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
           h2Counter += 1;
           const num = String(h2Counter).padStart(2, '0');
           return (
-            <h2 className="mb-2 mt-8 text-base font-semibold first:mt-0 text-text-primary flex items-baseline gap-2.5">
+            <h2 dir="auto" className="mb-2 mt-8 text-base font-semibold first:mt-0 text-text-primary flex items-baseline gap-2.5">
               <span className="text-xs font-bold text-accent flex-shrink-0">{num}</span>
               <span>{children}</span>
             </h2>
@@ -170,14 +170,14 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
         },
         h3({ children }: { children?: ReactNode }) {
           return (
-            <h3 className={`mb-2 mt-3 text-base font-bold first:mt-0 ${isUser ? 'text-white' : 'text-text-primary'}`}>
+            <h3 dir="auto" className={`mb-2 mt-3 text-base font-bold first:mt-0 ${isUser ? 'text-white' : 'text-text-primary'}`}>
               {children}
             </h3>
           );
         },
         h4({ children }: { children?: ReactNode }) {
           return (
-            <h4 className={`mb-2 mt-2 text-sm font-bold first:mt-0 ${isUser ? 'text-white' : 'text-text-primary'}`}>
+            <h4 dir="auto" className={`mb-2 mt-2 text-sm font-bold first:mt-0 ${isUser ? 'text-white' : 'text-text-primary'}`}>
               {children}
             </h4>
           );
@@ -215,7 +215,8 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
         blockquote({ children }: { children?: ReactNode }) {
           return (
             <blockquote
-              className={`my-2 border-l-4 pl-4 italic ${
+              dir="auto"
+              className={`my-2 border-s-4 ps-4 italic ${
                 isUser
                   ? 'border-white border-opacity-40 text-white text-opacity-90'
                   : 'border-border text-text-secondary'
@@ -251,7 +252,7 @@ export const MarkdownRenderer: React.FC<MarkdownRendererProps> = React.memo(({ c
         th({ children }: { children?: ReactNode }) {
           return (
             <th
-              className={`px-3 py-2 text-left text-xs font-semibold ${
+              className={`px-3 py-2 text-start text-xs font-semibold ${
                 isUser ? 'text-white' : 'text-text-primary'
               }`}
             >

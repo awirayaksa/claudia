@@ -35,7 +35,7 @@ export function ChatHeader({
   const isTemporary = chat ? chat.temporary : temporary;
 
   return (
-    <header className={`flex h-12 shrink-0 items-center gap-1 px-3 ${sidebarOpen ? '' : 'md:pl-14'}`}>
+    <header className={`flex h-12 shrink-0 items-center gap-1 px-3 ${sidebarOpen ? '' : 'md:ps-14'}`}>
       <div className="flex min-w-0 flex-1 items-center gap-2">
         {chat && !chat.temporary && (
           <h1 className="truncate text-sm font-medium" title={chat.title} data-testid="chat-title">

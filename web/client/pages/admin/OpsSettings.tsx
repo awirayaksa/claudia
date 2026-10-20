@@ -40,7 +40,7 @@ export function BannersEditor({ value, onChange }: { value: AppSettingsResponse[
               <input type="checkbox" checked={b.dismissible} onChange={(e) => patch(i, { dismissible: e.target.checked })} />
               {t('banners.dismissible')}
             </label>
-            <Button size="sm" variant="ghost" className="ml-auto" onClick={() => onChange({ items: items.filter((_, j) => j !== i) })}>
+            <Button size="sm" variant="ghost" className="ms-auto" onClick={() => onChange({ items: items.filter((_, j) => j !== i) })}>
               {t('app.delete')}
             </Button>
           </div>

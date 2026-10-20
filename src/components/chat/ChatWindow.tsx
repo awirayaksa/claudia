@@ -649,7 +649,7 @@ export function ChatWindow() {
                       <button
                         key={conv.id}
                         onClick={() => dispatch(setCurrentConversation(conv.id))}
-                        className="flex flex-col items-start gap-1.5 rounded-xl border border-border bg-surface p-3 text-left transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40 min-h-[80px]"
+                        className="flex flex-col items-start gap-1.5 rounded-xl border border-border bg-surface p-3 text-start transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40 min-h-[80px]"
                       >
                         <p className="w-full truncate text-sm font-semibold text-text-primary leading-snug">
                           {conv.title}
@@ -719,7 +719,7 @@ export function ChatWindow() {
                 </svg>
               </button>
               {showHeaderMenu && (
-                <div className="absolute right-0 top-8 z-50 min-w-[160px] rounded-lg border border-border bg-surface shadow-lg py-1">
+                <div className="absolute end-0 top-8 z-50 min-w-[160px] rounded-lg border border-border bg-surface shadow-lg py-1">
                   <button
                     className="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-error hover:bg-surface-hover transition-colors"
                     onClick={handleClearChat}
@@ -779,12 +779,12 @@ export function ChatWindow() {
                   <span className="text-sm font-semibold text-text-primary">Claudia</span>
                   <button
                     onClick={handleAbortStreaming}
-                    className="ml-2 rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface hover:text-error transition-colors"
+                    className="ms-2 rounded px-2 py-0.5 text-xs text-text-secondary hover:bg-surface hover:text-error transition-colors"
                   >
                     ✕ Stop
                   </button>
                 </div>
-                <div className="pl-[30px] flex items-center gap-2">
+                <div className="ps-[30px] flex items-center gap-2">
                   <div className="flex gap-1">
                     <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]"></div>
                     <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]"></div>
@@ -801,7 +801,7 @@ export function ChatWindow() {
                   <ClaudiaAvatar isThinking />
                   <span className="text-sm font-semibold text-text-primary">Claudia</span>
                 </div>
-                <div className="pl-[30px] flex gap-1">
+                <div className="ps-[30px] flex gap-1">
                   <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.3s]"></div>
                   <div className="h-2 w-2 animate-bounce rounded-full bg-accent [animation-delay:-0.15s]"></div>
                   <div className="h-2 w-2 animate-bounce rounded-full bg-accent"></div>

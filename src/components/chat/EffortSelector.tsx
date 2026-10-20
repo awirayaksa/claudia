@@ -158,7 +158,7 @@ export function EffortSelector({
               <button
                 type="button"
                 onClick={() => handleSelect(null)}
-                className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors hover:bg-background ${
+                className={`flex w-full items-center justify-between rounded px-3 py-2 text-start text-sm transition-colors hover:bg-background ${
                   value === null ? 'bg-background text-accent' : 'text-text-primary'
                 }`}
                 role="option"
@@ -166,7 +166,7 @@ export function EffortSelector({
               >
                 <span>
                   {t('effort.auto', 'Auto')}
-                  <span className="ml-2 text-xs text-text-secondary">
+                  <span className="ms-2 text-xs text-text-secondary">
                     {fallback
                       ? t('effort.preferences', 'Preferences: {{level}}', { level: effortLabel(coerceEffort(fallback, model)!) })
                       : t('effort.providerDefault', 'provider default')}
@@ -183,7 +183,7 @@ export function EffortSelector({
                     key={level}
                     type="button"
                     onClick={() => handleSelect(level)}
-                    className={`flex w-full items-center justify-between rounded px-3 py-2 text-left text-sm transition-colors hover:bg-background ${
+                    className={`flex w-full items-center justify-between rounded px-3 py-2 text-start text-sm transition-colors hover:bg-background ${
                       isSelected ? 'bg-background text-accent' : 'text-text-primary'
                     }`}
                     role="option"
@@ -192,7 +192,7 @@ export function EffortSelector({
                   >
                     <span>
                       {effortLabel(level)}
-                      <span className="ml-2 text-xs text-text-secondary">{effortHint(level)}</span>
+                      <span className="ms-2 text-xs text-text-secondary">{effortHint(level)}</span>
                     </span>
                   </button>
                 );

@@ -66,7 +66,7 @@ export function AppShell() {
     <div className="flex h-[100dvh] w-full overflow-hidden bg-background text-text-primary">
       {/* Wide screens: a column */}
       {sidebarOpen && (
-        <aside className="hidden w-72 shrink-0 border-r border-border bg-surface md:flex md:flex-col">
+        <aside className="hidden w-72 shrink-0 border-e border-border bg-surface md:flex md:flex-col">
           <Sidebar />
         </aside>
       )}
@@ -79,7 +79,7 @@ export function AppShell() {
             aria-label={t('nav.closeMenu')}
             onClick={() => setDrawerOpen(false)}
           />
-          <aside className="relative flex h-full w-[85%] max-w-xs flex-col border-r border-border bg-surface shadow-xl">
+          <aside className="relative flex h-full w-[85%] max-w-xs flex-col border-e border-border bg-surface shadow-xl">
             <Sidebar />
           </aside>
         </div>
@@ -99,7 +99,7 @@ export function AppShell() {
         </header>
         {!sidebarOpen && (
           <button
-            className="absolute left-2 top-2 z-10 hidden rounded p-2 hover:bg-surface md:block"
+            className="absolute start-2 top-2 z-10 hidden rounded p-2 hover:bg-surface md:block"
             aria-label={t('nav.openMenu')}
             onClick={() => dispatch(toggleSidebar())}
           >

@@ -132,7 +132,7 @@ function DailyChart({ byDay }: { byDay: AnalyticsResponse['byDay'] }) {
       </div>
       <details className="mt-2 text-sm">
         <summary className="cursor-pointer text-text-secondary">{t('analytics.showTable')}</summary>
-        <table className="mt-2 w-full text-left text-xs">
+        <table className="mt-2 w-full text-start text-xs">
           <thead>
             <tr className="text-text-secondary">
               <th className="py-1">{t('analytics.day')}</th>
@@ -170,19 +170,19 @@ function Breakdown({ title, rows, empty }: { title: string; rows: Array<UsageTot
       {rows.length === 0 ? (
         <p className="text-sm text-text-secondary">{empty}</p>
       ) : (
-        <table className="w-full table-fixed text-left text-sm">
+        <table className="w-full table-fixed text-start text-sm">
           <thead>
             <tr className="text-xs text-text-secondary">
               <th className="w-1/2 pb-1 font-normal" />
-              <th className="pb-1 text-right font-normal">{t('analytics.tokens')}</th>
-              <th className="pb-1 text-right font-normal">{t('analytics.requests')}</th>
-              <th className="pb-1 text-right font-normal">{t('analytics.cost')}</th>
+              <th className="pb-1 text-end font-normal">{t('analytics.tokens')}</th>
+              <th className="pb-1 text-end font-normal">{t('analytics.requests')}</th>
+              <th className="pb-1 text-end font-normal">{t('analytics.cost')}</th>
             </tr>
           </thead>
           <tbody className="tabular-nums">
             {rows.map((r) => (
               <tr key={r.key} className="border-t border-border">
-                <td className="py-1.5 pr-2">
+                <td className="py-1.5 pe-2">
                   <div className="truncate" title={r.label}>
                     {r.label}
                   </div>
@@ -190,9 +190,9 @@ function Breakdown({ title, rows, empty }: { title: string; rows: Array<UsageTot
                     <div className="h-1 rounded bg-accent" style={{ width: `${(tokens(r) / max) * 100}%` }} />
                   </div>
                 </td>
-                <td className="text-right">{fmt(tokens(r))}</td>
-                <td className="text-right">{fmt(r.requests)}</td>
-                <td className="text-right">{money(r.cost)}</td>
+                <td className="text-end">{fmt(tokens(r))}</td>
+                <td className="text-end">{fmt(r.requests)}</td>
+                <td className="text-end">{money(r.cost)}</td>
               </tr>
             ))}
           </tbody>

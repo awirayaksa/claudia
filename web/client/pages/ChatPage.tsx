@@ -406,7 +406,7 @@ export function ChatPage() {
                   {selectedInfo.suggestions.map((q) => (
                     <button
                       key={q}
-                      className="rounded-lg border border-border px-3 py-2 text-left text-sm hover:border-accent hover:bg-surface"
+                      className="rounded-lg border border-border px-3 py-2 text-start text-sm hover:border-accent hover:bg-surface"
                       onClick={() => inputRef.current?.setMessage(q)}
                     >
                       {q}
@@ -582,7 +582,7 @@ function CompareModels({
     <div className="mb-1.5 flex flex-wrap items-center justify-end gap-1.5 text-xs" data-testid="compare-models">
       <span className="text-text-secondary">{t('chat.alsoAsk')}</span>
       {extra.map((m) => (
-        <span key={m} className="flex items-center gap-1 rounded-full border border-border py-0.5 pl-2.5 pr-1">
+        <span key={m} className="flex items-center gap-1 rounded-full border border-border py-0.5 ps-2.5 pe-1">
           {name(m)}
           <button
             className="rounded-full p-0.5 text-text-secondary hover:text-error disabled:opacity-50"

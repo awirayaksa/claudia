@@ -93,7 +93,7 @@ export function ContextBar({
       {refs.map((r) => (
         <span
           key={r.type === 'url' ? r.url : r.id}
-          className="flex max-w-[18rem] items-center gap-1 rounded-full border border-accent/50 bg-accent/5 py-0.5 pl-2 pr-1"
+          className="flex max-w-[18rem] items-center gap-1 rounded-full border border-accent/50 bg-accent/5 py-0.5 ps-2 pe-1"
           data-testid="pending-ref"
         >
           {r.type === 'kb' ? <BookIcon /> : <span className="text-accent">#</span>}

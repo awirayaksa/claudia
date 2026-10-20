@@ -26,7 +26,7 @@ export function ReasoningMessage({ reasoning, isStreaming = false }: ReasoningMe
       {/* Header */}
       <button
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center justify-between px-3 py-2 text-left"
+        className="flex w-full items-center justify-between px-3 py-2 text-start"
       >
         <div className="flex items-center gap-2">
           <span className="text-text-secondary text-xs">✦</span>
@@ -43,7 +43,7 @@ export function ReasoningMessage({ reasoning, isStreaming = false }: ReasoningMe
 
       {/* Expanded content */}
       {isExpanded && (
-        <div className="border-t border-border bg-surface px-4 py-3 pl-7 text-xs leading-relaxed text-text-secondary">
+        <div className="border-t border-border bg-surface px-4 py-3 ps-7 text-xs leading-relaxed text-text-secondary">
           <pre className="overflow-x-auto whitespace-pre-wrap font-sans">{reasoning}</pre>
         </div>
       )}

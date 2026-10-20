@@ -170,7 +170,7 @@ Respond ONLY with a valid JSON array, no markdown, no code fences, no explanatio
           <button
             key={index}
             onClick={() => onSelect(suggestion.prompt)}
-            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-surface p-4 text-left transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40"
+            className="group flex flex-col items-start gap-2 rounded-xl border border-border bg-surface p-4 text-start transition-colors hover:bg-surface-hover hover:border-accent hover:border-opacity-40"
           >
             <div
               className="flex items-center justify-center rounded-md text-accent"
