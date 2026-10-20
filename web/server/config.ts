@@ -46,6 +46,8 @@ const EnvSchema = z.object({
   ENABLE_LDAP: bool.optional(),
   LDAP_URL: z.string().regex(/^ldaps?:\/\//, 'LDAP_URL must start with ldap:// or ldaps://').optional(),
   LDAP_START_TLS: bool.optional(),
+  /** search (service account) or direct (bind as user@domain from the base DN). */
+  LDAP_BIND_MODE: z.enum(['search', 'direct']).optional(),
   LDAP_BIND_DN: z.string().optional(),
   LDAP_BIND_PASSWORD: z.string().optional(),
   LDAP_USER_SEARCH_BASE: z.string().optional(),
