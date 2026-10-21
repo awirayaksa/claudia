@@ -48,6 +48,8 @@ const EnvSchema = z.object({
   LDAP_START_TLS: bool.optional(),
   /** search (service account) or direct (bind as user@domain from the base DN). */
   LDAP_BIND_MODE: z.enum(['search', 'direct']).optional(),
+  /** Direct bind: the domain added to a bare username (default: the base DN's dc= parts). */
+  LDAP_SIGN_IN_DOMAIN: z.string().optional(),
   LDAP_BIND_DN: z.string().optional(),
   LDAP_BIND_PASSWORD: z.string().optional(),
   LDAP_USER_SEARCH_BASE: z.string().optional(),

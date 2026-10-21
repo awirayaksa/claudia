@@ -13,8 +13,9 @@
  *     email; an email that already belongs to another account is refused.
  *
  * Direct bind (bindMode "direct", Active Directory): no service account and
- * no search. The user binds as user@domain, the domain made of the base DN's
- * dc= parts (dc=example,dc=com → example.com); a name typed with a domain
+ * no search. The user binds as user@domain, the domain being the sign-in
+ * domain setting (the users' UPN suffix) or else made of the base DN's dc=
+ * parts (dc=example,dc=com → example.com); a name typed with a domain
  * (user@domain, DOMAIN\user) binds as typed. The account is linked by that
  * user@domain, which is also its email; the name is the username. Without a
  * search there is no allowed group, no group sync and no re-check of
@@ -33,7 +34,7 @@ import { uuidv7 } from '../lib/ids';
 import { badRequest } from '../lib/errors';
 import {
   LdapSettings,
-  bindDomain,
+  directDomain,
   type LdapLookupResult,
   type LdapSettingsResponse,
   type LdapSettingsUpdate,
@@ -48,6 +49,7 @@ export const LDAP_DEFAULTS: LdapSettings = {
   startTls: false,
   tlsVerify: true,
   bindMode: 'search',
+  signInDomain: '',
   caCert: null,
   bindDn: '',
   userSearchBase: '',
@@ -199,6 +201,7 @@ export class LdapService {
     if (c.LDAP_URL) out.url = c.LDAP_URL;
     if (c.LDAP_START_TLS !== undefined) out.startTls = c.LDAP_START_TLS;
     if (c.LDAP_BIND_MODE) out.bindMode = c.LDAP_BIND_MODE;
+    if (c.LDAP_SIGN_IN_DOMAIN !== undefined) out.signInDomain = c.LDAP_SIGN_IN_DOMAIN.trim().toLowerCase();
     if (c.LDAP_BIND_DN !== undefined) out.bindDn = c.LDAP_BIND_DN;
     if (c.LDAP_BIND_PASSWORD !== undefined) out.bindPassword = c.LDAP_BIND_PASSWORD;
     if (c.LDAP_USER_SEARCH_BASE) out.userSearchBase = c.LDAP_USER_SEARCH_BASE;
@@ -218,7 +221,7 @@ export class LdapService {
   /** Enabled and complete enough to try a sign-in. */
   async isActive(): Promise<boolean> {
     const s = await this.effective();
-    return s.enabled && !!s.url && !!s.userSearchBase && (s.bindMode !== 'direct' || !!bindDomain(s.userSearchBase));
+    return s.enabled && !!s.url && !!s.userSearchBase && (s.bindMode !== 'direct' || !!directDomain(s));
   }
 
   async view(): Promise<LdapSettingsResponse> {
@@ -235,9 +238,12 @@ export class LdapService {
     const stored = await this.stored();
     const { bindPassword, ...fields } = patch;
     const settings = LdapSettings.parse({ ...LDAP_DEFAULTS, ...stored.settings, ...fields });
-    const { bindMode, userSearchBase } = { ...settings, ...this.envOverrides() };
-    if (bindMode === 'direct' && userSearchBase && !bindDomain(userSearchBase)) {
-      throw badRequest('For a direct bind the base DN needs dc= parts (dc=example,dc=com), which make the sign-in domain.', 'ldap_no_domain');
+    const effective = { ...settings, ...this.envOverrides() };
+    if (effective.bindMode === 'direct' && effective.userSearchBase && !directDomain(effective)) {
+      throw badRequest(
+        'For a direct bind set a sign-in domain, or use a base DN with dc= parts (dc=example,dc=com), which make the sign-in domain.',
+        'ldap_no_domain'
+      );
     }
     const bindPasswordCipher =
       bindPassword === undefined ? stored.bindPasswordCipher : bindPassword === '' ? null : this.deps.secrets.encrypt(bindPassword);
@@ -435,7 +441,7 @@ export class LdapService {
 
   /** Direct bind: the password is checked by binding as user@domain; nothing is searched. */
   private async loginDirect(s: EffectiveLdap, rawUsername: string, password: string): Promise<LdapLoginResult> {
-    const domain = bindDomain(s.userSearchBase);
+    const domain = directDomain(s);
     if (!domain) return { ok: false, reason: 'disabled' };
     const name = directBindName(rawUsername, domain);
     if (!name) return { ok: false, reason: 'invalid_credentials' };

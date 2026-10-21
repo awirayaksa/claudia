@@ -2,7 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
-import { bindDomain, type LdapLookupResult, type LdapSettings } from '@shared/ldap';
+import { bindDomain, directDomain, type LdapLookupResult, type LdapSettings } from '@shared/ldap';
 import {
   errorMessage,
   useLdapSettingsQuery,
@@ -31,7 +31,7 @@ export function DirectoryPage() {
   const locked = new Set<string>(data.locked);
   // Direct bind: only the server and the base DN; nothing is searched
   const direct = draft.bindMode === 'direct';
-  const domain = bindDomain(draft.userSearchBase);
+  const domain = directDomain(draft);
   const set = <K extends keyof LdapSettings>(key: K, value: LdapSettings[K]) => {
     setSaved(false);
     setDraft((d) => (d ? { ...d, [key]: value } : d));
@@ -134,6 +134,12 @@ export function DirectoryPage() {
                 t('admin.ldapBaseDn'),
                 domain ? t('admin.ldapBaseDnDirectHelp', { example: `username@${domain}` }) : t('admin.ldapBaseDnNoDomain'),
                 'dc=example,dc=com'
+              )}
+              {text(
+                'signInDomain',
+                t('admin.ldapSignInDomain'),
+                t('admin.ldapSignInDomainHelp'),
+                bindDomain(draft.userSearchBase) ?? 'app.example.com'
               )}
               <p className="text-xs text-text-secondary">{t('admin.ldapDirectNote')}</p>
             </>
