@@ -12,12 +12,14 @@ import { TestClient } from '../test/client';
 import { BASE_DN, startFakeLdap, type FakeLdap } from '../test/fake-ldap';
 import { authIdentities } from '../db/schema';
 import { directBindName } from './ldap';
-import { bindDomain } from '../../shared/ldap';
+import { bindDomain, directDomain } from '../../shared/ldap';
 
 /** Active Directory: what a bind with these names and this password accepts. */
 const AD_PASSWORDS: Record<string, string> = {
   'alice@example.com': 'alice-pass',
   'example\\alice': 'alice-pass',
+  // UPN suffix other than the base DN's domain
+  'bob@app.example.com': 'bob-pass',
 };
 
 type Setup = Awaited<ReturnType<typeof setup>>;
@@ -71,6 +73,13 @@ describe('direct bind helpers', () => {
     expect(bindDomain('')).toBeNull();
   });
 
+  it('uses the sign-in domain when one is set, else the base DN', () => {
+    expect(directDomain({ signInDomain: 'app.example.com', userSearchBase: 'dc=example,dc=com' })).toBe('app.example.com');
+    expect(directDomain({ signInDomain: '@app.example.com', userSearchBase: '' })).toBe('app.example.com');
+    expect(directDomain({ signInDomain: '', userSearchBase: 'dc=example,dc=com' })).toBe('example.com');
+    expect(directDomain({ signInDomain: '', userSearchBase: 'ou=people,o=acme' })).toBeNull();
+  });
+
   it('binds as user@domain, or as typed when the name has a domain', () => {
     expect(directBindName(' Alice ', 'example.com')).toEqual({ bindName: 'alice@example.com', account: 'alice@example.com' });
     expect(directBindName('Alice@Other.org', 'example.com')).toEqual({ bindName: 'Alice@Other.org', account: 'alice@other.org' });
@@ -114,6 +123,28 @@ describe('LDAP direct bind', () => {
     expect(await s.app.ctx.ldap.login('alice', '')).toEqual({ ok: false, reason: 'invalid_credentials' });
     expect(s.binds).toEqual(['alice@example.com', 'mallory@example.com']);
     expect(await s.db.db.select().from(authIdentities).where(eq(authIdentities.provider, 'ldap'))).toEqual([]);
+  });
+
+  it('signs in with the bare username or the full UPN when the sign-in domain differs from the base DN', async () => {
+    const s = await setup();
+    // Spaces and capitals are tidied away
+    expect((await s.admin.put('/api/admin/ldap', { signInDomain: ' App.Example.com ' })).statusCode).toBe(200);
+    expect((await s.admin.get('/api/admin/ldap')).json().settings.signInDomain).toBe('app.example.com');
+
+    const bare = await s.login('bob', 'bob-pass');
+    expect(bare.statusCode).toBe(200);
+    expect(bare.json().user).toMatchObject({ email: 'bob@app.example.com', name: 'bob' });
+    const full = await s.login('Bob@App.Example.com', 'bob-pass');
+    expect(full.statusCode).toBe(200);
+    expect(full.json().user.id).toBe(bare.json().user.id);
+    expect(s.binds).toEqual(['bob@app.example.com', 'Bob@App.Example.com']);
+    expect((await s.login('bob', 'nope')).statusCode).toBe(401);
+
+    // With a sign-in domain the base DN needs no dc= parts; a malformed domain is refused
+    expect((await s.admin.put('/api/admin/ldap', { userSearchBase: 'ou=people,o=acme' })).statusCode).toBe(200);
+    expect((await s.login('bob', 'bob-pass')).statusCode).toBe(200);
+    expect((await s.admin.put('/api/admin/ldap', { signInDomain: 'not a domain' })).statusCode).toBe(400);
+    expect((await s.admin.put('/api/admin/ldap', { signInDomain: '' })).json().error.code).toBe('ldap_no_domain');
   });
 
   it('needs dc= parts in the base DN, tests the connection and has no user lookup', async () => {

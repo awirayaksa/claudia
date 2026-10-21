@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+const DOMAIN = /^(?=.{1,253}$)[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/;
+
 /** LDAP / Active Directory settings as the admin edits them (no bind password). */
 export const LdapSettings = z.object({
   enabled: z.boolean(),
@@ -16,9 +18,20 @@ export const LdapSettings = z.object({
   /**
    * search: a service account finds the user's entry, which then binds with
    * the password. direct: the user binds as user@domain (Active Directory),
-   * the domain taken from the base DN's dc= parts; no service account, no search.
+   * the domain being signInDomain or the base DN's dc= parts; no service
+   * account, no search.
    */
   bindMode: z.enum(['search', 'direct']),
+  /**
+   * Direct bind: the domain added to a bare username (the users' UPN suffix,
+   * e.g. app.example.com). Empty = the base DN's dc= parts.
+   */
+  signInDomain: z
+    .string()
+    .trim()
+    .toLowerCase()
+    .max(253)
+    .refine((v) => v === '' || DOMAIN.test(v.replace(/^@/, '')), 'Use a domain such as app.example.com'),
   /** PEM of the CA that signed the directory's certificate, if not a public one. */
   caCert: z.string().max(20_000).nullable(),
   /** Service account that searches for users; empty = anonymous search. */
@@ -69,6 +82,11 @@ export function bindDomain(baseDn: string): string | null {
     .map((p) => /^dc\s*=\s*(.+)$/i.exec(p.trim())?.[1]?.trim().toLowerCase())
     .filter((p): p is string => !!p);
   return parts.length > 0 ? parts.join('.') : null;
+}
+
+/** The domain direct bind adds to a bare username: signInDomain, else the base DN's dc= parts. */
+export function directDomain(s: Pick<LdapSettings, 'signInDomain' | 'userSearchBase'>): string | null {
+  return s.signInDomain.replace(/^@/, '') || bindDomain(s.userSearchBase);
 }
 
 export const LdapSettingsUpdate = LdapSettings.partial().extend({

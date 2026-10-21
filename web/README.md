@@ -283,7 +283,8 @@ within about a minute and the branch can be answered again.
 | `CLAUDIA_ALLOW_STDIO_MCP` | `false` | Allow admins to configure stdio MCP servers (they run commands on the host, with only their own environment variables) |
 | `ENABLE_LDAP` | — | Directory sign-in on/off; overrides the admin setting |
 | `LDAP_URL`, `LDAP_START_TLS` | — | `ldap://host:389` or `ldaps://host:636`; StartTLS for `ldap://` |
-| `LDAP_BIND_MODE` | `search` | `search`: a service account looks the user up, then the user binds. `direct` (Active Directory): users bind as `username@domain`, the domain from the `dc=` parts of `LDAP_USER_SEARCH_BASE` (the base DN); no service account or search |
+| `LDAP_BIND_MODE` | `search` | `search`: a service account looks the user up, then the user binds. `direct` (Active Directory): users bind as `username@domain`, the domain being `LDAP_SIGN_IN_DOMAIN`, else the `dc=` parts of `LDAP_USER_SEARCH_BASE` (the base DN); no service account or search |
+| `LDAP_SIGN_IN_DOMAIN` | | Direct bind: the domain added when a user types only their username, i.e. their UPN suffix (`app.example.com` lets `john` and `john@app.example.com` sign in to the same account). Empty: the base DN's `dc=` parts |
 | `LDAP_BIND_DN`, `LDAP_BIND_PASSWORD` | — | Service account that looks users up |
 | `LDAP_USER_SEARCH_BASE`, `LDAP_USER_FILTER` | — | e.g. `ou=people,dc=example,dc=com` and `(uid={{username}})` (AD: `(sAMAccountName={{username}})`) |
 | `LDAP_CA_CERT_FILE` | — | PEM of the CA that signed the directory's certificate |
