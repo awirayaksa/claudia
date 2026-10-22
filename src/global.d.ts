@@ -30,6 +30,10 @@ export interface ElectronAPI {
       truncated?: boolean;
       error?: string;
     }>;
+    /** Open a file a built-in tool wrote, in its default app. */
+    openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+    /** Show a file in the system file manager. */
+    showInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   };
   conversation: {
     /** Writes messages. Title, model and starred already on disk are kept. Returns the saved metadata. */

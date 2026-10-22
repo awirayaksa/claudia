@@ -161,6 +161,18 @@ describe('normalizeToolResult', () => {
     expect(normalizeToolResult({})).toEqual({ content: '', isError: false });
   });
 
+  it('passes on the files a built-in reports it wrote, and drops malformed entries', () => {
+    const file = { path: '/home/u/Documents/budget.xlsx', name: 'budget.xlsx', size: 6123 };
+    const res = normalizeToolResult({
+      content: [{ type: 'text', text: 'Saved' }],
+      _meta: { 'claudia/files': [file, { path: 1 }, null, { ...file, extra: true }] },
+    });
+    expect(res).toEqual({ content: 'Saved', isError: false, files: [file, file] });
+    expect(normalizeToolResult({ content: [], _meta: { 'claudia/files': 'nope' } }).files).toBeUndefined();
+    // Failed calls wrote nothing worth showing
+    expect(normalizeToolResult({ isError: true, content: [], _meta: { 'claudia/files': [file] } }).files).toBeUndefined();
+  });
+
   it('matches @mcp-ui/client on what counts as a UI resource', () => {
     expect(isUIResource({ type: 'resource', resource: { uri: 'ui://x' } })).toBe(true);
     expect(isUIResource({ type: 'resource', resource: { uri: 'https://x' } })).toBe(false);

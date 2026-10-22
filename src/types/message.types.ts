@@ -31,6 +31,14 @@ export interface ToolCall {
   };
 }
 
+/** A file a built-in tool wrote on this computer (desktop), shown as a card under the reply. */
+export interface ToolFile {
+  /** Absolute path. */
+  path: string;
+  name: string;
+  size: number;
+}
+
 export interface ToolResult {
   tool_call_id: string;
   role: 'tool';
@@ -40,6 +48,7 @@ export interface ToolResult {
   hasUI?: boolean; // Track if this result contains UI
   uiResource?: UIResourceContent; // Separate UI resource for rendering
   serverId?: string; // MCP server that produced this result
+  files?: ToolFile[]; // Files a built-in server wrote (desktop)
 }
 
 export interface Message {

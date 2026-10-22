@@ -19,6 +19,7 @@ This Electron app connects to Open WebUI and lets you chat with AI models while 
 - 📁 **Project system** - Organize your conversations like the productive person you pretend to be
 - 🎨 **Dark mode** - Because your eyes deserve better at 2 AM
 - 🔧 **MCP Server Support** - Give your AI superpowers with 26 custom tools! (May or may not crash)
+- 📎 **File Creation** - Ask for a budget spreadsheet, a slide deck or a PDF and get a real .xlsx, .pptx or .pdf (built-in Spreadsheets, Presentations and PDF tools; no Office required)
 - 🤖 **Auto-tool calling** - She'll use tools automatically. It's like giving her a Swiss Army knife, but digital.
 - 🧠 **Reasoning effort** - Tell her how hard to think, right from the prompt: `--effort high fix this bug`. Or `/effort low` on its own to keep it that way for the session.
 

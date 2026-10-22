@@ -32,7 +32,14 @@ const USER_IDLE_MS = 10 * 60_000;
 const TOOL_TIMEOUT_MS = 120_000;
 
 /** Built-ins that write files in the workspace; their tools that only read are not watched. */
-const WRITING_BUILTINS = new Set(['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001']);
+const WRITING_BUILTINS = new Set([
+  'builtin-filesystem-001',
+  'builtin-msoffice-001',
+  'builtin-spreadsheet-001',
+  'builtin-presentation-001',
+  'builtin-pdf-001',
+  'builtin-diagram-001',
+]);
 const READ_ONLY_TOOL = /^(read|get|list|search)_/;
 
 /** What is stored (encrypted) for a configured server. */

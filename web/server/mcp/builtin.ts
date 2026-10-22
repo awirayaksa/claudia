@@ -1,14 +1,16 @@
 /**
  * The built-in MCP servers, configured for one user on the server:
  * - filesystem and diagram are confined to DATA_DIR/workspaces/<userId>;
- * - msoffice is confined to the same workspace (convert_to_pdf only exists on Windows);
+ * - msoffice, spreadsheet, presentation and pdf are confined to the same workspace;
+ *   LibreOffice converts to PDF only when the admin set LIBREOFFICE_PATH;
  * - fetch goes through the SSRF guard;
- * - documents are parsed, and diagrams rendered, in the worker pool.
+ * - documents are parsed, and diagrams and PDFs rendered, in the worker pool.
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { getAllBuiltinServerDefinitions } from '../../../electron/services/builtin-mcp/registry';
 import type { HttpGet } from '../../../electron/services/builtin-mcp/fetch.server';
+import type { PdfOptions } from '../../../electron/services/builtin-mcp/pdf-render';
 import type { MCPServerConfig } from '../../../src/types/mcp.types';
 import type { ExtractPool } from '../extract/pool';
 import { readBodyLimited, safeFetch, type SafeFetchPolicy } from '../net/safe-fetch';
@@ -23,6 +25,9 @@ export interface BuiltinInfo {
 const WEB_DESCRIPTIONS: Record<string, string> = {
   'builtin-filesystem-001': 'Read, write and organise files in your private workspace on the server.',
   'builtin-msoffice-001': 'Create and edit Word documents in your private workspace.',
+  'builtin-spreadsheet-001': 'Create and edit Excel workbooks (formulas, formats, charts) in your private workspace.',
+  'builtin-presentation-001': 'Create PowerPoint decks (layouts, themes, charts, speaker notes) in your private workspace.',
+  'builtin-pdf-001': 'Create PDFs from Markdown or HTML, and convert Office files to PDF, in your private workspace.',
 };
 
 export function builtinServers(): BuiltinInfo[] {
@@ -103,10 +108,19 @@ export function builtinConfigFor(userId: string, builtinId: string, deps: Builti
   const info = builtinServers().find((b) => b.id === builtinId);
   if (!info) throw new Error(`Unknown built-in server: ${builtinId}`);
   const workspace = userWorkspace(deps.dataDir, userId);
+  const office = { workingDirectory: workspace, confineToWorkingDirectory: true };
+  const pdf = {
+    renderMarkdownPdf: (md: string, opts: PdfOptions, images: Record<string, string>) => deps.extract.renderMarkdownPdf(md, opts, images),
+    // LibreOffice opens linked resources while converting: only when the admin chose to install it
+    useLibreOffice: !!process.env.LIBREOFFICE_PATH,
+  };
 
   const contextById: Record<string, Record<string, unknown>> = {
     'builtin-filesystem-001': { allowedDirectories: [workspace], extractor: deps.extract.extractor() },
-    'builtin-msoffice-001': { workingDirectory: workspace, confineToWorkingDirectory: true },
+    'builtin-msoffice-001': { ...office, ...pdf },
+    'builtin-spreadsheet-001': office,
+    'builtin-presentation-001': office,
+    'builtin-pdf-001': { ...office, ...pdf },
     'builtin-diagram-001': {
       allowedDirectories: [workspace],
       renderSvg: (s: string, e: string) => deps.extract.renderSvg(s, e),

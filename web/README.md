@@ -178,15 +178,17 @@ settings, rate limits, a responsive UI) and Phase 1b:
   accounts link by entryUUID/objectGUID (never by email), and users removed
   from the directory lose their sessions at the next token refresh.
 - **Tools (MCP):** admin-managed shared servers (Admin → Tools) and the
-  built-ins (files, Word documents, diagrams, web fetch), each user's copy
-  confined to a private workspace in `DATA_DIR/workspaces/<user>`. Users
-  switch tools on under Settings → Tools. MCP-UI renders only from the sandbox
+  built-ins (files, Word documents, Excel spreadsheets, PowerPoint decks, PDF,
+  diagrams, web fetch), each user's copy confined to a private workspace in
+  `DATA_DIR/workspaces/<user>`. Users switch tools on under Settings → Tools;
+  on servers whose admin saved the built-in list before an upgrade, new
+  built-ins start off there until the admin ticks them under Admin → Settings. MCP-UI renders only from the sandbox
   origin, may only call tools of the server that produced it, and asks before
   tools marked destructive.
 - **Workspace files:** to save in a particular place, the user says so in the
   message ("save it as reports/q3.md"); paths are relative to the workspace and
-  missing folders are created. Every file a Files, Word or Diagrams tool
-  creates or changes is linked under the reply (once per reply, downloading the
+  missing folders are created. Every file a Files, Word, Spreadsheets,
+  Presentations, PDF or Diagrams tool creates or changes is linked under the reply (once per reply, downloading the
   current file). Settings → Files → Workspace browses the workspace: download,
   upload, new folder, delete. Paths are checked like the tools' (no `..`, no
   links out); shared chats keep only the file names.
@@ -297,6 +299,7 @@ within about a minute and the branch can be answered again.
 | `S3_PREFIX` | — | Prefix of every object key, e.g. `claudia/` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP/HTTP collector for traces, e.g. `http://otel-collector:4318`; `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_HEADERS` and the sampler variables are read too |
 | `LOG_LEVEL` | `info` | |
+| `LIBREOFFICE_PATH` | — | `soffice` used to convert Word, Excel and PowerPoint files to PDF exactly (install LibreOffice in your image first). Unset: an approximate conversion of the content. LibreOffice may fetch resources a document links to while converting, so set it only where that is acceptable |
 
 Streaming behind a reverse proxy needs buffering off for `/api` (nginx:
 `proxy_buffering off;` and a read timeout longer than the longest run).

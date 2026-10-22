@@ -61,6 +61,10 @@
     "providerDefault": "provider default",
     "select": "Select reasoning effort"
   },
+  "files": {
+    "open": "Open",
+    "showInFolder": "Show in folder"
+  },
   "mcp": {
     "hideServers": "Hide MCP servers",
     "showServers": "Show MCP servers ({{count}})",

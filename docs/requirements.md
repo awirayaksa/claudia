@@ -18,6 +18,15 @@ PostgreSQL 16) and on build output, so check it against a real deployment
 | **GPU** | Not needed. Models run on the connected server (Open WebUI, OpenRouter, …) | — |
 | **Network** | Access to your AI endpoint | — |
 
+### Optional software
+
+| | Used for |
+|---|---|
+| **Microsoft Office** (Windows) | Exact PDF copies of Word, Excel and PowerPoint files (the PDF and Word tools use it first) |
+| **LibreOffice** (any OS) | The same, where Office is missing. Without either, PDFs of Office files are approximate (content without the original layout) |
+
+Neither is needed to create Word, Excel, PowerPoint or PDF files.
+
 ### Building from source
 
 | | Minimum | Recommended |

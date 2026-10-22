@@ -289,6 +289,9 @@
     "builtins": {
       "builtin-filesystem-001": "Files (read and write in the workspace)",
       "builtin-msoffice-001": "Word documents",
+      "builtin-spreadsheet-001": "Excel spreadsheets",
+      "builtin-presentation-001": "PowerPoint presentations",
+      "builtin-pdf-001": "PDF documents",
       "builtin-diagram-001": "Diagrams",
       "builtin-fetch-001": "Web fetch"
     },

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, session } from 'electron';
+import { app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, session, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { store, checkVersionAndMigrate, seedBuiltinServers } from './services/store.service';
@@ -17,6 +17,8 @@ import { registerSystemPromptHandlers } from './handlers/system-prompt.handler';
 import { AutoUpdaterService } from './services/auto-updater.service';
 import { registerUpdaterHandlers } from './handlers/updater.handler';
 import { extractText } from './services/text-extract.service';
+import { printHtmlToPdf } from './services/pdf-print.service';
+import { setHtmlPdfRenderer } from './services/builtin-mcp/pdf-render';
 import { logUpdater } from './services/auto-updater-logger';
 import {
   registerSkillHandlers,
@@ -342,6 +344,8 @@ app.whenReady().then(async () => {
 
   // Seed built-in MCP servers (adds them if missing, preserves existing config)
   seedBuiltinServers();
+  // The built-in PDF and Word servers print HTML with Chromium
+  setHtmlPdfRenderer(printHtmlToPdf);
 
   // Register IPC handlers
   registerConfigHandlers();
@@ -511,6 +515,34 @@ ipcMain.handle('file:read', async (_event, filePath: string) => {
   } catch (err) {
     throw new Error(String(err));
   }
+});
+
+// Files the built-in tools wrote (cards under a reply): open in the default app, or show in the folder.
+// Only document and image types: the renderer must not be able to launch programs.
+const OPENABLE_TYPES = new Set(['.xlsx', '.pptx', '.docx', '.dotx', '.dotm', '.pdf', '.csv', '.png', '.jpg', '.jpeg', '.gif', '.svg', '.txt', '.md']);
+
+function existingFile(filePath: unknown): string | null {
+  if (typeof filePath !== 'string' || !path.isAbsolute(filePath)) return null;
+  try {
+    return fs.statSync(filePath).isFile() ? filePath : null;
+  } catch {
+    return null;
+  }
+}
+
+ipcMain.handle('file:openPath', async (_event, filePath: string) => {
+  const file = existingFile(filePath);
+  if (!file) return { success: false, error: 'The file was moved or deleted.' };
+  if (!OPENABLE_TYPES.has(path.extname(file).toLowerCase())) return { success: false, error: 'This type of file cannot be opened from here.' };
+  const error = await shell.openPath(file);
+  return error ? { success: false, error } : { success: true };
+});
+
+ipcMain.handle('file:showInFolder', async (_event, filePath: string) => {
+  const file = existingFile(filePath);
+  if (!file) return { success: false, error: 'The file was moved or deleted.' };
+  shell.showItemInFolder(file);
+  return { success: true };
 });
 
 // Attachment text extraction: the parsers live in the main process

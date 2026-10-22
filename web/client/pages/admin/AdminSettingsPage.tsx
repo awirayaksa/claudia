@@ -7,7 +7,15 @@ import { CapsFields, PermissionChecks } from '../../components/AccessFields';
 import { BannersEditor, DefaultsEditor } from './OpsSettings';
 
 /** The built-in tool servers (each user gets their own, confined to their workspace). */
-const BUILTIN_IDS = ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'] as const;
+const BUILTIN_IDS = [
+  'builtin-filesystem-001',
+  'builtin-msoffice-001',
+  'builtin-spreadsheet-001',
+  'builtin-presentation-001',
+  'builtin-pdf-001',
+  'builtin-diagram-001',
+  'builtin-fetch-001',
+] as const;
 
 export function AdminSettingsPage() {
   const { t } = useTranslation();

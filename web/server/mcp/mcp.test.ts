@@ -14,6 +14,9 @@ import { uuidv7 } from '../lib/ids';
 
 const FS = 'builtin-filesystem-001';
 const OFFICE = 'builtin-msoffice-001';
+const SHEETS = 'builtin-spreadsheet-001';
+const SLIDES = 'builtin-presentation-001';
+const PDF = 'builtin-pdf-001';
 
 let f: ChatFixture | undefined;
 let mcp: MockMcp | undefined;
@@ -171,6 +174,47 @@ describe('built-in tool servers', () => {
     const res = await f.admin.get(`/api/workspace-files/content?path=${encodeURIComponent('reports/2026/q3.md')}`);
     expect(res.statusCode).toBe(200);
     expect(res.body).toBe('# Q3, final');
+  });
+
+  it('make spreadsheets, decks and PDFs in the workspace, linked under the reply', async () => {
+    f = await chatFixture();
+    for (const id of [SHEETS, SLIDES, PDF]) expect((await f.admin.post(`/api/mcp/servers/${id}/enable`)).statusCode).toBe(200);
+    const call = (id: string, name: string, args: Record<string, unknown>) => ({ id, name, arguments: JSON.stringify(args) });
+    f.mock.push(
+      {
+        toolCalls: [
+          call('c1', 'create_workbook', { filename: 'budget.xlsx' }),
+          call('c2', 'create_presentation', { filename: 'decks/q3.pptx', slides: [{ layout: 'title', title: 'Q3' }, { title: 'Points', bullets: ['a'] }] }),
+          call('c3', 'create_pdf', { filename: 'report.pdf', content: ['# Report', '', '| a | b |', '|---|---|', '| 1 | 2 |'].join('\n') }),
+        ],
+      },
+      { toolCalls: [call('c4', 'write_range', { filename: 'budget.xlsx', sheet: 'Sheet1', rows: [['Total', '=SUM(1,2)']] })] },
+      { text: ['Done.'] }
+    );
+    const chatId = await f.newChat(f.admin);
+    const start = await f.admin.post(`/api/chats/${chatId}/completions`, {
+      parentId: null,
+      modelIds: ['mock/gpt-test'],
+      content: 'Make a budget, a deck and a report',
+      toolIds: [SHEETS, SLIDES, PDF],
+    });
+    await f.readRun(f.admin, start.json().runId);
+
+    const ws = path.join(f.dataDir, 'workspaces', await userId(f.admin));
+    expect(fs.readFileSync(path.join(ws, 'report.pdf')).subarray(0, 5).toString()).toBe('%PDF-');
+    expect(fs.existsSync(path.join(ws, 'decks', 'q3.pptx'))).toBe(true);
+    const [row] = await f.db.db.select().from(messages).where(eq(messages.id, start.json().assistantMessageIds[0]));
+    // Each file once, though the workbook was written twice
+    const links = row.parts.filter((p) => p.type === 'workspace_file').map((p) => (p as { path: string }).path);
+    expect(links.sort()).toEqual(['budget.xlsx', 'decks/q3.pptx', 'report.pdf']);
+    // Results name workspace paths, never the server's layout
+    const results = row.parts.filter((p) => p.type === 'tool_result').map((p) => (p as { content: string }).content);
+    expect(results.every((r) => !r.includes('workspaces'))).toBe(true);
+
+    // Confined: no way out of the workspace
+    const res = resultText(await f.app.ctx.mcp.callTool(await userId(f.admin), PDF, 'create_pdf', { filename: '../escape.pdf', content: 'x' }));
+    expect(res.isError).toBe(true);
+    expect(fs.existsSync(path.join(ws, '..', 'escape.pdf'))).toBe(false);
   });
 
   it('are not offered unless requested and switched on', async () => {
