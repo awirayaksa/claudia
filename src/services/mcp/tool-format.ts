@@ -175,6 +175,8 @@ export interface NormalizedToolResult {
   isError: boolean;
   /** An MCP-UI resource to render, if the tool returned one. */
   uiResource?: UIResourceContent;
+  /** Files the tool reports it wrote (`_meta["claudia/files"]`, set by the built-in servers). */
+  files?: Array<{ path: string; name: string; size: number }>;
 }
 
 /** An embedded resource whose URI uses the MCP-UI `ui://` scheme (same rule as @mcp-ui/client). */
@@ -200,7 +202,20 @@ function itemToText(c: MCPContentItem): string {
  * - A UI resource: the text items for the model (or a placeholder) plus the resource.
  * - Otherwise: every item converted to text, joined with newlines.
  */
-export function normalizeToolResult(result: { content?: MCPContentItem[]; isError?: boolean }): NormalizedToolResult {
+/** The `_meta` key built-in servers list written files under (see builtin-mcp/office-files.ts). */
+const WRITTEN_FILES_META = 'claudia/files';
+
+function writtenFiles(meta: unknown): NormalizedToolResult['files'] {
+  const list = (meta as Record<string, unknown> | undefined)?.[WRITTEN_FILES_META];
+  if (!Array.isArray(list)) return undefined;
+  const files = list.filter(
+    (f): f is { path: string; name: string; size: number } =>
+      !!f && typeof f.path === 'string' && typeof f.name === 'string' && typeof f.size === 'number'
+  );
+  return files.length ? files.map(({ path, name, size }) => ({ path, name, size })) : undefined;
+}
+
+export function normalizeToolResult(result: { content?: MCPContentItem[]; isError?: boolean; _meta?: unknown }): NormalizedToolResult {
   const items = Array.isArray(result.content) ? result.content : [];
 
   if (result.isError) {
@@ -216,7 +231,8 @@ export function normalizeToolResult(result: { content?: MCPContentItem[]; isErro
     return { content: text || `[Interactive UI: ${ui.resource.uri}]`, isError: false, uiResource: ui.resource };
   }
 
-  return { content: items.map(itemToText).join('\n'), isError: false };
+  const files = writtenFiles(result._meta);
+  return { content: items.map(itemToText).join('\n'), isError: false, ...(files ? { files } : {}) };
 }
 
 /** OpenAI function definitions for a set of aliases. */

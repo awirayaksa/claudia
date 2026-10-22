@@ -41,6 +41,8 @@ contextBridge.exposeInMainWorld('electron', {
     listDirectory: (dirPath: string) => ipcRenderer.invoke('file:listDirectory', dirPath),
     extractText: (payload: { name: string; mimeType?: string; data: Uint8Array }) =>
       ipcRenderer.invoke('file:extractText', payload),
+    openPath: (filePath: string) => ipcRenderer.invoke('file:openPath', filePath),
+    showInFolder: (filePath: string) => ipcRenderer.invoke('file:showInFolder', filePath),
   },
 
   // Conversation operations
@@ -298,6 +300,10 @@ export interface ElectronAPI {
       truncated?: boolean;
       error?: string;
     }>;
+    /** Open a file a built-in tool wrote, in its default app. */
+    openPath: (filePath: string) => Promise<{ success: boolean; error?: string }>;
+    /** Show a file in the system file manager. */
+    showInFolder: (filePath: string) => Promise<{ success: boolean; error?: string }>;
   };
   conversation: {
     save: (conversation: any) => Promise<any>;

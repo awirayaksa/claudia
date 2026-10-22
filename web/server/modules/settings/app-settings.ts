@@ -70,7 +70,15 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   limits: { completionsPerMinute: 30, concurrentRuns: 3, maxToolIterations: 10 },
   tasks: { generateTitles: true, generateFollowUps: true, titleModel: null },
   'mcp.builtins': {
-    enabled: ['builtin-filesystem-001', 'builtin-msoffice-001', 'builtin-diagram-001', 'builtin-fetch-001'],
+    enabled: [
+      'builtin-filesystem-001',
+      'builtin-msoffice-001',
+      'builtin-spreadsheet-001',
+      'builtin-presentation-001',
+      'builtin-pdf-001',
+      'builtin-diagram-001',
+      'builtin-fetch-001',
+    ],
   },
   'net.allowlist': { hosts: [] },
   'permissions.default': DEFAULT_PERMISSIONS,

@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { writtenFilesMeta } from './office-files';
 
 // ============================================================================
 // Lazy-loaded dependencies (heavy WASM / native modules)
@@ -197,6 +198,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
             type: 'text' as const,
             text: `Diagram saved to ${resolvedPath} (SVG, engine: ${layoutEngine})`,
           }],
+          _meta: writtenFilesMeta(resolvedPath),
         };
       }
 
@@ -212,6 +214,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
             type: 'text' as const,
             text: `Diagram saved to ${resolvedPath} (PNG, ${sizeMB} MB, scale: ${pngScale}x, engine: ${layoutEngine})`,
           }],
+          _meta: writtenFilesMeta(resolvedPath),
         };
       } catch (err: any) {
         // Fallback: save as SVG with a note
@@ -223,6 +226,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
             text: `PNG conversion failed: ${err.message}\n` +
               `Diagram saved as SVG instead: ${svgFallbackPath}`,
           }],
+          _meta: writtenFilesMeta(svgFallbackPath),
         };
       }
     }
@@ -344,6 +348,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
             type: 'text' as const,
             text: `Diagram saved to ${resolvedOutput} (SVG, engine: ${layoutEngine}, source: ${resolvedInput})`,
           }],
+          _meta: writtenFilesMeta(resolvedOutput),
         };
       }
 
@@ -358,6 +363,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
             type: 'text' as const,
             text: `Diagram saved to ${resolvedOutput} (PNG, ${sizeMB} MB, scale: ${pngScale}x, engine: ${layoutEngine}, source: ${resolvedInput})`,
           }],
+          _meta: writtenFilesMeta(resolvedOutput),
         };
       } catch (err: any) {
         const svgFallbackPath = resolvedOutput.replace(/\.png$/i, '.svg');
@@ -368,6 +374,7 @@ export function createDiagramServer(config?: Record<string, unknown>): McpServer
             text: `PNG conversion failed: ${err.message}\n` +
               `Diagram saved as SVG instead: ${svgFallbackPath}`,
           }],
+          _meta: writtenFilesMeta(svgFallbackPath),
         };
       }
     }

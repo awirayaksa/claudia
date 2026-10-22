@@ -309,6 +309,9 @@
     "builtins": {
       "builtin-filesystem-001": "الملفات (قراءة وكتابة في مساحة العمل)",
       "builtin-msoffice-001": "مستندات Word",
+      "builtin-spreadsheet-001": "جداول Excel",
+      "builtin-presentation-001": "عروض PowerPoint",
+      "builtin-pdf-001": "مستندات PDF",
       "builtin-diagram-001": "المخططات",
       "builtin-fetch-001": "جلب صفحات الويب"
     },

@@ -3,12 +3,14 @@
  * returns plain data. Runs with a heap limit; the pool kills it on timeout.
  */
 import { parseDocx, parseHtml, parsePdf, parsePptx, parseXlsx, renderDot, svgToPng } from './parsers';
+import { markdownToPdfInProcess, type PdfOptions } from '../../../electron/services/builtin-mcp/pdf-render';
 
 export type ExtractTask =
   | { op: 'pdf' | 'docx' | 'xlsx' | 'pptx'; data: Uint8Array }
   | { op: 'html'; html: string; url?: string }
   | { op: 'dot'; source: string; engine: string }
   | { op: 'png'; svg: string; scale: number }
+  | { op: 'mdpdf'; markdown: string; options: PdfOptions; images: Record<string, string> }
   /** Test hook: spin forever (timeout tests). */
   | { op: 'spin' };
 
@@ -32,6 +34,8 @@ export default async function run(task: ExtractTask): Promise<unknown> {
       return renderDot(task.source, task.engine);
     case 'png':
       return svgToPng(task.svg, task.scale);
+    case 'mdpdf':
+      return new Uint8Array(await markdownToPdfInProcess(task.markdown, task.options, task.images));
     case 'spin':
       for (;;) {
         /* deliberately never returns */

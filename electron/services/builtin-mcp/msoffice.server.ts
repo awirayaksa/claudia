@@ -3,12 +3,14 @@ import { DOMParser, XMLSerializer } from '@xmldom/xmldom';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import * as crypto from 'crypto';
-import { spawn } from 'child_process';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { Document as DocxDocument, Packer } from 'docx';
 import mammoth from 'mammoth';
 import { assertPathAllowed, resolveRequestedPath } from './path-guard';
+import { convertOfficeToPdf } from './pdf.server';
+import { pdfRenderers } from './pdf-render';
+import { wroteFiles, writtenFilesMeta } from './office-files';
 
 // ============================================================================
 // Constants
@@ -150,10 +152,17 @@ async function withDocxWrite<T>(
     const zip = await openAdmZipWithRetry(filepath);
     const result = await fn(zip);
     await saveZip(zip, filepath);
-    return result;
+    return reportWritten(result, filepath);
   } finally {
     release();
   }
+}
+
+/** Add the written file to a tool result (the desktop shows it as a card under the reply). */
+function reportWritten<T>(result: T, filepath: string): T {
+  const r = result as { content?: unknown; isError?: boolean; _meta?: Record<string, unknown> } | null;
+  if (!r || typeof r !== 'object' || !Array.isArray(r.content) || r.isError) return result;
+  return { ...r, _meta: { ...r._meta, ...writtenFilesMeta(filepath) } } as T;
 }
 
 async function withDocxWriteTo<T>(
@@ -173,7 +182,7 @@ async function withDocxWriteTo<T>(
     const zip = await openAdmZipWithRetry(readFilepath);
     const result = await fn(zip);
     await saveZip(zip, writeFilepath);
-    return result;
+    return reportWritten(result, writeFilepath);
   } finally {
     for (const r of releases.reverse()) r();
   }
@@ -394,26 +403,6 @@ function getNextNoteId(notesXml: string, tag: string): number {
 }
 
 // ============================================================================
-// PowerShell runner (for PDF conversion)
-// ============================================================================
-
-function runPS(script: string, timeoutMs = 60000): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const p = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', script], { windowsHide: true });
-    let out = '', err = '';
-    const t = setTimeout(() => { p.kill(); reject(new Error('PowerShell timeout')); }, timeoutMs);
-    p.stdout.on('data', (d: Buffer) => { out += d.toString(); });
-    p.stderr.on('data', (d: Buffer) => { err += d.toString(); });
-    p.on('close', code => {
-      clearTimeout(t);
-      if (code !== 0 && err.trim()) reject(new Error(err.trim()));
-      else resolve(out.trim());
-    });
-    p.on('error', e => { clearTimeout(t); reject(e); });
-  });
-}
-
-// ============================================================================
 // Password hash for document protection (OOXML SHA-512 spin hash)
 // ============================================================================
 
@@ -465,6 +454,8 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
   const workingDir = (config?.workingDirectory as string) || process.cwd();
   // The web server confines every path to the user's workspace
   const confine = config?.confineToWorkingDirectory === true;
+  const renderers = pdfRenderers(config);
+  const useLibreOffice = config?.useLibreOffice !== false;
 
   // ══════════════════════════════════════════════════════════════════════════
   // GROUP 1 – Document Management
@@ -489,7 +480,7 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
       const buf = await Packer.toBuffer(doc);
       return withDocxRawRead(filepath, async () => {
         await atomicWriteFile(filepath, buf);
-        return { content: [{ type: 'text' as const, text: `Created: ${filepath}` }] };
+        return wroteFiles(`Created: ${filepath}`, filepath);
       });
     }
   );
@@ -2102,37 +2093,26 @@ export function createMsOfficeServer(config?: Record<string, unknown>): McpServe
     }
   );
 
-  // Word COM automation exists only on Windows; elsewhere the tool isn't offered
-  if (process.platform === 'win32') server.tool(
+  server.tool(
     'convert_to_pdf',
-    'Convert a .docx file to PDF using Microsoft Word COM automation (requires Word installed on Windows).',
+    'Convert a .docx file to PDF: with Microsoft Word on Windows, else LibreOffice when installed, else an approximate conversion of its content.',
     {
       filename: z.string().describe('Source .docx file'),
       output_filename: z.string().optional().describe('Output PDF path (default: same name with .pdf)'),
     },
     async ({ filename, output_filename }) => {
-      if (process.platform !== 'win32') throw new Error('PDF conversion requires Windows with Microsoft Word installed.');
       const filepath = resolvePath(filename, workingDir, confine);
       const pdfPath = output_filename
         ? resolvePath(output_filename, workingDir, confine)
-        : filepath.replace(/\.docx$/i, '.pdf');
+        : filepath.replace(/.docx$/i, '.pdf');
       return withDocxPairRaw(filepath, pdfPath, async () => {
-        const esc = (s: string) => s.replace(/'/g, "''");
-        const script = `
-          $word = New-Object -ComObject Word.Application
-          $word.Visible = $false
-          try {
-            $doc = $word.Documents.Open('${esc(filepath)}')
-            $doc.ExportAsFixedFormat('${esc(pdfPath)}', 17)
-            $doc.Close()
-            "Converted: ${esc(pdfPath)}"
-          } finally {
-            $word.Quit()
-            [Runtime.InteropServices.Marshal]::ReleaseComObject($word) | Out-Null
-          }
-        `;
-        const out = await runPS(script, 120000);
-        return { content: [{ type: 'text' as const, text: out || `PDF saved: ${pdfPath}` }] };
+        const text = await convertOfficeToPdf(filepath, pdfPath, {
+          useLibreOffice,
+          renderers,
+          scope: { workingDir, confine },
+          pdf: { pageSize: 'A4', landscape: false, title: path.parse(filepath).name },
+        });
+        return wroteFiles(text, pdfPath);
       });
     }
   );

@@ -145,6 +145,10 @@ export interface PlatformFiles {
   handlesImages?: boolean;
   /** Native file picker, where the host has one. */
   pick?(): Promise<File[]>;
+  /** Desktop: open a file a built-in tool wrote, in its default app. */
+  openLocal?(path: string): Promise<void>;
+  /** Desktop: show that file in the system file manager. */
+  revealLocal?(path: string): Promise<void>;
 }
 
 /** Host events shared code can subscribe to. */

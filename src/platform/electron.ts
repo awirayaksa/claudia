@@ -140,6 +140,12 @@ async function complete(api: APISettings, req: LLMCompleteRequest): Promise<stri
   return text;
 }
 
+/** IPC `{ success, error }` → a promise that rejects with the error. */
+async function unwrap(res: Promise<{ success: boolean; error?: string }>): Promise<void> {
+  const r = await res;
+  if (!r.success) throw new Error(r.error || 'Failed');
+}
+
 export function createElectronPlatform(deps: ElectronPlatformDeps): ClaudiaPlatform {
   const e = window.electron;
   return {
@@ -166,7 +172,11 @@ export function createElectronPlatform(deps: ElectronPlatformDeps): ClaudiaPlatf
     systemPrompt: e.systemPrompt,
     tools: { uiAction: deps.uiAction },
     llm: { complete: (req) => complete(deps.getApiConfig(), req) },
-    files: { upload: (file, onProgress) => uploadFile(deps.getApiConfig(), file, onProgress) },
+    files: {
+      upload: (file, onProgress) => uploadFile(deps.getApiConfig(), file, onProgress),
+      openLocal: (p) => unwrap(e.file.openPath(p)),
+      revealLocal: (p) => unwrap(e.file.showInFolder(p)),
+    },
     events: { on: subscribe },
     uiSandbox: { sandboxPermissions: DESKTOP_UI_SANDBOX },
   };

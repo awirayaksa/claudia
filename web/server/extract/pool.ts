@@ -11,6 +11,7 @@ import type { DocumentExtractor } from '../../../electron/services/builtin-mcp/d
 import { detectDocumentFormat, documentToText, type DocumentFormat } from '../../../electron/services/builtin-mcp/document-extractor';
 import { EXTRACT_LIMITS, ExtractLimitError } from './limits';
 import type { ExtractTask } from './worker';
+import type { PdfOptions } from '../../../electron/services/builtin-mcp/pdf-render';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -111,6 +112,15 @@ export class ExtractPool {
 
   async svgToPng(svg: string, scale: number): Promise<Buffer> {
     return Buffer.from(await this.run<Uint8Array>({ op: 'png', svg, scale }, 20_000));
+  }
+
+  /** Markdown laid out as a PDF (PDF and Word built-ins; there is no browser on the server). */
+  async renderMarkdownPdf(markdown: string, options: PdfOptions, images: Record<string, string>): Promise<Buffer> {
+    const size = markdown.length + Object.values(images).reduce((n, u) => n + u.length, 0);
+    if (size > this.maxInputBytes * 2) {
+      throw new ExtractLimitError(`The document and its images are larger than ${Math.round((this.maxInputBytes * 2) / (1024 * 1024))} MB.`);
+    }
+    return Buffer.from(await this.run<Uint8Array>({ op: 'mdpdf', markdown, options, images }, 60_000));
   }
 
   /** A fetched page's main content as markdown (fetch built-in). */

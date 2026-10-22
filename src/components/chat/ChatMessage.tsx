@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { Message, Attachment } from '../../types/message.types';
 import { MessageAttachment } from './MessageAttachment';
+import { ToolFileCards, filesOfResults } from './ToolFileCards';
 import { MarkdownRenderer } from './MarkdownRenderer';
 import { Citations } from './Citations';
 import type { CitationSource } from '../../types/turn.types';
@@ -52,6 +53,7 @@ export const ChatMessage = React.memo(function ChatMessage({
   const [copied, setCopied] = useState(false);
   const [activeCitation, setActiveCitation] = useState<number | null>(null);
   const citationNumbers = useMemo(() => new Set((message.citations ?? []).map((c) => c.index)), [message.citations]);
+  const toolFiles = useMemo(() => filesOfResults(message.toolResults), [message.toolResults]);
 
   const { showReasoning, showStatistics } = useAppSelector((state) => state.settings.preferences);
 
@@ -185,6 +187,9 @@ export const ChatMessage = React.memo(function ChatMessage({
               ))}
             </div>
           )}
+
+          {/* Files built-in tools wrote (desktop) */}
+          <ToolFileCards files={toolFiles} />
 
           {/* Tool Calls */}
           {message.toolCalls && message.toolCalls.length > 0 && (

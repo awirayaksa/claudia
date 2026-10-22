@@ -61,6 +61,10 @@
     "providerDefault": "افتراضي المزوّد",
     "select": "اختيار جهد الاستدلال"
   },
+  "files": {
+    "open": "فتح",
+    "showInFolder": "إظهار في المجلد"
+  },
   "mcp": {
     "hideServers": "إخفاء خوادم MCP",
     "showServers": "عرض خوادم MCP ({{count}})",

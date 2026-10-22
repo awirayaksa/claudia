@@ -100,6 +100,8 @@ export class ToolIntegrationService {
     target: ToolTarget | null = this.resolveTool(toolCall.function.name, mcpState)
   ): Promise<ToolResult> {
     const result = await this.runToolCall(toolCall, target);
+    // File cards open files on this computer: only built-in servers may ask for them
+    if (result.files && !(target && mcpState.serverStates[target.serverId]?.config.builtin)) delete result.files;
     // Remember which server produced the result, so UI actions go back to it
     return target ? { ...result, serverId: target.serverId } : result;
   }
@@ -171,6 +173,7 @@ export class ToolIntegrationService {
         isError: normalized.isError,
         ...(normalized.isError ? {} : { hasUI: !!normalized.uiResource }),
         ...(normalized.uiResource ? { uiResource: normalized.uiResource } : {}),
+        ...(normalized.files ? { files: normalized.files } : {}),
       };
     } catch (error) {
       if (error instanceof Error && error.message === 'Tool execution timeout') {
