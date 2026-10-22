@@ -48,6 +48,7 @@ claudia-web-<version>-airgap-amd64.tar.sha256   its checksum
 | `-Ref <tag/branch/commit>` | What to build (default: the newest release tag with `web/`; a branch is taken from `origin`) |
 | `-Arch arm64` | For an ARM target (default `amd64`; built with emulation, slower) |
 | `-PgvectorImage <image>` | Database image (default `pgvector/pgvector:pg16`) |
+| `-NoLibreOffice` | Leave LibreOffice out of the image (about 600 MB smaller; Office files then convert to PDF approximately) |
 | `-SkipDockerPackages` | The target already has Docker and the compose plugin |
 | `-OutDir <dir>` | Where to write the bundle |
 | `-NoArchive` | Leave the bundle as a folder |
@@ -140,6 +141,14 @@ sudo docker compose exec app node dist/server/cli.cjs   # admin CLI: prints its 
 certificate in `/opt/claudia/certs/` and set
 `LDAP_CA_CERT_FILE=/certs/<file>`. If a value contains `$` or spaces, wrap it
 in single quotes.
+
+The image includes LibreOffice (unless the bundle was built with
+`-NoLibreOffice`), so the PDF and Word tools convert Word, Excel and
+PowerPoint files to PDF exactly, with Arabic, CJK and the metrics of Calibri
+and Cambria covered by the fonts it ships. While converting, LibreOffice may
+fetch images and other resources a document links to, from wherever the
+container can reach. To turn it off, add `LIBREOFFICE_PATH=` to `.env`
+and run `sudo docker compose up -d`; conversions are then approximate.
 
 **Back up** `/opt/claudia/.env`, because the secret key decrypts stored API
 keys, plus the database and the data volume:

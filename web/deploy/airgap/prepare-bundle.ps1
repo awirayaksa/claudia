@@ -7,7 +7,8 @@
   (Linux containers), or on Linux with PowerShell 7 (pwsh), Git and Docker,
   as the release workflow does. The bundle holds everything the target needs:
 
-    images\     claudia-web (built from the release) and pgvector/pgvector
+    images\     claudia-web (built from the release, with LibreOffice for
+                exact Office to PDF conversions) and pgvector/pgvector
     debs\       Docker Engine and the compose plugin for Ubuntu 24.04 (noble),
                 with the dependencies a fresh install lacks
     install.sh, compose.yml, compose.sandbox.yml, README.md
@@ -34,6 +35,10 @@
 .PARAMETER PgvectorImage
   PostgreSQL + pgvector image. Default: pgvector/pgvector:pg16.
 
+.PARAMETER NoLibreOffice
+  Build the image without LibreOffice (about 600 MB smaller). Word, Excel
+  and PowerPoint files are then converted to PDF approximately.
+
 .PARAMETER SkipDockerPackages
   Leave out the Docker Engine packages (the target already has Docker and
   the compose plugin).
@@ -57,6 +62,7 @@ param(
   [string]$Arch = 'amd64',
   [string]$OutDir,
   [string]$PgvectorImage = 'pgvector/pgvector:pg16',
+  [switch]$NoLibreOffice,
   [switch]$SkipDockerPackages,
   [switch]$NoFetch,
   [switch]$NoArchive
@@ -191,6 +197,7 @@ Write-Host ''
 Write-Host "  Building   $Ref ($($sha.Substring(0, 12)))"
 Write-Host "  Image      $image ($platform)"
 Write-Host "  Database   $PgvectorImage"
+Write-Host "  LibreOffice $(if ($NoLibreOffice) { 'left out' } else { 'included' })"
 Write-Host "  Bundle     $bundle"
 Write-Host ''
 
@@ -215,8 +222,10 @@ try {
   Invoke-Native 'Extracting the source' { & $tarExe -xf $srcTar -C $src }
 
   Write-Step "Building $image"
+  $libreOffice = if ($NoLibreOffice) { '' } else { '1' }
   Invoke-Native 'docker build' {
     docker build --platform $platform --load `
+      --build-arg "LIBREOFFICE=$libreOffice" `
       -f ([IO.Path]::Combine($src, 'web', 'docker', 'Dockerfile')) `
       -t $image `
       --label "org.opencontainers.image.version=$version" `

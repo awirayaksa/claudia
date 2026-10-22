@@ -44,6 +44,7 @@ Neither is needed to create Word, Excel, PowerPoint or PDF files.
 | **Disk** | 10 GB | 20 GB or more on SSD. Uploads, workspaces and the database grow with use |
 | **Ports** | 8080 (app) and 8081 (sandbox origin) **(documented)** | Behind a reverse proxy with TLS and WebSocket upgrade for `/api/ws` |
 | **Scale-out** | — | Several app instances with Redis and S3 (`web/docker/compose.scale.yml`) |
+| **LibreOffice** | Not needed: Office files are converted to PDF approximately | In the image for exact conversions: the air-gap bundle includes it; for Compose, build with `CLAUDIA_LIBREOFFICE=1` (about 600 MB more) |
 
 ### Air-gapped install
 
