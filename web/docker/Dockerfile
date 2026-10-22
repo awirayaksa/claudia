@@ -35,6 +35,25 @@ ENV NODE_ENV=production \
     DATA_DIR=/data
 WORKDIR /app
 
+# LibreOffice, for exact Word, Excel and PowerPoint → PDF conversions:
+#   docker build --build-arg LIBREOFFICE=1 …   (the air-gap bundle does)
+# About 600 MB more. Without it those conversions are approximate. The fonts
+# cover Arabic, CJK and the metrics of Calibri and Cambria.
+ARG LIBREOFFICE=
+RUN case "$LIBREOFFICE" in \
+      "") ;; \
+      1|true) apt-get update \
+        && apt-get install -y --no-install-recommends \
+             libreoffice-writer-nogui libreoffice-calc-nogui libreoffice-impress-nogui \
+             fonts-noto-core fonts-noto-cjk fonts-crosextra-carlito fonts-crosextra-caladea \
+        && rm -rf /var/lib/apt/lists/* \
+        && soffice --version ;; \
+      *) echo "LIBREOFFICE must be 1 or empty, not '$LIBREOFFICE'" >&2; exit 1 ;; \
+    esac
+# Empty (LibreOffice off) unless it was installed; LIBREOFFICE_PATH= in the
+# environment turns it off again
+ENV LIBREOFFICE_PATH=${LIBREOFFICE:+/usr/bin/soffice}
+
 COPY --from=build --chown=node:node /app/web/package.json ./package.json
 COPY --from=build --chown=node:node /app/web/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/web/dist ./dist

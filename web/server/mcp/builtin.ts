@@ -2,7 +2,8 @@
  * The built-in MCP servers, configured for one user on the server:
  * - filesystem and diagram are confined to DATA_DIR/workspaces/<userId>;
  * - msoffice, spreadsheet, presentation and pdf are confined to the same workspace;
- *   LibreOffice converts to PDF only when the admin set LIBREOFFICE_PATH;
+ *   LibreOffice converts to PDF only when LIBREOFFICE_PATH is set (an image
+ *   built with LibreOffice sets it);
  * - fetch goes through the SSRF guard;
  * - documents are parsed, and diagrams and PDFs rendered, in the worker pool.
  */

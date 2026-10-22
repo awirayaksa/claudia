@@ -17,6 +17,9 @@ services:
     build:
       context: ../..
       dockerfile: web/docker/Dockerfile
+      args:
+        # CLAUDIA_LIBREOFFICE=1: exact Office → PDF conversions (about 600 MB more)
+        LIBREOFFICE: ${CLAUDIA_LIBREOFFICE:-}
     image: claudia-web:local
     restart: unless-stopped
     ports:

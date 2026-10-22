@@ -245,7 +245,9 @@ docker compose up -d --build     # app + pgvector/pgvector:pg16
 ```
 
 The image is built from the repository root and installs only `web/`'s
-dependencies.
+dependencies. `CLAUDIA_LIBREOFFICE=1 docker compose up -d --build` also
+installs LibreOffice in it (about 600 MB more) and sets `LIBREOFFICE_PATH`,
+so Word, Excel and PowerPoint files convert to PDF exactly.
 
 For an air-gapped Ubuntu 24.04 host, `deploy/airgap/prepare-bundle.ps1`
 builds one offline bundle (images, Docker Engine packages, installer) on a
@@ -300,7 +302,7 @@ within about a minute and the branch can be answered again.
 | `S3_PREFIX` | — | Prefix of every object key, e.g. `claudia/` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | — | OTLP/HTTP collector for traces, e.g. `http://otel-collector:4318`; `OTEL_SERVICE_NAME`, `OTEL_EXPORTER_OTLP_HEADERS` and the sampler variables are read too |
 | `LOG_LEVEL` | `info` | |
-| `LIBREOFFICE_PATH` | — | `soffice` used to convert Word, Excel and PowerPoint files to PDF exactly (install LibreOffice in your image first). Unset: an approximate conversion of the content. LibreOffice may fetch resources a document links to while converting, so set it only where that is acceptable |
+| `LIBREOFFICE_PATH` | — (`/usr/bin/soffice` in an image built with LibreOffice) | `soffice` used to convert Word, Excel and PowerPoint files to PDF exactly. Unset or empty: an approximate conversion of the content. LibreOffice may fetch resources a document links to while converting, so use it only where that is acceptable; `LIBREOFFICE_PATH=` turns it off in an image that has it |
 
 Streaming behind a reverse proxy needs buffering off for `/api` (nginx:
 `proxy_buffering off;` and a read timeout longer than the longest run).
