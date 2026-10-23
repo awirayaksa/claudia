@@ -42,7 +42,10 @@ export interface MockOpenAI {
 const chunk = (delta: object, extra: object = {}) =>
   `data: ${JSON.stringify({ id: 'c', object: 'chat.completion.chunk', choices: [{ index: 0, delta, finish_reason: null }], ...extra })}\n\n`;
 
-export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promise<MockOpenAI> {
+/** Models listed by GET /models: an id, or an id with its context window. */
+export type MockModel = string | { id: string; context_length: number };
+
+export async function startMockOpenAI(models: MockModel[] = ['gpt-test', 'gpt-other']): Promise<MockOpenAI> {
   const queue: MockTurn[] = [];
   const requests: any[] = [];
   const headers: http.IncomingHttpHeaders[] = [];
@@ -61,7 +64,8 @@ export async function startMockOpenAI(models = ['gpt-test', 'gpt-other']): Promi
 
     if (req.method === 'GET' && req.url?.endsWith('/models')) {
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      return res.end(JSON.stringify({ data: models.map((id) => ({ id, name: id, created: 0, owned_by: 'mock' })) }));
+      const listed = models.map((m) => (typeof m === 'string' ? { id: m } : m));
+      return res.end(JSON.stringify({ data: listed.map((m) => ({ ...m, name: m.id, created: 0, owned_by: 'mock' })) }));
     }
     if (req.method === 'POST' && req.url?.endsWith('/images/generations')) {
       const json = JSON.parse(body);

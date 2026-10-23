@@ -80,5 +80,6 @@ export const AppSettingsResponse = z.object({
   audit: z.object({ retentionDays: z.number() }),
   'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
   arena: z.object({ enabled: z.boolean(), models: z.array(z.string()) }),
+  compaction: z.object({ enabled: z.boolean(), threshold: z.number(), keepRecentTurns: z.number(), model: z.string().nullable() }),
 });
 export type AppSettingsResponse = z.infer<typeof AppSettingsResponse>;

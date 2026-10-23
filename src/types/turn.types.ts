@@ -72,5 +72,10 @@ export interface MessageNode {
    * A/B order once voted (null before, when replies show as "arena:A"/"arena:B").
    */
   arena?: { winner: 'a' | 'b' | 'tie' | null; models: [string, string] | null };
+  /**
+   * Web: the turns up to and including this node were summarized to fit the
+   * context window; later sends down this path use the summary instead.
+   */
+  compaction?: { summary: string; turns: number };
   createdAt: string;
 }

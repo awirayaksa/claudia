@@ -164,6 +164,59 @@ export function AdminSettingsPage() {
         </label>
       </Card>
 
+      <Card title={t('admin.compaction')}>
+        <p className="mb-2 text-sm text-text-secondary">{t('admin.compactionHelp')}</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.compaction.enabled}
+            onChange={(e) => set('compaction', { ...draft.compaction, enabled: e.target.checked })}
+          />
+          {t('admin.compactionEnabled')}
+        </label>
+        {draft.compaction.enabled && (
+          <>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="block text-sm">
+                <span className="mb-1 block">{t('admin.compactionThreshold')}</span>
+                <input
+                  type="number"
+                  min={30}
+                  max={95}
+                  className="w-full rounded border border-border bg-background px-2 py-1"
+                  value={Math.round(draft.compaction.threshold * 100)}
+                  onChange={(e) =>
+                    set('compaction', { ...draft.compaction, threshold: Math.min(95, Math.max(30, Number(e.target.value) || 80)) / 100 })
+                  }
+                />
+              </label>
+              <label className="block text-sm">
+                <span className="mb-1 block">{t('admin.compactionKeep')}</span>
+                <input
+                  type="number"
+                  min={1}
+                  max={20}
+                  className="w-full rounded border border-border bg-background px-2 py-1"
+                  value={draft.compaction.keepRecentTurns}
+                  onChange={(e) =>
+                    set('compaction', { ...draft.compaction, keepRecentTurns: Math.min(20, Math.max(1, Number(e.target.value) || 1)) })
+                  }
+                />
+              </label>
+            </div>
+            <label className="mt-3 block text-sm">
+              <span className="mb-1 block">{t('admin.compactionModel')}</span>
+              <ModelSelect
+                value={draft.compaction.model}
+                onChange={(model) => set('compaction', { ...draft.compaction, model })}
+                models={allModels.map((m) => m.id)}
+                emptyLabel={t('admin.sameAsChat')}
+              />
+            </label>
+          </>
+        )}
+      </Card>
+
       <Card title={t('admin.builtinTools')}>
         <p className="mb-2 text-sm text-text-secondary">{t('admin.builtinToolsHelp')}</p>
         <div className="grid gap-1 sm:grid-cols-2">

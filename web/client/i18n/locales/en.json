@@ -143,7 +143,10 @@
     "compare": "Compare models",
     "alsoAsk": "Also ask:",
     "addModel": "Add a model",
-    "removeModel": "Remove {{name}}"
+    "removeModel": "Remove {{name}}",
+    "compacted_one": "The first exchange was summarized to fit the context",
+    "compacted_other": "The first {{count}} exchanges were summarized to fit the context",
+    "compactedSummary": "Summary the model sees instead"
   },
   "settings": {
     "title": "Settings",
@@ -342,7 +345,13 @@
     "resetMfa": "Reset two-factor",
     "resetMfaHelp": "Turn off their two-factor sign-in (for a lost phone); they can set it up again.",
     "deactivate": "Deactivate",
-    "reactivate": "Reactivate"
+    "reactivate": "Reactivate",
+    "compaction": "Long chats",
+    "compactionHelp": "Near the model's context limit, summarize the oldest exchanges instead of leaving them out.",
+    "compactionEnabled": "Summarize earlier messages",
+    "compactionThreshold": "Start at this share of the context (%)",
+    "compactionKeep": "Recent exchanges always kept word for word",
+    "compactionModel": "Model for summaries"
   },
   "notFound": {
     "title": "Page not found",

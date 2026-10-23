@@ -1,7 +1,7 @@
 import type { AddressInfo } from 'node:net';
 import { buildTestApp } from './helpers';
 import { TestClient } from './client';
-import { startMockOpenAI } from './mock-openai';
+import { startMockOpenAI, type MockModel } from './mock-openai';
 import type { AppDeps } from '../app';
 import type { RunEventEnvelope } from '../../shared/run-events';
 import { VISUAL_EXPLANATIONS_PROMPT } from '../../../src/utils/visual-explanations';
@@ -11,9 +11,16 @@ import { VISUAL_EXPLANATIONS_PROMPT } from '../../../src/utils/visual-explanatio
  * listening port (SSE is read over real HTTP).
  */
 export async function chatFixture(
-  opts: { orchestrator?: AppDeps['orchestrator']; env?: Record<string, string>; youtubeOrigin?: string; cloudEndpoints?: AppDeps['cloudEndpoints'] } = {}
+  opts: {
+    orchestrator?: AppDeps['orchestrator'];
+    env?: Record<string, string>;
+    youtubeOrigin?: string;
+    cloudEndpoints?: AppDeps['cloudEndpoints'];
+    /** What the mock endpoint lists (default gpt-test and gpt-other). */
+    models?: MockModel[];
+  } = {}
 ) {
-  const mock = await startMockOpenAI();
+  const mock = await startMockOpenAI(opts.models);
   const t = await buildTestApp({ orchestrator: opts.orchestrator, env: opts.env, youtubeOrigin: opts.youtubeOrigin, cloudEndpoints: opts.cloudEndpoints });
   await t.app.listen({ port: 0, host: '127.0.0.1' });
   const base = `http://127.0.0.1:${(t.app.server.address() as AddressInfo).port}`;

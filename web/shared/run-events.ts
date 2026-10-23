@@ -34,8 +34,11 @@ export type RunEvent =
   /** Something the user should know about the request, e.g. history trimmed to fit. */
   | {
       type: 'run.notice';
-      /** sources: a knowledge, reference or web search note; sources_failed: they couldn't be loaded. */
-      code: 'history_trimmed' | 'context_trimmed' | 'context_overflow' | 'sources' | 'sources_failed';
+      /**
+       * sources: a knowledge, reference or web search note; sources_failed: they couldn't be loaded;
+       * history_compacted: earlier turns were summarized to fit.
+       */
+      code: 'history_trimmed' | 'history_compacted' | 'context_trimmed' | 'context_overflow' | 'sources' | 'sources_failed';
       message: string;
     }
   | { type: 'chat.updated'; chatId: string; title?: string }

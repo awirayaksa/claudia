@@ -93,6 +93,7 @@ export function toNode(m: MessageRow): MessageNode {
     ...(m.meta?.refs?.length ? { refs: m.meta.refs } : {}),
     ...(m.meta?.webSearch ? { webSearch: true } : {}),
     ...(m.meta?.arena ? { arena: { winner: m.meta.arena.winner ?? null, models: m.meta.arena.models } } : {}),
+    ...(m.meta?.compaction?.summary ? { compaction: { summary: m.meta.compaction.summary, turns: m.meta.compaction.turns } } : {}),
     createdAt: m.createdAt.toISOString(),
   };
 }

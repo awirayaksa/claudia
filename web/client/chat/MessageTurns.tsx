@@ -4,7 +4,7 @@
  * into a new version, regenerating, forking, ratings with feedback, answers
  * of several models side by side, and follow-up suggestions.
  */
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ChatMessage } from '@/components/chat/ChatMessage';
@@ -51,67 +51,94 @@ export function MessageTurns(props: Props) {
   const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
   const last = path[path.length - 1];
 
+  const renderNode = (node: MessageNode, i: number): ReactNode => {
+    if (node.role === 'user') {
+      if (editingId === node.id) {
+        return (
+          <EditMessage
+            key={node.id}
+            initial={nodeText(node, 'text', '')}
+            onCancel={() => setEditingId(null)}
+            onSave={(text) => {
+              setEditingId(null);
+              props.onEdit?.(node, text);
+            }}
+          />
+        );
+      }
+      return (
+        <UserTurn
+          key={node.id}
+          node={node}
+          nodes={nodes}
+          disabled={running}
+          readOnly={readOnly}
+          onSelect={props.onSelect}
+          onEdit={props.onEdit ? () => setEditingId(node.id) : undefined}
+        />
+      );
+    }
+
+    const parent = path[i - 1];
+    const columns = parent?.role === 'user' ? modelColumns(nodes, parent) : null;
+    const reply = columns ? (
+      <>
+        <ModelColumns key={node.id} {...props} columns={columns} activeId={node.id} onFeedback={setFeedbackFor} />
+        {parent.arena && <ArenaVote turn={parent} replies={columns.flatMap((c) => c.versions)} onVote={props.readOnly ? undefined : props.onArenaVote} />}
+      </>
+    ) : (
+      <AssistantTurn key={node.id} {...props} node={node} onFeedback={setFeedbackFor} />
+    );
+    return (
+      <div key={node.id}>
+        {reply}
+        {props.onArtifact && node.status !== 'streaming' && <ArtifactChips node={node} onOpen={props.onArtifact} />}
+        {feedbackFor && nodes.find((n) => n.id === feedbackFor)?.parentId === node.parentId && (
+          <FeedbackForm
+            onCancel={() => setFeedbackFor(null)}
+            onSend={(feedback) => {
+              const target = nodes.find((n) => n.id === feedbackFor);
+              setFeedbackFor(null);
+              if (target) props.onRate?.(target, -1, feedback);
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
-      {path.map((node, i) => {
-        if (node.role === 'user') {
-          if (editingId === node.id) {
-            return (
-              <EditMessage
-                key={node.id}
-                initial={nodeText(node, 'text', '')}
-                onCancel={() => setEditingId(null)}
-                onSave={(text) => {
-                  setEditingId(null);
-                  props.onEdit?.(node, text);
-                }}
-              />
-            );
-          }
-          return (
-            <UserTurn
-              key={node.id}
-              node={node}
-              nodes={nodes}
-              disabled={running}
-              readOnly={readOnly}
-              onSelect={props.onSelect}
-              onEdit={props.onEdit ? () => setEditingId(node.id) : undefined}
-            />
-          );
-        }
-
-        const parent = path[i - 1];
-        const columns = parent?.role === 'user' ? modelColumns(nodes, parent) : null;
-        const reply = columns ? (
-          <>
-            <ModelColumns key={node.id} {...props} columns={columns} activeId={node.id} onFeedback={setFeedbackFor} />
-            {parent.arena && <ArenaVote turn={parent} replies={columns.flatMap((c) => c.versions)} onVote={props.readOnly ? undefined : props.onArenaVote} />}
-          </>
-        ) : (
-          <AssistantTurn key={node.id} {...props} node={node} onFeedback={setFeedbackFor} />
-        );
-        return (
-          <div key={node.id}>
-            {reply}
-            {props.onArtifact && node.status !== 'streaming' && <ArtifactChips node={node} onOpen={props.onArtifact} />}
-            {feedbackFor && nodes.find((n) => n.id === feedbackFor)?.parentId === node.parentId && (
-              <FeedbackForm
-                onCancel={() => setFeedbackFor(null)}
-                onSend={(feedback) => {
-                  const target = nodes.find((n) => n.id === feedbackFor);
-                  setFeedbackFor(null);
-                  if (target) props.onRate?.(target, -1, feedback);
-                }}
-              />
-            )}
-          </div>
-        );
-      })}
+      {path.map((node, i) => (
+        <Fragment key={node.id}>
+          {renderNode(node, i)}
+          {node.compaction && <CompactionDivider summary={node.compaction.summary} turns={node.compaction.turns} />}
+        </Fragment>
+      ))}
       {!readOnly && !running && last?.role === 'assistant' && last.status === 'completed' && last.followUps?.length ? (
         <FollowUps items={last.followUps} onPick={(q) => props.onFollowUp?.(q)} />
       ) : null}
     </>
+  );
+}
+
+/** Where earlier turns were summarized to fit the context window; opens to show the summary. */
+function CompactionDivider({ summary, turns }: { summary: string; turns: number }) {
+  const { t } = useTranslation();
+  return (
+    <details className="group my-4 text-xs text-text-secondary" data-testid="compaction-divider">
+      <summary className="flex cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
+        <span className="h-px flex-1 bg-border" />
+        <span className="rounded-full border border-border px-2.5 py-0.5 hover:border-accent hover:text-accent">
+          {t('chat.compacted', { count: turns })}
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </summary>
+      <div className="mt-2 rounded-lg border border-border bg-surface p-3 text-sm text-text-primary">
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-secondary">{t('chat.compactedSummary')}</p>
+        <p className="whitespace-pre-wrap">{summary}</p>
+      </div>
+    </details>
   );
 }
 

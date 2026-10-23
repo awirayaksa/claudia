@@ -67,6 +67,8 @@ export interface MessageMeta {
   imageGen?: boolean;
   /** User nodes of a blind comparison: the real models (A, B) and the vote. */
   arena?: { models: [string, string]; winner?: 'a' | 'b' | 'tie' };
+  /** The path up to here was summarized (`turns` turns, folding in any earlier summary). */
+  compaction?: { summary: string; turns: number; modelId: string; at: string };
 }
 
 export interface MessageFeedback {

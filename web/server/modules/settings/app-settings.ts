@@ -58,6 +58,16 @@ export const AppSettingsSchema = {
   'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
   /** Blind comparisons: a model called "Arena" answers with two of these, unnamed until the user votes. */
   arena: z.object({ enabled: z.boolean(), models: z.array(z.string()).max(50) }),
+  /** Near the context limit, summarize the oldest turns instead of dropping them. */
+  compaction: z.object({
+    enabled: z.boolean(),
+    /** Share of the model's usable context that starts a compaction. */
+    threshold: z.number().min(0.3).max(0.95),
+    /** Most recent turns always sent word for word. */
+    keepRecentTurns: z.number().int().min(1).max(20),
+    /** Model that writes the summaries; null = the chat's model. */
+    model: z.string().nullable(),
+  }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -88,6 +98,7 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   audit: { retentionDays: 365 },
   'auth.mfa': { require: 'off' },
   arena: { enabled: false, models: [] },
+  compaction: { enabled: true, threshold: 0.8, keepRecentTurns: 4, model: null },
 };
 
 export class AppSettings {

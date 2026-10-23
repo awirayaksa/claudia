@@ -16,7 +16,13 @@ import type { AuthUser } from '../auth/sessions';
 import type { AppSettings } from '../modules/settings/app-settings';
 import { ChatRepo, pathTo, toNode, type ChatRow } from '../modules/chats/repo';
 import { toOpenAIMessages, type ResolvedFile, type ToOpenAIOptions } from '../../../src/services/chat/message-builder';
-import { fitToContext } from '../../../src/services/chat/context-budget';
+import {
+  compactionMessage,
+  estimateMessagesTokens,
+  fitToContext,
+  planCompaction,
+  promptLimit,
+} from '../../../src/services/chat/context-budget';
 import { coerceEffort, resolveEffort, type ReasoningEffort } from '../../../src/utils/effort-utils';
 import { VISUAL_EXPLANATIONS_PROMPT } from '../../../src/utils/visual-explanations';
 import type { ChatCompletionRequest, ChatMessage } from '../../../src/types/api.types';
@@ -49,6 +55,7 @@ import { withSpan } from '../telemetry';
 import { ARENA_LABELS, ARENA_MODEL_ID } from '../../shared/arena';
 import type { ToolExecution } from './tools';
 import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
+import { latestCompaction, nodeTurns, summarize } from './compaction';
 
 /** Streaming replies are written to the database at most this often. */
 const PERSIST_INTERVAL_MS = 500;
@@ -373,6 +380,7 @@ export class ChatOrchestrator {
       return toolsets.get(key)!;
     };
     const fileOpts = await this.fileOptions(user, [...plan.history, plan.userNode]);
+    const { history, summary } = await this.compact(plan, [...before, ...after], fileOpts, prefs);
 
     const results = await Promise.all(
       plan.targets.map(async (t, i) => {
@@ -387,7 +395,13 @@ export class ChatOrchestrator {
         };
         return withSpan(`chat ${t.model.providerModelId}`, attributes, () =>
           this.runModel(plan, t.assistantId, t.model, {
-            system: [...before, ...(t.model.custom?.systemPrompt.trim() ? [sys(t.model.custom.systemPrompt)] : []), ...after],
+            system: [
+              ...before,
+              ...(t.model.custom?.systemPrompt.trim() ? [sys(t.model.custom.systemPrompt)] : []),
+              ...after,
+              ...(summary ? [compactionMessage(summary)] : []),
+            ],
+            history,
             prefs,
             toolset,
             fileOpts,
@@ -427,6 +441,8 @@ export class ChatOrchestrator {
     target: ResolvedModel,
     opts: {
       system: ChatMessage[];
+      /** The path to send (after the summary, when there is one). */
+      history: MessageNode[];
       prefs: Record<string, any>;
       toolset: RunToolset;
       fileOpts: ToOpenAIOptions;
@@ -460,7 +476,7 @@ export class ChatOrchestrator {
     );
     const temperature: number | undefined =
       req.params.temperature ?? chat.params.temperature ?? model.temperature ?? opts.prefs.temperature;
-    const maxTokens = chat.params.maxTokens ?? model.maxTokens;
+    const maxTokens = this.maxTokens(plan, target);
     const topP = chat.params.topP ?? model.topP;
     const frequencyPenalty = chat.params.frequencyPenalty ?? model.frequencyPenalty;
     const presencePenalty = chat.params.presencePenalty ?? model.presencePenalty;
@@ -468,9 +484,9 @@ export class ChatOrchestrator {
     const budget = fitToContext({
       model: target.providerModelId,
       contextWindow: target.model.contextLength,
-      outputReserve: maxTokens ?? (typeof opts.prefs.maxTokens === 'number' ? opts.prefs.maxTokens : undefined),
+      outputReserve: this.outputReserve(plan, target, opts.prefs),
       system: opts.system,
-      history: toOpenAIMessages(plan.history, opts.fileOpts),
+      history: toOpenAIMessages(opts.history, opts.fileOpts),
       current: toOpenAIMessages([plan.userNode], opts.fileOpts),
     });
     if (opts.reportTrim) {
@@ -642,6 +658,101 @@ export class ChatOrchestrator {
         .catch((err) => this.deps.log.warn({ err: String(err) }, 'recording usage failed'));
     }
     return status;
+  }
+
+  private maxTokens(plan: RunPlan, target: ResolvedModel): number | undefined {
+    return plan.chat.params.maxTokens ?? target.custom?.params?.maxTokens;
+  }
+
+  private outputReserve(plan: RunPlan, target: ResolvedModel, prefs: Record<string, any>): number | undefined {
+    return this.maxTokens(plan, target) ?? (typeof prefs.maxTokens === 'number' ? prefs.maxTokens : undefined);
+  }
+
+  /**
+   * The history to send: after the deepest summary on the path, and, when it
+   * nears the smallest context window of the models answering, with its
+   * oldest turns folded into a new summary (stored on the last node it
+   * covers, so later sends reuse it). If summarizing fails, the history is
+   * sent as it is and the budget drops the oldest turns as before.
+   */
+  private async compact(
+    plan: RunPlan,
+    system: ChatMessage[],
+    fileOpts: ToOpenAIOptions,
+    prefs: Record<string, any>
+  ): Promise<{ history: MessageNode[]; summary: string | null }> {
+    const setting = await this.deps.settings.get('compaction');
+    if (!setting.enabled) return { history: plan.history, summary: null };
+    const { summary, rest } = latestCompaction(plan.history);
+    const turns = nodeTurns(rest);
+    if (turns.length === 0) return { history: rest, summary };
+
+    const limit = Math.min(
+      ...plan.targets.map(
+        (t) =>
+          promptLimit({ model: t.model.providerModelId, contextWindow: t.model.model.contextLength, outputReserve: this.outputReserve(plan, t.model, prefs) })
+            .limit
+      )
+    );
+    const fixed =
+      estimateMessagesTokens(system) +
+      estimateMessagesTokens(toOpenAIMessages([plan.userNode], fileOpts)) +
+      (summary ? estimateMessagesTokens([compactionMessage(summary)]) : 0);
+    const fold = planCompaction({
+      limit,
+      fixedTokens: fixed,
+      turnTokens: turns.map((turn) => estimateMessagesTokens(toOpenAIMessages(turn, fileOpts))),
+      threshold: setting.threshold,
+      keepRecentTurns: setting.keepRecentTurns,
+    });
+    if (fold === 0) return { history: rest, summary };
+
+    const folded = turns.slice(0, fold).flat();
+    const boundary = folded[folded.length - 1];
+    try {
+      const fallback = plan.targets[0].model;
+      // Like the task model, the summary model is the admin's choice
+      const model = setting.model ? await this.deps.models.resolve(setting.model, 'admin').catch(() => fallback) : fallback;
+      const window = promptLimit({ model: model.providerModelId, contextWindow: model.model.contextLength }).limit;
+      const started = Date.now();
+      const result = await summarize(model.provider, model.providerModelId, {
+        previous: summary,
+        nodes: folded,
+        // About half the summarizer's window per call, in characters
+        chunkChars: Math.floor(window / 2) * 4,
+        signal: plan.run.controller.signal,
+      });
+      const priorTurns = plan.history.length > rest.length ? (plan.history[plan.history.length - rest.length - 1].compaction?.turns ?? 0) : 0;
+      const compaction = { summary: result.summary, turns: priorTurns + fold, modelId: model.model.id, at: new Date().toISOString() };
+      await this.deps.db
+        .update(messages)
+        .set({ meta: sql`${messages.meta} || ${JSON.stringify({ compaction })}::jsonb` })
+        .where(eq(messages.id, boundary.id));
+      await this.deps.db
+        .insert(usageEvents)
+        .values({
+          id: uuidv7(),
+          userId: plan.user.id,
+          chatId: plan.chat.id,
+          modelId: model.model.id,
+          connectionId: model.connection.id,
+          kind: 'compaction',
+          promptTokens: result.usage.prompt_tokens ?? 0,
+          completionTokens: result.usage.completion_tokens ?? 0,
+          cost: result.usage.cost ?? null,
+          latencyMs: Date.now() - started,
+        })
+        .catch((err) => this.deps.log.warn({ err: String(err) }, 'recording usage failed'));
+      this.deps.runs.emit(plan.run, {
+        type: 'run.notice',
+        code: 'history_compacted',
+        message: `The ${fold} oldest exchange${fold === 1 ? ' was' : 's were'} summarized to fit the model's context.`,
+      });
+      return { history: rest.slice(folded.length), summary: result.summary };
+    } catch (err) {
+      this.deps.log.warn({ err: String(err), chatId: plan.chat.id }, 'compaction failed; sending the history as it is');
+      return { history: rest, summary };
+    }
   }
 
   /**
