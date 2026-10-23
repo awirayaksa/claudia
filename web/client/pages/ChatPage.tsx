@@ -45,6 +45,7 @@ import { MessageTurns } from '../chat/MessageTurns';
 import { ChatHeader } from '../chat/ChatHeader';
 import { CloseIcon, CodeIcon, GlobeIcon, ImageIcon, PlusIcon } from '../components/icons';
 import { PromptVariablesForm } from '../workspace/PromptForm';
+import { StylePicker } from '../chat/StylePicker';
 import { ContextBar, hashMenuItems, refFromItem, sameRef, UrlDialog, urlRefsIn, type FeatureToggle } from '../chat/ContextBar';
 import { useBrowserTools } from '../chat/browser-tools';
 import { ArtifactPanel } from '../chat/ArtifactPanel';
@@ -102,6 +103,13 @@ export function ChatPage() {
   const [refs, setRefs] = useState<MessageRef[]>([]);
   /** Web search, code interpreter and image generation for the next messages (until switched off). */
   const [features, setFeatures] = useState<Record<string, boolean>>({});
+  // The writing style: the chat's last one, until another is picked
+  const [style, setStyle] = useState<string | null>(null);
+  useEffect(() => {
+    setStyle(chat?.params.styleId ?? null);
+    // Only when another chat opens (or this one loads)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat?.id]);
   const [askUrl, setAskUrl] = useState(false);
   const [artifact, setArtifact] = useState<Artifact | null>(null);
   const toggle = (id: string) => (on: boolean) => setFeatures((f) => ({ ...f, [id]: on }));
@@ -250,6 +258,7 @@ export function ChatPage() {
         ...(skill ? { skill } : {}),
         ...(out.refs?.length ? { refs: out.refs } : {}),
         ...(out.features && Object.values(out.features).some(Boolean) ? { features: out.features } : {}),
+        ...(style ? { styleId: style } : {}),
       }).unwrap();
       follow(id, res.runId);
       if (!chatId) navigate(`/c/${id}`);
@@ -519,6 +528,7 @@ export function ChatPage() {
           hashCommands={hashItems}
           toolbarExtras={
             <>
+              <StylePicker value={style} onChange={setStyle} disabled={noModels} />
               <CloudButton
                 disabled={noModels}
                 onImported={(file) =>

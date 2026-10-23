@@ -47,6 +47,8 @@ export interface ChatParams {
   frequencyPenalty?: number;
   presencePenalty?: number;
   systemPrompt?: string;
+  /** The writing style last used in the chat (a built-in id or a style's id). */
+  styleId?: string;
 }
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
@@ -62,6 +64,8 @@ export interface MessageMeta {
   /** User nodes: #kb, #url and #chat references, and whether the web was searched. */
   refs?: MessageRef[];
   webSearch?: boolean;
+  /** User nodes: the writing style the turn was sent with. */
+  style?: string;
   /** User nodes: the code interpreter was offered. */
   code?: boolean;
   /** User nodes: image generation was offered. */

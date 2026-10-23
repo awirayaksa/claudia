@@ -41,7 +41,7 @@ export const groupMembers = pgTable(
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user_idx').on(t.userId)]
 );
 
-export type ResourceType = 'model' | 'prompt' | 'knowledge' | 'note' | 'channel' | 'folder';
+export type ResourceType = 'model' | 'prompt' | 'knowledge' | 'note' | 'channel' | 'folder' | 'style';
 export type PrincipalType = 'user' | 'group' | 'public';
 
 /**
@@ -146,6 +146,21 @@ export const memoryChanges = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('memory_changes_user_idx').on(t.userId, t.createdAt)]
+);
+
+/** Writing styles of one's own (shared like workspace items), or an admin's for everyone (no owner). */
+export const styles = pgTable(
+  'styles',
+  {
+    id: uuid('id').primaryKey(),
+    ownerId: uuid('owner_id').references(() => users.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    instructions: text('instructions').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('styles_owner_idx').on(t.ownerId)]
 );
 
 /** Bearer keys for the OpenAI-compatible API (/api/v1). Only a hash is stored. */

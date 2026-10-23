@@ -115,3 +115,9 @@ export const ImageIcon = () => (
     <path d="M21 16l-5-5-9 9" />
   </svg>
 );
+export const PenIcon = () => (
+  <svg {...base}>
+    <path d="M4 20h4L19 9a2.8 2.8 0 0 0-4-4L4 16v4z" />
+    <path d="M13.5 6.5l4 4" />
+  </svg>
+);

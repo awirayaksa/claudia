@@ -197,7 +197,8 @@
     "noSharedLinks": "You haven't shared any chats.",
     "revokeLink": "Delete link",
     "memory": "Memory",
-    "apiKeys": "API keys"
+    "apiKeys": "API keys",
+    "styles": "Styles"
   },
   "admin": {
     "title": "Administration",
@@ -1198,5 +1199,26 @@
     "reconnect": "Reconnect",
     "waiting": "Waiting for sign-in…",
     "disconnect": "Disconnect"
+  },
+  "styles": {
+    "title": "Writing style",
+    "pick": "Writing style",
+    "manage": "Manage styles…",
+    "help": "How replies are written. Pick a style from the pen button next to the message box; the chat keeps it. Normal sends no style.",
+    "forEveryone": "for everyone",
+    "sharedBy": "shared by {{name}}",
+    "share": "Share",
+    "new": "New style",
+    "writeForMe": "Write it for me",
+    "writeForMeHelp": "Paste some writing you like (yours or anyone’s), describe the style, or both; the model drafts the instructions, which you can edit before saving.",
+    "samples": "Samples of the writing",
+    "describe": "Or describe it, e.g. “like a friendly support agent, short paragraphs”",
+    "write": "Write the style",
+    "writing": "Writing…",
+    "name": "Name",
+    "description": "Short description (optional)",
+    "instructions": "Instructions",
+    "instructionsPlaceholder": "How the replies should be written: tone, length, structure, words to use or avoid…",
+    "everyone": "Make it available to everyone"
   }
 }

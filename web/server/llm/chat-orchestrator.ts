@@ -9,7 +9,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/client';
-import { messages, usageEvents, users, type MessageMeta, type UserSettings, notes } from '../db/schema';
+import { chats, messages, usageEvents, users, type MessageMeta, type UserSettings, notes } from '../db/schema';
 import { badRequest } from '../lib/errors';
 import { uuidv7 } from '../lib/ids';
 import type { AuthUser } from '../auth/sessions';
@@ -52,6 +52,8 @@ import type { MessageRef } from '../../shared/knowledge';
 import { CLIENT_TOOL_NAMES, CODE_TOOL, NO_BROWSER_MESSAGE } from './client-tools';
 import { activeCodeEngine, RUN_CODE_TOOL, RUN_CODE_TOOL_NAME, runSummary as codeRunSummary, type CodeSandbox } from '../code/sandbox';
 import { workspaceMime } from '../../shared/workspace-files';
+import { resolveStyle, stylePrompt } from '../modules/styles/routes';
+import { isBuiltinStyle } from '../../shared/styles';
 import { generateImage, IMAGE_TOOL, IMAGE_TOOL_NAME } from '../media/images';
 import type { MediaConfig } from '../media/config';
 import type { Webhooks } from '../admin/webhooks';
@@ -148,6 +150,8 @@ interface RunPlan {
   codeEngine: 'browser' | 'server' | null;
   /** Continuing this reply (cut off at the output limit): it keeps its parts and grows. */
   continueNode: MessageNode | null;
+  /** The writing style of the turn. */
+  style: { id: string; name: string; instructions: string } | null;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
 }
 
@@ -251,6 +255,13 @@ export class ChatOrchestrator {
     const imageGen = existing ? !!existing.meta?.imageGen : req.features.imageGen === true;
     if (imageGen) await this.checkImageGen(user);
     await this.checkRefs(user, refs, webSearch);
+    // The writing style: a regeneration (or continuation) keeps the turn's
+    const styleId = existing ? existing.meta?.style : req.styleId;
+    const style =
+      styleId && (isBuiltinStyle(styleId) || this.deps.access)
+        ? await resolveStyle({ db: this.deps.db, access: this.deps.access! }, user, styleId)
+        : null;
+    if (!existing && styleId && !style && styleId !== 'normal') throw badRequest('That writing style was not found.', 'style_not_found');
 
     const run = await runs.start({
       userId: user.id,
@@ -274,6 +285,7 @@ export class ChatOrchestrator {
           ...(webSearch ? { webSearch: true } : {}),
           ...(code ? { code: true } : {}),
           ...(imageGen ? { imageGen: true } : {}),
+          ...(style ? { style: style.id } : {}),
         };
         userNode = {
           id: uuidv7(),
@@ -324,6 +336,12 @@ export class ChatOrchestrator {
       });
       // Answering one turn again doesn't change which models the chat uses
       await this.repo.touch(chat.id, { currentLeafId: targets[0].assistantId, ...(existing ? {} : { modelIds: req.modelIds }) });
+      // The chat remembers the style last used
+      const chatStyle = style?.id ?? null;
+      if (!existing && (chat.params.styleId ?? null) !== chatStyle) {
+        const { styleId: _old, ...params } = chat.params;
+        await db.update(chats).set({ params: chatStyle ? { ...params, styleId: chatStyle } : params }).where(eq(chats.id, chat.id));
+      }
 
       runs.emit(run, {
         type: 'run.started',
@@ -374,6 +392,7 @@ export class ChatOrchestrator {
         codeEngine,
         imageGen,
         continueNode,
+        style,
       };
       void withSpan('claudia.run', { 'claudia.run_id': run.id, 'claudia.chat_id': chat.id, 'enduser.id': user.id }, () => this.execute(plan)).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
@@ -435,6 +454,8 @@ export class ChatOrchestrator {
       if (f.systemPrompt?.trim()) after.push(sys(f.systemPrompt));
     }
     if (chat.params.systemPrompt?.trim()) after.push(sys(chat.params.systemPrompt));
+    // The writing style, apart from the system prompts
+    if (plan.style) after.push({ role: 'system', content: stylePrompt(plan.style) });
 
     // Sources (knowledge, references, web), numbered for citations, last
     const sources = await this.gatherSources(plan, userText).catch((err) => {
