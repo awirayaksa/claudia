@@ -5,11 +5,14 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { Provider } from 'react-redux';
 import { MemoryRouter } from 'react-router-dom';
 import { createWebStore } from '../store';
+import { setPlatform } from '@/platform';
+import { createWebPlatform } from '../platform/web.platform';
 import '../i18n';
 import { MessageTurns } from './MessageTurns';
 import type { MessageNode } from '@/types/turn.types';
 
 beforeAll(() => {
+  setPlatform(createWebPlatform({}));
   window.matchMedia ??= ((query: string) =>
     ({ matches: false, media: query, addEventListener() {}, removeEventListener() {}, addListener() {}, removeListener() {} }) as unknown as MediaQueryList);
 });
