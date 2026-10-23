@@ -17,7 +17,7 @@ import {
   useUpdateMySettingsMutation,
 } from '../../api/rtk-api';
 
-type Switches = { enabled: boolean; learn: boolean; sensitive: boolean };
+type Switches = { enabled: boolean; learn: boolean; sensitive: boolean; pastChats: boolean };
 
 const selectClass = 'rounded border border-border bg-background px-2 py-1 text-sm';
 
@@ -37,7 +37,7 @@ export function MemorySettings() {
   const folders = folderData?.folders ?? [];
 
   const own = settings?.settings.memory;
-  const saved: Switches = { enabled: own?.enabled !== false, learn: own?.learn !== false, sensitive: own?.sensitive === true };
+  const saved: Switches = { enabled: own?.enabled !== false, learn: own?.learn !== false, sensitive: own?.sensitive === true, pastChats: own?.pastChats === true };
   // The switches are settings: stored with the page's Save (the memories below are saved as you edit them)
   const [draft, setDraft] = useState<Partial<Switches>>({});
   const value: Switches = { ...saved, ...draft };
@@ -82,6 +82,13 @@ export function MemorySettings() {
           <span>
             {t('memory.sensitive')}
             <span className="block text-xs text-text-secondary">{t('memory.sensitiveHelp')}</span>
+          </span>
+        </label>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-0.5" checked={value.pastChats} onChange={toggle('pastChats')} data-testid="memory-past-chats" />
+          <span>
+            {t('memory.pastChats')}
+            <span className="block text-xs text-text-secondary">{t('memory.pastChatsHelp')}</span>
           </span>
         </label>
       </div>

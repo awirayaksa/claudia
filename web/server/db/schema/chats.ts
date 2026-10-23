@@ -64,6 +64,8 @@ export interface MessageMeta {
   /** User nodes: #kb, #url and #chat references, and whether the web was searched. */
   refs?: MessageRef[];
   webSearch?: boolean;
+  /** User nodes: the model could search the user's earlier chats. */
+  pastChats?: boolean;
   /** User nodes: the writing style the turn was sent with. */
   style?: string;
   /** User nodes: the code interpreter was offered. */

@@ -53,6 +53,7 @@ import { CLIENT_TOOL_NAMES, CODE_TOOL, NO_BROWSER_MESSAGE } from './client-tools
 import { activeCodeEngine, RUN_CODE_TOOL, RUN_CODE_TOOL_NAME, runSummary as codeRunSummary, type CodeSandbox } from '../code/sandbox';
 import { workspaceMime } from '../../shared/workspace-files';
 import { resolveStyle, stylePrompt } from '../modules/styles/routes';
+import { CHAT_SEARCH_TOOL_NAMES, CHAT_SEARCH_TOOLS, ChatSearch, runChatSearchTool } from '../modules/chats/chat-search';
 import { isBuiltinStyle } from '../../shared/styles';
 import { generateImage, IMAGE_TOOL, IMAGE_TOOL_NAME } from '../media/images';
 import type { MediaConfig } from '../media/config';
@@ -152,6 +153,8 @@ interface RunPlan {
   continueNode: MessageNode | null;
   /** The writing style of the turn. */
   style: { id: string; name: string; instructions: string } | null;
+  /** The model may search the user's earlier chats. */
+  pastChats: boolean;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
 }
 
@@ -187,9 +190,11 @@ function addUsage(a: MessageUsage | undefined, b: MessageUsage): MessageUsage {
 
 export class ChatOrchestrator {
   private readonly repo: ChatRepo;
+  private readonly chatSearch: ChatSearch;
 
   constructor(private readonly deps: OrchestratorDeps) {
     this.repo = new ChatRepo(deps.db);
+    this.chatSearch = new ChatSearch(deps.db);
   }
 
   async start(user: AuthUser, chatId: string, req: CompletionRequest): Promise<CompletionResponse> {
@@ -254,6 +259,7 @@ export class ChatOrchestrator {
     const codeEngine = code ? await this.checkCode(user) : null;
     const imageGen = existing ? !!existing.meta?.imageGen : req.features.imageGen === true;
     if (imageGen) await this.checkImageGen(user);
+    const pastChats = existing ? !!existing.meta?.pastChats : req.features.pastChats === true;
     await this.checkRefs(user, refs, webSearch);
     // The writing style: a regeneration (or continuation) keeps the turn's
     const styleId = existing ? existing.meta?.style : req.styleId;
@@ -286,6 +292,7 @@ export class ChatOrchestrator {
           ...(code ? { code: true } : {}),
           ...(imageGen ? { imageGen: true } : {}),
           ...(style ? { style: style.id } : {}),
+          ...(pastChats ? { pastChats: true } : {}),
         };
         userNode = {
           id: uuidv7(),
@@ -393,6 +400,7 @@ export class ChatOrchestrator {
         imageGen,
         continueNode,
         style,
+        pastChats,
       };
       void withSpan('claudia.run', { 'claudia.run_id': run.id, 'claudia.chat_id': chat.id, 'enduser.id': user.id }, () => this.execute(plan)).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
@@ -650,9 +658,12 @@ export class ChatOrchestrator {
         ...(plan.codeEngine === 'browser' ? [CODE_TOOL] : plan.codeEngine === 'server' ? [RUN_CODE_TOOL] : []),
         ...(plan.imageGen ? [IMAGE_TOOL] : []),
         ...(opts.memory ? memoryToolDefinitions(!!chat.folderId) : []),
+        ...(plan.pastChats ? CHAT_SEARCH_TOOLS : []),
       ];
+      const isChatSearch = (name: string) => plan.pastChats && CHAT_SEARCH_TOOL_NAMES.has(name);
       const isMemoryTool = (name: string) => !!opts.memory && MEMORY_TOOL_NAMES.has(name);
-      const onServer = (name: string) => (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name) || isServerCode(name);
+      const onServer = (name: string) =>
+        (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name) || isServerCode(name) || isChatSearch(name);
       const inBrowser = (name: string) => plan.codeEngine === 'browser' && CLIENT_TOOL_NAMES.has(name);
       const isServerCode = (name: string) => plan.codeEngine === 'server' && name === RUN_CODE_TOOL_NAME;
       const firstTurnOnly = opts.toolset.firstTurnOnly || !!target.connection.quirks.toolsFirstTurnOnly;
@@ -738,6 +749,8 @@ export class ChatOrchestrator {
             async (span) => {
               const result = inBrowser(call.function.name)
                 ? await this.runInBrowser(plan, assistantId, call, signal)
+                : isChatSearch(call.function.name)
+                  ? await this.searchChats(plan, assistantId, call, builder)
                 : isServerCode(call.function.name)
                   ? await this.runServerCode(plan, assistantId, call, signal)
                   : isMemoryTool(call.function.name)
@@ -920,6 +933,40 @@ export class ChatOrchestrator {
       if (view) resolved.set(row.id, view);
     }
     return { resolveFile: (part) => resolved.get(part.fileId) ?? null };
+  }
+
+  /**
+   * Search the user's earlier chats (only theirs, not temporary ones, and
+   * inside a folder only that folder's). The chats found are added to the
+   * reply's sources, numbered after the ones it has, so the model cites them
+   * and the user can open them.
+   */
+  private async searchChats(plan: RunPlan, messageId: string, call: ToolCall, builder: PartsBuilder): Promise<ToolExecution> {
+    const folderIds = plan.chat.folderId
+      ? [plan.chat.folderId, ...((await this.deps.folders?.descendants(plan.chat.folderId)) ?? [])]
+      : null;
+    const cited = builder.parts.flatMap((p) => (p.type === 'citation' ? [p] : []));
+    const next = cited.reduce((n, c) => Math.max(n, c.index), 0) + 1;
+    try {
+      const { content, isError, sources } = await runChatSearchTool(
+        this.chatSearch,
+        { userId: plan.user.id, excludeChatId: plan.chat.id, folderIds },
+        call,
+        next
+      );
+      if (sources.length) {
+        for (const src of sources) builder.add({ type: 'citation', index: src.index, source: src.source });
+        const all = builder.parts.flatMap((p) => (p.type === 'citation' ? [{ index: p.index, source: p.source }] : []));
+        this.deps.runs.emit(plan.run, { type: 'message.citations', messageId, citations: all });
+      }
+      return { serverId: 'claudia', tool: call.function.name, result: { type: 'tool_result', callId: call.id, content, ...(isError ? { isError: true } : {}) } };
+    } catch (err) {
+      return {
+        serverId: 'claudia',
+        tool: call.function.name,
+        result: { type: 'tool_result', callId: call.id, content: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), isError: true },
+      };
+    }
   }
 
   /** A memory tool call, as the user; a change shows as a chip under the reply. */

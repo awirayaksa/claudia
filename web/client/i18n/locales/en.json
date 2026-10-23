@@ -581,7 +581,9 @@
       "delete": "Forgot"
     },
     "undo": "Undo",
-    "undone": "Undone"
+    "undone": "Undone",
+    "pastChats": "Search my past chats",
+    "pastChatsHelp": "The model may look through your earlier chats when you refer to them (\"what did we decide about…\"), and links the ones it used. Only your own chats; never temporary ones; inside a folder, only that folder’s. Switches “Past chats” on for new messages; the model must support tools."
   },
   "apiKeys": {
     "help": "Use the models you have here from other apps with an OpenAI-compatible API, including Claudia desktop as a custom provider.",
@@ -765,7 +767,9 @@
     "image": "Image",
     "imageHelp": "Let the model create images",
     "running": "running…",
-    "done": "done"
+    "done": "done",
+    "pastChats": "Past chats",
+    "pastChatsHelp": "Let the model search your earlier chats when you refer to them"
   },
   "artifacts": {
     "preview": "Preview",
