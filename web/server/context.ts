@@ -28,6 +28,12 @@ import type { Webhooks } from './admin/webhooks';
 import type { OidcService } from './auth/providers/oidc';
 import type { CloudFiles } from './cloud/cloud-files';
 import type { ScheduleRunner } from './modules/schedules/service';
+import type { MemoryStore } from './modules/memories/store';
+import type { MemoryLearner } from './modules/memories/learn';
+import type { McpOAuth } from './mcp/oauth';
+import type { FolderService } from './modules/chats/folders';
+import type { GitHubSources } from './rag/github-source';
+import type { CodeSandbox } from './code/sandbox';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -46,12 +52,23 @@ export interface ServerContext {
   files: FileService;
   skills: SkillService;
   mcp: McpPools;
+  /** OAuth sign-ins to remote MCP servers. */
+  mcpOAuth: McpOAuth;
   ldap: LdapService;
   shares: ShareService;
   access: AccessService;
   usage: UsageService;
   rag: RagConfig;
   knowledge: KnowledgeService;
+  /** Server-side code runs (Docker). */
+  code: CodeSandbox;
+  /** GitHub repositories synced into knowledge bases. */
+  kbSources: GitHubSources;
+  /** Folders (projects), shared or not. */
+  folders: FolderService;
+  /** What chats know about each user, and learning it from chats. */
+  memories: MemoryStore;
+  memoryLearner: MemoryLearner;
   jobs: JobQueue;
   events: EventHub;
   media: MediaConfig;

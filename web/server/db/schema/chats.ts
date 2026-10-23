@@ -18,6 +18,7 @@ import type { MessageNode, MessagePart, MessageStatus } from '../../../../src/ty
 import type { MessageUsage } from '../../../../src/types/statistics.types';
 import { users } from './identity';
 import type { MessageRef } from '../../../shared/knowledge';
+import type { MemoryChangeView } from '../../../shared/workspace';
 
 /** Desktop projects import as top-level folders. */
 export const folders = pgTable(
@@ -67,6 +68,12 @@ export interface MessageMeta {
   imageGen?: boolean;
   /** User nodes of a blind comparison: the real models (A, B) and the vote. */
   arena?: { models: [string, string]; winner?: 'a' | 'b' | 'tie' };
+  /** The path up to here was summarized (`turns` turns, folding in any earlier summary). */
+  compaction?: { summary: string; turns: number; modelId: string; at: string };
+  /** Assistant nodes: memory changes made in or learned from this reply. */
+  memoryChanges?: MemoryChangeView[];
+  /** Assistant nodes: the path up to here was read for memories to learn. */
+  memoryScanned?: boolean;
 }
 
 export interface MessageFeedback {

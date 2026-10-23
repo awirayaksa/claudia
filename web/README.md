@@ -5,7 +5,53 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 7** (optional extras), the last phase of [PLAN.md](PLAN.md). Phase 7 adds:
+Status: **Phase 7** (optional extras), the last phase of [PLAN.md](PLAN.md),
+plus feature-parity work with Claude (issue #15):
+
+- **Long chats keep going** (Admin → Settings → Long chats): near the
+  model's context limit, the oldest exchanges are summarized and the summary
+  is sent in their place (the last few stay word for word). The summary is
+  kept on the chat and reused; a divider in the chat opens to show it.
+- **Memory that learns** (Settings → Memory): once a chat has been quiet for
+  a while, a model reads it for lasting facts (work, preferences, projects,
+  people) and merges them with what is remembered, grouped by topic. Admins
+  can also give the model memory tools to save, change and forget memories
+  during a chat. Every change shows as a chip under the reply, where it can
+  be undone. Temporary chats are never read; sensitive topics (health,
+  finances…) are skipped unless the user allows them. Memories can belong to
+  one folder (a project), and another assistant's memories can be imported.
+- **Remote MCP servers with OAuth sign-in** (Settings → Tools for your own
+  servers, Admin → Tools for shared ones): paste the server's URL, tick
+  "Sign in with OAuth" and press Connect. Claudia follows the MCP
+  authorization spec (protected-resource and authorization-server discovery,
+  dynamic client registration or a pre-registered client, PKCE), keeps the
+  tokens encrypted and refreshes them when they expire; Disconnect revokes
+  them. An admin's sign-in to a shared server is used by everyone. The
+  authorization server sends the browser back to `/api/mcp/oauth/callback`,
+  so set `CLAUDIA_PUBLIC_URL` behind a proxy.
+- **Shared folders (projects)** (a folder's menu → Share…): share a folder
+  with people or groups as viewers or editors. They see it, with its
+  subfolders, and their own chats in it use its instructions and knowledge
+  (searched with the owner's access); nobody sees anyone else's chats in it.
+  Editors can change its name, instructions and knowledge; only the owner
+  shares, moves or deletes it.
+- **GitHub repositories as knowledge** (Workspace → Knowledge → a knowledge
+  base → Add a GitHub repository): the chosen folders and files of a
+  branch or tag (documents, text and code, up to 500 files) come in as the
+  knowledge base's files. Sync now pulls the latest commit: changed files
+  are replaced, removed ones leave, and an unchanged commit downloads
+  nothing. Private repositories and GitHub Enterprise take an access token,
+  stored encrypted; requests go through the SSRF guard.
+- **Code runs on the server** (Admin → Settings → Code interpreter): instead
+  of Pyodide in the browser, the model's `run_code` tool (Python or Node.js)
+  runs in a fresh Docker container per run: no network (unless allowed), an
+  unprivileged user without capabilities, memory, CPU, process and time
+  limits, optionally gVisor (`runsc`). The chat's attachments are copied into
+  `/workspace`; files the code writes (charts, spreadsheets…) come back under
+  the reply, and what it prints streams into the reply as it runs. See
+  [Code runs on the server](#code-runs-on-the-server).
+
+Phase 7 adds:
 
 - **Single sign-on** (Admin → Sign-in): any OpenID Connect provider (Entra
   ID, Google, Okta, Keycloak, Authentik…) as "Continue with …" buttons, with
@@ -129,7 +175,9 @@ Phase 3 (workspace):
   `{{variables}}` (and `{{name:default}}`) that the composer asks for before
   putting the text in the message box. Shared the same way as models.
 - **Memory** (Settings → Memory): things every chat should know about you,
-  sent with each message (can be switched off).
+  sent with each message (can be switched off). Since the feature-parity
+  work, memories are sorted into topics, can belong to one folder, are
+  learned from chats and can be imported (see the top of this file).
 - **Your own tool servers** (Settings → Tools): remote MCP servers (HTTP or
   SSE) through the SSRF guard, with the `mcp.user_servers` permission.
 - **API keys and an OpenAI-compatible API** (Settings → API keys): `ck-…`
@@ -285,6 +333,8 @@ within about a minute and the branch can be answered again.
 | `ENABLE_PASSWORD_AUTH` | `true` | Local email + password sign-in |
 | `CLAUDIA_ADMIN_EMAIL`, `CLAUDIA_ADMIN_PASSWORD` | — | Create the first admin on first boot |
 | `CLAUDIA_ALLOW_STDIO_MCP` | `false` | Allow admins to configure stdio MCP servers (they run commands on the host, with only their own environment variables) |
+| `CLAUDIA_CODE_DOCKER` | — | Docker Engine API for server-side code runs: `unix:///var/run/docker.sock`, `tcp://host:2375` or `https://host:2376` (see [Code runs on the server](#code-runs-on-the-server)) |
+| `CLAUDIA_MEMORY_IDLE_SECONDS` | `120` | How long a chat stays quiet before it is read for memories to learn |
 | `ENABLE_LDAP` | — | Directory sign-in on/off; overrides the admin setting |
 | `LDAP_URL`, `LDAP_START_TLS` | — | `ldap://host:389` or `ldaps://host:636`; StartTLS for `ldap://` |
 | `LDAP_BIND_MODE` | `search` | `search`: a service account looks the user up, then the user binds. `direct` (Active Directory): users bind as `username@domain`, the domain being `LDAP_SIGN_IN_DOMAIN`, else the `dc=` parts of `LDAP_USER_SEARCH_BASE` (the base DN); no service account or search |
@@ -327,6 +377,36 @@ headers and environment variables, the LDAP bind password) with the new key.
 
 On a managed PostgreSQL where the app's role can't create extensions, run
 `CREATE EXTENSION vector;` once as an administrator before the first start.
+
+## Code runs on the server
+
+With **Admin → Settings → Code interpreter → In a sandbox on the server**,
+code the model writes runs in Docker containers that Claudia creates through
+the Engine API (`CLAUDIA_CODE_DOCKER`). Nothing is mounted from the host:
+attachments go in and output files come out through the API's archive
+endpoints, so the Docker host can be another machine. Each run gets a new
+container (removed afterwards) with `--network none`, user `65534`, all
+capabilities dropped, `no-new-privileges`, a process limit and the memory,
+CPU and time limits you set; a run that hits one is stopped and the model is
+told why.
+
+Access to a Docker API is powerful: whoever controls the app could start
+any container on that host. So:
+
+- **Safest:** a separate small VM that only runs code, with
+  [gVisor](https://gvisor.dev/docs/user_guide/install/) installed (set the
+  runtime to `runsc`), its API reachable only from the app (firewall, or TLS
+  with `https://`).
+- **Same host:** `docker compose -f docker-compose.yml -f compose.code.yml up -d`
+  puts a socket proxy in front of the local Docker socket that only allows
+  the endpoints code runs use.
+
+The default images (`python:3.12-slim`, `node:22-slim`) only have the
+standard libraries; build `web/docker/sandbox` (`docker build -t
+claudia-sandbox web/docker/sandbox`) for numpy, pandas, matplotlib,
+scikit-learn and more, plus Node.js, and set both images to
+`claudia-sandbox`. **Test the sandbox** pulls missing images and runs a test
+program. To run the real-Docker tests: `CLAUDIA_TEST_DOCKER=unix:///var/run/docker.sock npm test -- server/code`.
 
 ## OpenAI-compatible API
 

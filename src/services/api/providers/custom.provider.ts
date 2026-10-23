@@ -66,6 +66,10 @@ export class CustomProvider implements IAPIProvider {
         object: 'model',
         created: model.created || Date.now(),
         owned_by: model.owned_by || 'custom',
+        // OpenRouter-style context_length, or vLLM's max_model_len
+        ...(typeof (model.context_length ?? model.max_model_len) === 'number'
+          ? { context_length: model.context_length ?? model.max_model_len }
+          : {}),
       }));
     } catch (error) {
       // Custom endpoints may not support /models; anything else (unreachable,

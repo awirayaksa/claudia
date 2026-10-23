@@ -4,7 +4,9 @@ import { z } from 'zod';
 import type { ServerContext } from '../../context';
 import { arenaVotes, chats, folders, messages } from '../../db/schema';
 import { ArenaVoteInput, type ArenaVoteResult } from '../../../shared/arena';
-import { badRequest, conflict, notFound } from '../../lib/errors';
+import { badRequest, conflict, forbidden, notFound } from '../../lib/errors';
+import type { AuthUser } from '../../auth/sessions';
+import { registerAccessRoutes } from '../workspace/access-routes';
 import { uuidv7 } from '../../lib/ids';
 import { currentUser, requireUser } from '../../auth/rbac';
 import {
@@ -57,7 +59,8 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     const me = currentUser(req);
     const body = CreateChatRequest.parse(req.body ?? {});
     if (body.temporary) await ctx.access.require(me, 'chat.temporary');
-    if (body.folderId) await repo.folderOwned(me.id, body.folderId);
+    // One's own folder, or one shared with one (the chat stays one's own)
+    if (body.folderId) await ctx.folders.get(me, body.folderId);
     const [row] = await ctx.db
       .insert(chats)
       .values({
@@ -111,7 +114,7 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     const { id } = IdParams.parse(req.params);
     const body = UpdateChatRequest.parse(req.body);
     const chat = await repo.getOwned(me.id, id);
-    if (body.folderId) await repo.folderOwned(me.id, body.folderId);
+    if (body.folderId) await ctx.folders.get(me, body.folderId);
     if (body.currentLeafId) {
       const nodes = await repo.messages(chat.id);
       if (!nodes.some((n) => n.id === body.currentLeafId)) throw badRequest('That message is not part of this chat.');
@@ -250,11 +253,26 @@ export async function folderRoutes(app: FastifyInstance, ctx: ServerContext): Pr
   app.addHook('preHandler', requireUser);
   const repo = new ChatRepo(ctx.db);
 
-  app.get('/', async (req) => ({ folders: (await repo.folders(currentUser(req).id)).map(toFolder) }));
+  app.get('/', async (req) => {
+    const visible = await ctx.folders.visible(currentUser(req));
+    const shared = await ctx.folders.withGrants(visible.filter((f) => f.rights.manage).map((f) => f.row.id));
+    return {
+      folders: visible.map((f) =>
+        toFolder(f.row, { ownerName: f.ownerName, canEdit: f.rights.write, canManage: f.rights.manage, shared: shared.has(f.row.id) })
+      ),
+    };
+  });
+
+  const asSeen = async (me: AuthUser, row: typeof folders.$inferSelect) => {
+    const found = await ctx.folders.get(me, row.id);
+    const shared = found.rights.manage ? await ctx.folders.withGrants([row.id]) : new Set<string>();
+    return toFolder(row, { canEdit: found.rights.write, canManage: found.rights.manage, shared: shared.has(row.id) });
+  };
 
   app.post('/', async (req, reply) => {
     const me = currentUser(req);
     const body = FolderInput.parse(req.body);
+    // Subfolders go in one's own folders only
     if (body.parentId) await repo.folderOwned(me.id, body.parentId);
     const [row] = await ctx.db
       .insert(folders)
@@ -268,7 +286,11 @@ export async function folderRoutes(app: FastifyInstance, ctx: ServerContext): Pr
     const me = currentUser(req);
     const { id } = IdParams.parse(req.params);
     const body = FolderInput.partial().parse(req.body);
-    await repo.folderOwned(me.id, id);
+    const { row: current, rights } = await ctx.folders.get(me, id);
+    if (!rights.write) throw forbidden('You can use this folder but not change it.', 'read_only');
+    // Moving is the owner's
+    if (body.parentId !== undefined && !rights.manage) throw forbidden('Only the owner can move this folder.', 'not_owner');
+    if (body.parentId) await repo.folderOwned(me.id, body.parentId);
     // Only knowledge bases the user can read
     const knowledgeIds =
       body.knowledgeIds === undefined
@@ -291,9 +313,9 @@ export async function folderRoutes(app: FastifyInstance, ctx: ServerContext): Pr
         ...(knowledgeIds !== undefined ? { knowledgeIds } : {}),
         updatedAt: new Date(),
       })
-      .where(and(eq(folders.id, id), eq(folders.userId, me.id)))
+      .where(eq(folders.id, current.id))
       .returning();
-    return { folder: toFolder(row) };
+    return { folder: await asSeen(me, row) };
   });
 
   // Chats in the folder stay, moved out of it (folder_id is set null)
@@ -301,8 +323,17 @@ export async function folderRoutes(app: FastifyInstance, ctx: ServerContext): Pr
     const me = currentUser(req);
     const { id } = IdParams.parse(req.params);
     await repo.folderOwned(me.id, id);
+    // Its subfolders go with it, so do their grants
+    const ids = [id, ...(await ctx.folders.descendants(id))];
     await ctx.db.delete(folders).where(and(eq(folders.id, id), eq(folders.userId, me.id)));
+    for (const fid of ids) await ctx.access.removeResource('folder', fid);
     return { ok: true };
+  });
+
+  // Who else may use it (viewers) or also change it (editors); the owner's to decide
+  registerAccessRoutes(app, ctx, 'folder', 'Folder', async (id) => {
+    const [row] = await ctx.db.select({ id: folders.id, ownerId: folders.userId }).from(folders).where(eq(folders.id, id));
+    return row;
   });
 }
 

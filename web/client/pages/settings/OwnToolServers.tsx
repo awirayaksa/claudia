@@ -6,9 +6,11 @@ import {
   errorMessage,
   useCreateOwnMcpServerMutation,
   useDeleteOwnMcpServerMutation,
+  useDisconnectOwnMcpOAuthMutation,
   useOwnMcpServersQuery,
   useUpdateOwnMcpServerMutation,
 } from '../../api/rtk-api';
+import { OAuthControls, OAuthFields, oauthDraft, oauthInput } from '../../components/McpOAuth';
 
 /** "Name: value" lines → headers (undefined when empty, so stored ones stay on edit). */
 function parseHeaders(text: string): Record<string, string> | undefined {
@@ -28,8 +30,9 @@ function parseHeaders(text: string): Record<string, string> | undefined {
 /** Remote MCP servers of your own (HTTP or SSE), when the administrator allows them. */
 export function OwnToolServers() {
   const { t } = useTranslation();
-  const { data } = useOwnMcpServersQuery();
+  const { data, refetch } = useOwnMcpServersQuery();
   const [remove] = useDeleteOwnMcpServerMutation();
+  const [disconnect] = useDisconnectOwnMcpOAuthMutation();
   const [update] = useUpdateOwnMcpServerMutation();
   const [editing, setEditing] = useState<UserMcpServerView | 'new' | null>(null);
   if (!data || (!data.allowed && data.servers.length === 0)) return null;
@@ -61,6 +64,15 @@ export function OwnToolServers() {
                 {s.headerNames.length > 0 && ` · ${t('ownTools.headers', { names: s.headerNames.join(', ') })}`}
               </div>
             </div>
+            {s.oauth && (
+              <OAuthControls
+                oauth={s.oauth}
+                connectUrl={`/api/mcp/own/${s.id}/oauth/connect`}
+                disabled={!data.allowed || !s.enabled}
+                refetch={async () => !!(await refetch()).data?.servers.find((x) => x.id === s.id)?.oauth?.connected}
+                onDisconnect={() => void disconnect(s.id)}
+              />
+            )}
             {data.allowed && (
               <>
                 <Button size="sm" variant="secondary" onClick={() => void update({ id: s.id, enabled: !s.enabled })}>
@@ -89,12 +101,13 @@ function ServerForm({ server, onDone }: { server: UserMcpServerView | null; onDo
   const [url, setUrl] = useState(server?.url ?? '');
   const [transport, setTransport] = useState<UserMcpServerInput['transport']>(server?.transport ?? 'streamable-http');
   const [headers, setHeaders] = useState('');
+  const [oauth, setOAuth] = useState(oauthDraft(server?.oauth));
   const error = errorMessage(createState.error ?? updateState.error);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     const h = parseHeaders(headers);
-    const body = { name: name.trim(), url: url.trim(), transport, ...(h ? { headers: h } : {}) };
+    const body = { name: name.trim(), url: url.trim(), transport, ...(h ? { headers: h } : {}), oauth: oauthInput(oauth) };
     const res = server ? await update({ id: server.id, ...body }) : await create(body);
     if (!('error' in res)) onDone();
   };
@@ -137,6 +150,7 @@ function ServerForm({ server, onDone }: { server: UserMcpServerView | null; onDo
         value={headers}
         onChange={(e) => setHeaders(e.target.value)}
       />
+      <OAuthFields value={oauth} onChange={setOAuth} stored={server?.oauth} />
       {error && <p className="text-sm text-error">{error}</p>}
       <div className="flex justify-end gap-2">
         <Button type="button" variant="secondary" size="sm" onClick={onDone}>

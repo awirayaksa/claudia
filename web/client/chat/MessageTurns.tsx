@@ -4,7 +4,7 @@
  * into a new version, regenerating, forking, ratings with feedback, answers
  * of several models side by side, and follow-up suggestions.
  */
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { ChatMessage } from '@/components/chat/ChatMessage';
@@ -32,7 +32,11 @@ export interface TurnHandlers {
   readAloud?: 'none' | 'browser' | 'server';
   /** A blind comparison's vote. */
   onArenaVote?: (turn: MessageNode, winner: 'a' | 'b' | 'tie') => void;
+  /** Undo a memory the model saved, changed or forgot (none: the chip only shows them). */
+  onUndoMemory?: (change: MemoryChange) => void;
 }
+
+type MemoryChange = NonNullable<MessageNode['memoryChanges']>[number];
 
 interface Props extends TurnHandlers {
   nodes: MessageNode[];
@@ -41,6 +45,8 @@ interface Props extends TurnHandlers {
   modelName: (id?: string) => string | undefined;
   /** Share links: no actions at all. */
   readOnly?: boolean;
+  /** What running tools printed so far, by call id (live runs). */
+  toolOutput?: Record<string, string>;
 }
 
 const FEEDBACK_REASONS = ['inaccurate', 'unhelpful', 'instructions', 'too_long', 'unsafe'] as const;
@@ -51,67 +57,165 @@ export function MessageTurns(props: Props) {
   const [feedbackFor, setFeedbackFor] = useState<string | null>(null);
   const last = path[path.length - 1];
 
+  const renderNode = (node: MessageNode, i: number): ReactNode => {
+    if (node.role === 'user') {
+      if (editingId === node.id) {
+        return (
+          <EditMessage
+            key={node.id}
+            initial={nodeText(node, 'text', '')}
+            onCancel={() => setEditingId(null)}
+            onSave={(text) => {
+              setEditingId(null);
+              props.onEdit?.(node, text);
+            }}
+          />
+        );
+      }
+      return (
+        <UserTurn
+          key={node.id}
+          node={node}
+          nodes={nodes}
+          disabled={running}
+          readOnly={readOnly}
+          onSelect={props.onSelect}
+          onEdit={props.onEdit ? () => setEditingId(node.id) : undefined}
+        />
+      );
+    }
+
+    const parent = path[i - 1];
+    const columns = parent?.role === 'user' ? modelColumns(nodes, parent) : null;
+    const reply = columns ? (
+      <>
+        <ModelColumns key={node.id} {...props} columns={columns} activeId={node.id} onFeedback={setFeedbackFor} />
+        {parent.arena && <ArenaVote turn={parent} replies={columns.flatMap((c) => c.versions)} onVote={props.readOnly ? undefined : props.onArenaVote} />}
+      </>
+    ) : (
+      <AssistantTurn key={node.id} {...props} node={node} onFeedback={setFeedbackFor} />
+    );
+    return (
+      <div key={node.id}>
+        {reply}
+        {!readOnly && node.memoryChanges?.length ? <MemoryChip changes={node.memoryChanges} onUndo={props.onUndoMemory} /> : null}
+        {props.onArtifact && node.status !== 'streaming' && <ArtifactChips node={node} onOpen={props.onArtifact} />}
+        {feedbackFor && nodes.find((n) => n.id === feedbackFor)?.parentId === node.parentId && (
+          <FeedbackForm
+            onCancel={() => setFeedbackFor(null)}
+            onSend={(feedback) => {
+              const target = nodes.find((n) => n.id === feedbackFor);
+              setFeedbackFor(null);
+              if (target) props.onRate?.(target, -1, feedback);
+            }}
+          />
+        )}
+      </div>
+    );
+  };
+
   return (
     <>
-      {path.map((node, i) => {
-        if (node.role === 'user') {
-          if (editingId === node.id) {
-            return (
-              <EditMessage
-                key={node.id}
-                initial={nodeText(node, 'text', '')}
-                onCancel={() => setEditingId(null)}
-                onSave={(text) => {
-                  setEditingId(null);
-                  props.onEdit?.(node, text);
-                }}
-              />
-            );
-          }
-          return (
-            <UserTurn
-              key={node.id}
-              node={node}
-              nodes={nodes}
-              disabled={running}
-              readOnly={readOnly}
-              onSelect={props.onSelect}
-              onEdit={props.onEdit ? () => setEditingId(node.id) : undefined}
-            />
-          );
-        }
-
-        const parent = path[i - 1];
-        const columns = parent?.role === 'user' ? modelColumns(nodes, parent) : null;
-        const reply = columns ? (
-          <>
-            <ModelColumns key={node.id} {...props} columns={columns} activeId={node.id} onFeedback={setFeedbackFor} />
-            {parent.arena && <ArenaVote turn={parent} replies={columns.flatMap((c) => c.versions)} onVote={props.readOnly ? undefined : props.onArenaVote} />}
-          </>
-        ) : (
-          <AssistantTurn key={node.id} {...props} node={node} onFeedback={setFeedbackFor} />
-        );
-        return (
-          <div key={node.id}>
-            {reply}
-            {props.onArtifact && node.status !== 'streaming' && <ArtifactChips node={node} onOpen={props.onArtifact} />}
-            {feedbackFor && nodes.find((n) => n.id === feedbackFor)?.parentId === node.parentId && (
-              <FeedbackForm
-                onCancel={() => setFeedbackFor(null)}
-                onSend={(feedback) => {
-                  const target = nodes.find((n) => n.id === feedbackFor);
-                  setFeedbackFor(null);
-                  if (target) props.onRate?.(target, -1, feedback);
-                }}
-              />
-            )}
-          </div>
-        );
-      })}
+      {path.map((node, i) => (
+        <Fragment key={node.id}>
+          {renderNode(node, i)}
+          {node.compaction && <CompactionDivider summary={node.compaction.summary} turns={node.compaction.turns} />}
+        </Fragment>
+      ))}
       {!readOnly && !running && last?.role === 'assistant' && last.status === 'completed' && last.followUps?.length ? (
         <FollowUps items={last.followUps} onPick={(q) => props.onFollowUp?.(q)} />
       ) : null}
     </>
+  );
+}
+
+/** While a reply is being written: its tool calls, which are still running, and what they print. */
+function LiveTools({ node, output }: { node: MessageNode; output?: Record<string, string> }) {
+  const { t } = useTranslation();
+  const calls = node.parts.filter((p) => p.type === 'tool_call');
+  if (calls.length === 0) return null;
+  const done = new Set(node.parts.flatMap((p) => (p.type === 'tool_result' ? [p.callId] : [])));
+  return (
+    <ul className="mb-3 space-y-1.5 ps-[30px] text-xs" data-testid="live-tools">
+      {calls.map((c) => {
+        const printed = output?.[c.callId];
+        const running = !done.has(c.callId);
+        return (
+          <li key={c.callId} className="rounded-lg border border-border bg-surface">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-text-secondary">
+              <span className={running ? 'animate-pulse text-accent' : 'text-success'} aria-hidden>
+                ●
+              </span>
+              <span className="font-mono">{c.tool || c.alias}</span>
+              <span>{running ? t('tools.running') : t('tools.done')}</span>
+            </div>
+            {running && printed && (
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-border px-3 py-2 font-mono text-[11px]" data-testid="live-tool-output">
+                {printed.split('\n').slice(-40).join('\n')}
+              </pre>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** "Memory updated" under a reply: opens to list what changed, each undoable. */
+function MemoryChip({ changes, onUndo }: { changes: MemoryChange[]; onUndo?: (c: MemoryChange) => void }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const live = changes.filter((c) => !c.undone).length;
+  return (
+    <div className="-mt-1 mb-4 ps-[30px] text-xs" data-testid="memory-chip">
+      <button
+        className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-text-secondary hover:border-accent hover:text-accent"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span aria-hidden>✦</span>
+        {live > 0 ? t('memory.chip', { count: live }) : t('memory.chipUndone')}
+      </button>
+      {open && (
+        <ul className="mt-2 max-w-xl divide-y divide-border rounded-lg border border-border bg-surface">
+          {changes.map((c) => (
+            <li key={c.id} className="flex items-start gap-2 px-3 py-2">
+              <span className="shrink-0 text-text-secondary">{t(`memory.changed.${c.action}`)}</span>
+              <span className={`min-w-0 flex-1 break-words ${c.undone ? 'text-text-secondary line-through' : ''}`}>{c.content}</span>
+              {c.undone ? (
+                <span className="shrink-0 text-text-secondary">{t('memory.undone')}</span>
+              ) : (
+                onUndo && (
+                  <button className="shrink-0 text-accent hover:underline" onClick={() => onUndo(c)}>
+                    {t('memory.undo')}
+                  </button>
+                )
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/** Where earlier turns were summarized to fit the context window; opens to show the summary. */
+function CompactionDivider({ summary, turns }: { summary: string; turns: number }) {
+  const { t } = useTranslation();
+  return (
+    <details className="group my-4 text-xs text-text-secondary" data-testid="compaction-divider">
+      <summary className="flex cursor-pointer list-none items-center gap-3 [&::-webkit-details-marker]:hidden">
+        <span className="h-px flex-1 bg-border" />
+        <span className="rounded-full border border-border px-2.5 py-0.5 hover:border-accent hover:text-accent">
+          {t('chat.compacted', { count: turns })}
+        </span>
+        <span className="h-px flex-1 bg-border" />
+      </summary>
+      <div className="mt-2 rounded-lg border border-border bg-surface p-3 text-sm text-text-primary">
+        <p className="mb-1 text-xs font-medium uppercase tracking-wide text-text-secondary">{t('chat.compactedSummary')}</p>
+        <p className="whitespace-pre-wrap">{summary}</p>
+      </div>
+    </details>
   );
 }
 
@@ -177,7 +281,12 @@ function AssistantTurn(
   const { node, nodes, running, readOnly } = props;
   const navigate = useNavigate();
   if (node.status === 'streaming') {
-    return <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />;
+    return (
+      <>
+        <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />
+        <LiveTools node={node} output={props.toolOutput} />
+      </>
+    );
   }
   const versions = props.versions ?? siblingsOf(nodes, node);
   const index = versions.findIndex((v) => v.id === node.id);

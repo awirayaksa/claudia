@@ -1,0 +1,37 @@
+# Server-side code runs on this host's Docker (Admin → Settings → Code
+# interpreter → "In a sandbox on the server"):
+#
+#   docker compose -f docker-compose.yml -f compose.code.yml up -d
+#
+# The app reaches Docker through a socket proxy that only lets through the
+# endpoints code runs use (containers, images, version). Even so, whoever
+# controls the app could start containers on this host: for untrusted users
+# prefer a separate Docker host (a small VM) with gVisor, and point
+# CLAUDIA_CODE_DOCKER at it instead of using this file. See the README.
+
+services:
+  app:
+    environment:
+      CLAUDIA_CODE_DOCKER: tcp://docker-proxy:2375
+    depends_on:
+      - docker-proxy
+
+  docker-proxy:
+    # Pin a dated tag from hub.docker.com/r/tecnativa/docker-socket-proxy for reproducible deployments
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      IMAGES: 1
+      POST: 1
+      VERSION: 1
+      # Everything else stays closed
+      INFO: 0
+      NETWORKS: 0
+      VOLUMES: 0
+      EXEC: 0
+      BUILD: 0
+      SWARM: 0
+      SYSTEM: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro

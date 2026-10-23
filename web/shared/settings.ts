@@ -35,7 +35,17 @@ export const UserSettingsSchema = z.object({
     })
     .partial(),
   defaultModel: z.string().max(500).optional(),
-  memory: z.object({ enabled: z.boolean() }).optional(),
+  memory: z
+    .object({
+      /** Memories are added to chats (default on). */
+      enabled: z.boolean(),
+      /** The model may save memories during chats and learn them afterwards (default on). */
+      learn: z.boolean(),
+      /** Health, finances and similar topics may be saved too (default off). */
+      sensitive: z.boolean(),
+    })
+    .partial()
+    .optional(),
   /** The web app's language ("ar"); null follows the browser. */
   language: z
     .string()
@@ -80,5 +90,17 @@ export const AppSettingsResponse = z.object({
   audit: z.object({ retentionDays: z.number() }),
   'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
   arena: z.object({ enabled: z.boolean(), models: z.array(z.string()) }),
+  compaction: z.object({ enabled: z.boolean(), threshold: z.number(), keepRecentTurns: z.number(), model: z.string().nullable() }),
+  memory: z.object({ tools: z.boolean(), extraction: z.boolean(), model: z.string().nullable() }),
+  code: z.object({
+    engine: z.enum(['browser', 'server', 'off']),
+    pythonImage: z.string(),
+    nodeImage: z.string(),
+    memoryMb: z.number(),
+    cpus: z.number(),
+    timeoutSeconds: z.number(),
+    network: z.boolean(),
+    runtime: z.string().nullable(),
+  }),
 });
 export type AppSettingsResponse = z.infer<typeof AppSettingsResponse>;

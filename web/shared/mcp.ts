@@ -12,6 +12,29 @@ export interface McpServerView {
   enabled: boolean;
   error: string | null;
   tools: MCPTool[];
+  /** Signs in with OAuth: whether it is connected. */
+  oauth?: { connected: boolean };
+}
+
+/**
+ * OAuth sign-in for a remote server. Empty: the client registers itself
+ * (dynamic client registration); a client id (and secret) for servers that
+ * need a pre-registered client. Omitted on update = keep the stored values.
+ */
+export const McpOAuthInput = z.object({
+  clientId: z.string().trim().max(500).optional(),
+  /** Omitted on update = keep the stored one. */
+  clientSecret: z.string().max(2000).optional(),
+  scope: z.string().trim().max(1000).optional(),
+});
+export type McpOAuthInput = z.infer<typeof McpOAuthInput>;
+
+/** How a server's OAuth sign-in looks (never the secret or the tokens). */
+export interface McpOAuthView {
+  connected: boolean;
+  clientId: string | null;
+  hasClientSecret: boolean;
+  scope: string | null;
 }
 
 export const McpServerInput = z
@@ -25,11 +48,14 @@ export const McpServerInput = z
     command: z.string().min(1).max(500).optional(),
     args: z.array(z.string().max(2000)).max(100).optional(),
     env: z.record(z.string(), z.string()).optional(),
+    /** Sign in with OAuth (HTTP and SSE only); null = no OAuth. */
+    oauth: McpOAuthInput.nullable().optional(),
     enabled: z.boolean().default(true),
   })
   .refine((v) => (v.transport === 'stdio' ? !!v.command : !!v.url), {
     message: 'stdio servers need a command; HTTP and SSE servers need a URL.',
-  });
+  })
+  .refine((v) => !(v.transport === 'stdio' && v.oauth), { message: 'stdio servers don’t sign in with OAuth.' });
 export type McpServerInput = z.infer<typeof McpServerInput>;
 
 /** A global server as admins see it: secrets reduced to their names. */
@@ -44,6 +70,7 @@ export interface AdminMcpServerView {
   /** Names only; values never leave the server. */
   headerNames: string[];
   envNames: string[];
+  oauth: McpOAuthView | null;
   enabled: boolean;
   status: MCPServerStatus;
   error: string | null;

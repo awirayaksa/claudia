@@ -1,7 +1,8 @@
 import { boolean, index, jsonb, pgTable, primaryKey, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import type { GroupCaps, Permissions } from '../../../shared/access';
-import type { CustomModelParams } from '../../../shared/workspace';
+import type { CustomModelParams, MemorySource, MemoryTopic } from '../../../shared/workspace';
 import { users } from './identity';
+import { chats, folders, messages } from './chats';
 
 export const groups = pgTable(
   'groups',
@@ -40,7 +41,7 @@ export const groupMembers = pgTable(
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user_idx').on(t.userId)]
 );
 
-export type ResourceType = 'model' | 'prompt' | 'knowledge' | 'note' | 'channel';
+export type ResourceType = 'model' | 'prompt' | 'knowledge' | 'note' | 'channel' | 'folder';
 export type PrincipalType = 'user' | 'group' | 'public';
 
 /**
@@ -92,7 +93,11 @@ export const customModels = pgTable(
   (t) => [index('models_owner_idx').on(t.ownerId)]
 );
 
-/** Things a user asked the assistant to remember, injected as a system message. */
+/**
+ * What the assistant remembers about a user, injected as a system message:
+ * entered by the user, saved by the model during a chat, learned from chats
+ * in the background, or imported from another assistant.
+ */
 export const memories = pgTable(
   'memories',
   {
@@ -101,10 +106,46 @@ export const memories = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     content: text('content').notNull(),
+    topic: text('topic').$type<MemoryTopic>().notNull().default('other'),
+    source: text('source').$type<MemorySource>().notNull().default('user'),
+    /** Set: only for chats in this folder (and its subfolders). */
+    folderId: uuid('folder_id').references(() => folders.id, { onDelete: 'cascade' }),
+    /** The chat it was learned in, if any. */
+    chatId: uuid('chat_id').references(() => chats.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('memories_user_idx').on(t.userId, t.createdAt)]
+  (t) => [index('memories_user_idx').on(t.userId, t.createdAt), index('memories_folder_idx').on(t.folderId)]
+);
+
+/** A memory as it was before or after a change. */
+export interface MemorySnapshot {
+  content: string;
+  topic: MemoryTopic;
+  source: MemorySource;
+  folderId: string | null;
+  chatId: string | null;
+}
+
+/** Changes the model made to memories (in a chat or learning from one), so the user can undo them. */
+export const memoryChanges = pgTable(
+  'memory_changes',
+  {
+    id: uuid('id').primaryKey(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    /** Not a foreign key: a deleted memory keeps its change, so it can be restored. */
+    memoryId: uuid('memory_id').notNull(),
+    action: text('action').$type<'add' | 'update' | 'delete'>().notNull(),
+    before: jsonb('before').$type<MemorySnapshot>(),
+    after: jsonb('after').$type<MemorySnapshot>(),
+    /** The reply whose chip shows the change. */
+    messageId: uuid('message_id').references(() => messages.id, { onDelete: 'set null' }),
+    undoneAt: timestamp('undone_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('memory_changes_user_idx').on(t.userId, t.createdAt)]
 );
 
 /** Bearer keys for the OpenAI-compatible API (/api/v1). Only a hash is stored. */

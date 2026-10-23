@@ -41,6 +41,44 @@ export interface KnowledgeView extends KnowledgeInput {
 
 export interface KnowledgeDetail extends KnowledgeView {
   files: KbFileView[];
+  /** Places it pulls files from (GitHub repositories). */
+  sources: KbSourceView[];
+}
+
+/** A GitHub repository (or some of its folders and files) as knowledge. */
+export const GitHubSourceInput = z.object({
+  kind: z.literal('github'),
+  /** "owner/name", or the repository's github.com address. */
+  repo: z
+    .string()
+    .trim()
+    .transform((s) => s.replace(/^https?:\/\/github\.com\//i, '').replace(/\.git$/i, '').replace(/\/+$/, ''))
+    .pipe(z.string().regex(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/, 'Give the repository as owner/name.')),
+  /** Branch, tag or commit; empty = the default branch. */
+  ref: z.string().trim().max(200).optional(),
+  /** Folders and files to include, one per entry; empty = everything. */
+  paths: z.array(z.string().trim().min(1).max(500)).max(50).default([]),
+  /** For private repositories: a token that can read its contents. */
+  token: z.string().trim().max(500).optional(),
+  /** GitHub Enterprise: https://github.example.com/api/v3 */
+  apiUrl: z.url().optional(),
+});
+export type GitHubSourceInput = z.input<typeof GitHubSourceInput>;
+
+export interface KbSourceView {
+  id: string;
+  kind: 'github';
+  repo: string;
+  ref: string | null;
+  paths: string[];
+  apiUrl: string | null;
+  hasToken: boolean;
+  status: 'queued' | 'syncing' | 'ready' | 'failed';
+  error: string | null;
+  /** The commit the files come from. */
+  commit: string | null;
+  fileCount: number;
+  lastSyncedAt: string | null;
 }
 
 /** One hit of a knowledge search (the "try a query" box, and what chats get). */

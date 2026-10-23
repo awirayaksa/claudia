@@ -23,6 +23,7 @@ import { useWebDispatch } from '../hooks';
 import { Menu, type MenuItem } from '../components/Menu';
 import { ArchiveIcon, ChevronIcon, DotsIcon, FolderIcon, PinIcon, PlusIcon, SearchIcon, SidebarIcon, TagIcon } from '../components/icons';
 import { FolderSettings } from './FolderSettings';
+import { AccessDialog } from '../workspace/AccessDialog';
 import { LanguageMenu } from './LanguageMenu';
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -337,6 +338,25 @@ function FolderItem({
   const [name, setName] = useState(folder.name);
   const [confirm, setConfirm] = useState(false);
   const [settings, setSettings] = useState(false);
+  const [sharing, setSharing] = useState(false);
+  // Only one's own folders are moved into; someone else's shared folder stays where it is
+  const ownTree = { ...tree, flat: tree.flat.filter(({ folder: f }) => f.mine) };
+  const items: Array<MenuItem | 'separator' | { heading: string }> = folder.canManage
+    ? [
+        { label: t('nav.newSubfolder'), onSelect: onNewSubfolder },
+        { label: t('app.rename'), onSelect: () => setRenaming(true) },
+        { label: t('folder.settings'), onSelect: () => setSettings(true) },
+        { label: t('folder.share'), onSelect: () => setSharing(true) },
+        'separator',
+        { heading: t('chat.moveTo') },
+        ...moveTargets(ownTree, folder.parentId, tree.within(folder.id), (parentId) => void updateFolder({ id: folder.id, parentId }), t('nav.topLevel')),
+        'separator',
+        { label: t('app.delete'), danger: true, onSelect: () => setConfirm(true) },
+      ]
+    : [
+        ...(folder.canEdit ? [{ label: t('app.rename'), onSelect: () => setRenaming(true) }] : []),
+        { label: t('folder.settings'), onSelect: () => setSettings(true) },
+      ];
 
   return (
     <li>
@@ -362,26 +382,24 @@ function FolderItem({
           ) : (
             <span className="truncate">{folder.name}</span>
           )}
+          {!folder.mine && (
+            <span className="shrink-0 truncate text-[10px] text-text-secondary" title={t('folder.sharedBy', { name: folder.ownerName ?? '' })}>
+              · {folder.ownerName}
+            </span>
+          )}
+          {folder.mine && folder.shared && (
+            <span className="shrink-0 text-[10px] text-text-secondary" title={t('folder.sharedHint')}>
+              · {t('folder.shared')}
+            </span>
+          )}
         </button>
         <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
-          <Menu
-            label={t('chat.folderActions')}
-            trigger={<DotsIcon />}
-            items={[
-              { label: t('nav.newSubfolder'), onSelect: onNewSubfolder },
-              { label: t('app.rename'), onSelect: () => setRenaming(true) },
-              { label: t('folder.settings'), onSelect: () => setSettings(true) },
-              'separator',
-              { heading: t('chat.moveTo') },
-              ...moveTargets(tree, folder.parentId, tree.within(folder.id), (parentId) => void updateFolder({ id: folder.id, parentId }), t('nav.topLevel')),
-              'separator',
-              { label: t('app.delete'), danger: true, onSelect: () => setConfirm(true) },
-            ]}
-          />
+          <Menu label={t('chat.folderActions')} trigger={<DotsIcon />} items={items} />
         </div>
       </div>
       {open && <ul className="ms-4 space-y-0.5 border-s border-border ps-1">{children}</ul>}
       {settings && <FolderSettings folder={folder} onClose={() => setSettings(false)} />}
+      {sharing && <AccessDialog kind="folders" id={folder.id} name={folder.name} onClose={() => setSharing(false)} />}
       <ConfirmDialog
         isOpen={confirm}
         onClose={() => setConfirm(false)}

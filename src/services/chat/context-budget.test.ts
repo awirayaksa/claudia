@@ -5,6 +5,9 @@ import {
   estimateTextTokens,
   fitToContext,
   groupTurns,
+  planCompaction,
+  promptLimit,
+  SUMMARY_TOKENS,
 } from './context-budget';
 import type { ChatMessage } from '../../types/api.types';
 
@@ -141,5 +144,51 @@ describe('fitToContext', () => {
     expect(r.overflow).toBe(true);
     expect(r.droppedTurns).toBe(1);
     expect(r.messages).toHaveLength(1);
+  });
+});
+
+describe('planCompaction', () => {
+  const base = { limit: 10_000, fixedTokens: 500 };
+
+  it('folds nothing while the prompt is under the threshold', () => {
+    expect(planCompaction({ ...base, turnTokens: [1000, 1000, 1000, 1000, 1000, 1000, 1000] })).toBe(0);
+    expect(planCompaction({ ...base, turnTokens: [2000, 2000, 2000, 1000], threshold: 0.9 })).toBe(0);
+  });
+
+  it('folds the oldest turns until about half the limit is left', () => {
+    // 500 + 10 × 1000 = 10 500 > 8 000; with the summary's room, fold until ≤ 5 000
+    const fold = planCompaction({ ...base, turnTokens: Array(10).fill(1000), keepRecentTurns: 2 });
+    expect(fold).toBe(7);
+    // The last four turns stay by default
+    expect(planCompaction({ ...base, turnTokens: Array(10).fill(1000) })).toBe(6);
+    expect(500 + SUMMARY_TOKENS + (10 - fold) * 1000).toBeLessThanOrEqual(5000);
+  });
+
+  it('honours the threshold', () => {
+    const turns = Array(8).fill(800); // 500 + 6 400 = 6 900
+    expect(planCompaction({ ...base, turnTokens: turns })).toBe(0);
+    expect(planCompaction({ ...base, turnTokens: turns, threshold: 0.6 })).toBeGreaterThan(0);
+  });
+
+  it('never folds the most recent turns, even when they alone are too big', () => {
+    expect(planCompaction({ ...base, turnTokens: [3000, 3000, 3000, 3000], keepRecentTurns: 4 })).toBe(0);
+    expect(planCompaction({ ...base, turnTokens: [3000, 3000, 3000, 3000, 3000], keepRecentTurns: 2 })).toBe(3);
+  });
+
+  it('works on the turns of groupTurns, so tool calls stay with their results', () => {
+    const msgs: ChatMessage[] = [
+      user(words(2000)),
+      { role: 'assistant', tool_calls: [{ id: 'c', type: 'function', function: { name: 'f', arguments: '{}' } }] },
+      { role: 'tool', tool_call_id: 'c', content: words(2000) },
+      assistant('done'),
+      user('next'),
+      assistant('ok'),
+    ];
+    const turns = groupTurns(msgs);
+    const { limit } = promptLimit({ model: 'x', contextWindow: 8_000 });
+    const fold = planCompaction({ limit, fixedTokens: 10, turnTokens: turns.map((t) => t.reduce((s, m) => s + estimateMessageTokens(m), 0)), keepRecentTurns: 1 });
+    expect(fold).toBe(1);
+    // The folded turn holds the whole tool round
+    expect(turns.slice(0, fold).flat().map((m) => m.role)).toEqual(['user', 'assistant', 'tool', 'assistant']);
   });
 });

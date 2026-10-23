@@ -61,6 +61,13 @@ import { UsageService } from './modules/usage/service';
 import { workspaceModelRoutes } from './modules/workspace/models';
 import { workspacePromptRoutes } from './modules/workspace/prompts';
 import { memoryRoutes } from './modules/memories/routes';
+import { MemoryStore } from './modules/memories/store';
+import { MemoryLearner } from './modules/memories/learn';
+import { McpOAuth } from './mcp/oauth';
+import { FolderService } from './modules/chats/folders';
+import { GitHubSources } from './rag/github-source';
+import { CodeSandbox } from './code/sandbox';
+import { adminCodeRoutes } from './code/routes';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
 import { RagConfig } from './rag/config';
@@ -200,6 +207,22 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     log: app.log,
     webhooks,
   });
+  const folderService = new FolderService({ db: deps.db.db, access });
+  const code = new CodeSandbox({ endpoint: deps.config.CLAUDIA_CODE_DOCKER ?? null, settings, log: app.log });
+  const kbSources = new GitHubSources({
+    db: deps.db.db,
+    secrets,
+    files,
+    knowledge,
+    jobs: jobQueue,
+    policy: () => ({ allow: settings.peek('net.allowlist').hosts }),
+    log: app.log,
+  });
+  // With embeddings on, memories are also searchable by meaning
+  const memories = new MemoryStore(deps.db.db, async (memoryId) => {
+    if (await rag.embedderKey()) await jobQueue.enqueue('memory.embed', { memoryId });
+  });
+  const memoryLearner = new MemoryLearner({ db: deps.db.db, settings, models, store: memories, folders: folderService, jobs: jobQueue, log: app.log });
   const netPolicy = () => ({ allow: settings.peek('net.allowlist').hosts });
   const sources = new SourceBuilder({
     db: deps.db.db,
@@ -208,6 +231,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     web: { extract, policy: netPolicy, ...(deps.youtubeOrigin ? { youtubeOrigin: deps.youtubeOrigin } : {}) },
     log: app.log,
   });
+  const mcpOAuth = new McpOAuth({ db: deps.db.db, secrets, log: app.log });
   const mcp = new McpPools({
     db: deps.db.db,
     secrets,
@@ -218,6 +242,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     extract,
     netPolicy,
     access,
+    oauth: mcpOAuth,
   });
   const ctx: ServerContext = {
     config: deps.config,
@@ -246,6 +271,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       sandboxOrigin: sandboxOriginFor(deps.config),
       media,
       webhooks,
+      memories,
+      memoryLearner,
+      folders: folderService,
+      code,
+      memoryIdleMs: deps.config.CLAUDIA_MEMORY_IDLE_SECONDS * 1000,
       ...deps.orchestrator,
     }),
     storage,
@@ -253,12 +283,18 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     files,
     skills,
     mcp,
+    mcpOAuth,
     ldap: new LdapService({ db: deps.db.db, secrets, config: deps.config, log: app.log }),
     shares: new ShareService(deps.db.db),
     access,
     usage,
     rag,
     knowledge,
+    kbSources,
+    code,
+    folders: folderService,
+    memories,
+    memoryLearner,
     jobs: jobQueue,
     events,
     media,
@@ -393,6 +429,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => mcpUserRoutes(a, ctx), { prefix: '/mcp' });
       await api.register((a) => toolRoutes(a, ctx), { prefix: '/tools' });
       await api.register((a) => adminMcpRoutes(a, ctx), { prefix: '/admin/mcp-servers' });
+      await api.register((a) => adminCodeRoutes(a, ctx), { prefix: '/admin/code' });
       await api.register((a) => adminUserRoutes(a, ctx), { prefix: '/admin/users' });
       await api.register((a) => adminConnectionRoutes(a, ctx), { prefix: '/admin/connections' });
       await api.register((a) => adminSettingsRoutes(a, ctx), { prefix: '/admin/settings' });

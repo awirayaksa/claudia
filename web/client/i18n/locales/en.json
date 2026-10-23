@@ -143,7 +143,10 @@
     "compare": "Compare models",
     "alsoAsk": "Also ask:",
     "addModel": "Add a model",
-    "removeModel": "Remove {{name}}"
+    "removeModel": "Remove {{name}}",
+    "compacted_one": "The first exchange was summarized to fit the context",
+    "compacted_other": "The first {{count}} exchanges were summarized to fit the context",
+    "compactedSummary": "Summary the model sees instead"
   },
   "settings": {
     "title": "Settings",
@@ -342,7 +345,38 @@
     "resetMfa": "Reset two-factor",
     "resetMfaHelp": "Turn off their two-factor sign-in (for a lost phone); they can set it up again.",
     "deactivate": "Deactivate",
-    "reactivate": "Reactivate"
+    "reactivate": "Reactivate",
+    "compaction": "Long chats",
+    "compactionHelp": "Near the model's context limit, summarize the oldest exchanges instead of leaving them out.",
+    "compactionEnabled": "Summarize earlier messages",
+    "compactionThreshold": "Start at this share of the context (%)",
+    "compactionKeep": "Recent exchanges always kept word for word",
+    "compactionModel": "Model for summaries",
+    "memory": "Memory",
+    "memoryHelp": "Users can switch learning off for themselves. Sensitive topics are only saved for users who allow them.",
+    "memoryTools": "Let the model save memories during chats (the model must support tools)",
+    "memoryExtraction": "Learn memories from chats once they go quiet",
+    "memoryModel": "Model for learning memories",
+    "code": "Code interpreter",
+    "codeEngine": "Where code runs",
+    "codeEngines": {
+      "browser": "In the user’s browser (Python with Pyodide)",
+      "server": "In a sandbox on the server (Docker)",
+      "off": "Nowhere (off)"
+    },
+    "codeServerHelp": "Each run is a new container: no network, an unprivileged user, the limits below, and only the chat’s attachments in /workspace. Files it writes are given to the user.",
+    "codeNoDocker": "No Docker daemon is configured. Set CLAUDIA_CODE_DOCKER (see the README) and restart.",
+    "codePythonImage": "Python image",
+    "codeNodeImage": "Node.js image",
+    "code_memoryMb": "Memory (MB)",
+    "code_cpus": "CPUs",
+    "code_timeoutSeconds": "Time limit (seconds)",
+    "codeRuntime": "Container runtime (e.g. runsc for gVisor; empty: Docker’s default)",
+    "codeNetwork": "Let runs use the network",
+    "codeNetworkHelp": "Off by default. On, code can download packages but also reach anything this server’s network can.",
+    "codeTest": "Test the sandbox",
+    "codeTesting": "Testing… (images may be downloading)",
+    "codeTestOk": "Works (Docker {{version}})."
   },
   "notFound": {
     "title": "Page not found",
@@ -495,7 +529,7 @@
     "knowledgeHelp": "Searched whenever this model answers, with your access (people using the model don't need their own)."
   },
   "memory": {
-    "help": "Things every chat should know about you. They are sent to the model with each message.",
+    "help": "What chats know about you. It is sent to the model with each message, and can be learned from your chats.",
     "enabled": "Use my memories in chats",
     "placeholder": "e.g. I work in Python and prefer short answers",
     "add": "Add",
@@ -504,7 +538,42 @@
     "clear": "Delete all memories",
     "clearTitle": "Delete all memories?",
     "clearBody_one": "Your {{count}} memory will be deleted.",
-    "clearBody_other": "All {{count}} memories will be deleted."
+    "clearBody_other": "All {{count}} memories will be deleted.",
+    "learn": "Learn from my chats",
+    "learnHelp": "Lasting facts you mention (your work, preferences, projects) are saved here. Temporary chats are never used. Every change shows under the reply, where you can undo it.",
+    "sensitive": "Also remember sensitive topics",
+    "sensitiveHelp": "Health, finances, religion, politics and similar topics are skipped unless this is on.",
+    "topic": "Topic",
+    "scope": "Used in",
+    "allChats": "All chats",
+    "topics": {
+      "about": "About you",
+      "work": "Work",
+      "preferences": "Preferences",
+      "projects": "Projects",
+      "people": "People",
+      "other": "Other"
+    },
+    "sources": {
+      "model": "saved in a chat",
+      "auto": "learned",
+      "import": "imported"
+    },
+    "import": "Import from another assistant",
+    "importHelp": "Paste what another assistant remembers about you (for example ChatGPT’s list under Settings → Personalization → Manage memories). Each line becomes a memory, sorted into a topic.",
+    "importButton": "Import",
+    "importing": "Importing…",
+    "imported": "Added {{added}}, skipped {{skipped}} (duplicates, sensitive or over the limit).",
+    "chip_one": "Memory updated",
+    "chip_other": "{{count}} memories updated",
+    "chipUndone": "Memory change undone",
+    "changed": {
+      "add": "Saved",
+      "update": "Changed",
+      "delete": "Forgot"
+    },
+    "undo": "Undo",
+    "undone": "Undone"
   },
   "apiKeys": {
     "help": "Use the models you have here from other apps with an OpenAI-compatible API, including Claudia desktop as a custom provider.",
@@ -594,7 +663,32 @@
     "fullContext": "Send whole documents when they fit",
     "fullContextHelp": "Instead of the most relevant passages. Good for a few short documents.",
     "deleteTitle": "Delete knowledge base?",
-    "deleteBody": "\"{{name}}\" and its index will be deleted. The files stay in your files."
+    "deleteBody": "\"{{name}}\" and its index will be deleted. The files stay in your files.",
+    "sources": "Synced from GitHub",
+    "sourcesHelp": "Keep a repository’s documentation in this knowledge base and sync it when it changes.",
+    "addGitHub": "Add a GitHub repository",
+    "repo": "Repository",
+    "ref": "Branch or tag",
+    "refPlaceholder": "Branch or tag (default branch)",
+    "paths": "Folders and files",
+    "pathsHelp": "One per line, e.g. docs/ or README.md. Empty: the whole repository. Only documents, text and code files are taken, up to 500.",
+    "privateRepo": "Private repository or GitHub Enterprise",
+    "token": "Access token",
+    "apiUrl": "API address (GitHub Enterprise)",
+    "tokenHelp": "A fine-grained token with read access to the repository’s contents. It is stored encrypted.",
+    "addAndSync": "Add and sync",
+    "private": "private",
+    "wholeRepo": "The whole repository",
+    "sourceFiles_one": "{{count}} file",
+    "sourceFiles_other": "{{count}} files",
+    "syncedAt": "synced {{when}}",
+    "syncNow": "Sync now",
+    "sourceStatus": {
+      "queued": "Waiting",
+      "syncing": "Syncing…",
+      "ready": "Up to date",
+      "failed": "Failed"
+    }
   },
   "folder": {
     "settings": "Folder settings",
@@ -602,7 +696,15 @@
     "systemPromptPlaceholder": "Instructions for every chat in this folder",
     "knowledge": "Knowledge bases",
     "knowledgeHelp": "Searched for every chat in this folder and its subfolders.",
-    "noKnowledge": "You have no knowledge bases yet (Workspace → Knowledge)."
+    "noKnowledge": "You have no knowledge bases yet (Workspace → Knowledge).",
+    "share": "Share…",
+    "shared": "shared",
+    "sharedHint": "Shared with others",
+    "sharedBy": "Shared with you by {{name}}",
+    "sharedViewer": "{{name}} shared this folder with you. Your chats in it use its instructions and knowledge; only you see them.",
+    "sharedEditor": "{{name}} shared this folder with you and lets you change its instructions and knowledge. Your chats in it are yours only.",
+    "ownerKnowledge_one": "Also {{count}} knowledge base the owner added.",
+    "ownerKnowledge_other": "Also {{count}} knowledge bases the owner added."
   },
   "rag": {
     "title": "Knowledge",
@@ -651,9 +753,11 @@
   },
   "tools": {
     "code": "Code",
-    "codeHelp": "Let the model run Python in your browser (in a sandbox) for calculations and data",
+    "codeHelp": "Let the model run code in a sandbox for calculations, data and charts",
     "image": "Image",
-    "imageHelp": "Let the model create images"
+    "imageHelp": "Let the model create images",
+    "running": "running…",
+    "done": "done"
   },
   "artifacts": {
     "preview": "Preview",
@@ -1076,5 +1180,21 @@
     "deleteTitle": "Delete \"{{name}}\"?",
     "deleteFileBody": "The file is deleted from your workspace. Replies that link to it can no longer download it.",
     "deleteFolderBody": "The folder and everything in it are deleted from your workspace."
+  },
+  "mcpOAuth": {
+    "use": "Sign in with OAuth",
+    "useHelp": "For servers that ask you to sign in (MCP authorization). After saving, press Connect and sign in in the window that opens. Tokens are stored encrypted and refreshed automatically.",
+    "advanced": "Pre-registered client (optional)",
+    "advancedHelp": "Only if the server doesn’t let apps register themselves: the client ID (and secret) you got from it, with this callback address: /api/mcp/oauth/callback on this site.",
+    "clientId": "Client ID",
+    "clientSecret": "Client secret",
+    "secretKept": "Stored (blank keeps it)",
+    "scope": "Scope",
+    "connected": "Connected",
+    "needed": "Sign-in needed",
+    "connect": "Connect",
+    "reconnect": "Reconnect",
+    "waiting": "Waiting for sign-in…",
+    "disconnect": "Disconnect"
   }
 }

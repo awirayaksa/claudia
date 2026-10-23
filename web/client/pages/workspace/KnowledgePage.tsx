@@ -6,6 +6,7 @@ import { Input } from '@/components/common/Input';
 import { Modal } from '@/components/common/Modal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import type { KbFileEvent, KnowledgeDetail, SearchHit } from '@shared/knowledge';
+import { KnowledgeSources } from './KnowledgeSources';
 import {
   api,
   errorMessage,
@@ -227,6 +228,8 @@ function KnowledgeDetailView({ id }: { id: string }) {
           {uploadError && <p className="mt-2 text-error">{uploadError}</p>}
         </div>
       )}
+
+      <KnowledgeSources kb={kb} />
 
       <section>
         <div className="mb-2 flex items-center justify-between">
