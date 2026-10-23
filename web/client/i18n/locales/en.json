@@ -148,7 +148,12 @@
     "compacted_other": "The first {{count}} exchanges were summarized to fit the context",
     "compactedSummary": "Summary the model sees instead",
     "cutOff": "The reply reached the maximum length.",
-    "continue": "Continue"
+    "continue": "Continue",
+    "exportAs": {
+      "md": "Markdown",
+      "pdf": "PDF",
+      "json": "Claudia JSON (all versions)"
+    }
   },
   "settings": {
     "title": "Settings",

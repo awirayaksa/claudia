@@ -93,11 +93,13 @@ export function ChatHeader({
             items={[
               ...(permissions?.['chat.export']
                 ? [
-                    {
-                      label: t('chat.export'),
+                    { heading: t('chat.export') },
+                    ...(['md', 'pdf', 'json'] as const).map((format) => ({
+                      label: t(`chat.exportAs.${format}`),
+                      inset: true,
                       onSelect: () =>
-                        void downloadFrom(`/api/chats/${chat.id}/export`, 'claudia-chat.json').catch((e) => setError(errorMessage(e))),
-                    },
+                        void downloadFrom(`/api/chats/${chat.id}/export?format=${format}`, `claudia-chat.${format}`).catch((e) => setError(errorMessage(e))),
+                    })),
                   ]
                 : []),
               {
