@@ -10,9 +10,11 @@ import {
   useAdminMcpServersQuery,
   useCreateMcpServerMutation,
   useDeleteMcpServerMutation,
+  useDisconnectMcpOAuthMutation,
   useRestartMcpServerMutation,
   useUpdateMcpServerMutation,
 } from '../../api/rtk-api';
+import { OAuthControls, OAuthFields, oauthDraft, oauthInput } from '../../components/McpOAuth';
 import { OpenApiServers } from './OpenApiServers';
 
 type Transport = McpServerInput['transport'];
@@ -29,7 +31,8 @@ function parsePairs(text: string, sep: string): Record<string, string> {
 
 export function ToolServersPage() {
   const { t } = useTranslation();
-  const { data, isLoading } = useAdminMcpServersQuery();
+  const { data, isLoading, refetch } = useAdminMcpServersQuery();
+  const [disconnect] = useDisconnectMcpOAuthMutation();
   const [editing, setEditing] = useState<AdminMcpServerView | 'new' | null>(null);
   const [toDelete, setToDelete] = useState<AdminMcpServerView | null>(null);
   const [remove] = useDeleteMcpServerMutation();
@@ -64,7 +67,16 @@ export function ToolServersPage() {
                   {s.error && <span className="text-error"> · {s.error}</span>}
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
+                {s.oauth && (
+                  <OAuthControls
+                    oauth={s.oauth}
+                    connectUrl={`/api/admin/mcp-servers/${s.id}/oauth/connect`}
+                    disabled={!s.enabled}
+                    refetch={async () => !!(await refetch()).data?.servers.find((x) => x.id === s.id)?.oauth?.connected}
+                    onDisconnect={() => void disconnect(s.id)}
+                  />
+                )}
                 {s.enabled && (
                   <Button size="sm" variant="secondary" onClick={() => void restart(s.id)}>
                     {t('admin.restart')}
@@ -115,6 +127,7 @@ function ToolServerForm({ server, onClose }: { server: AdminMcpServerView | null
   const [headers, setHeaders] = useState('');
   const [env, setEnv] = useState('');
   const [enabled, setEnabled] = useState(server?.enabled ?? true);
+  const [oauth, setOAuth] = useState(oauthDraft(server?.oauth));
   const error = errorMessage(createState.error ?? updateState.error);
 
   const submit = async (e: FormEvent) => {
@@ -125,8 +138,8 @@ function ToolServerForm({ server, onClose }: { server: AdminMcpServerView | null
       transport,
       enabled,
       ...(transport === 'stdio'
-        ? { command, args: args.split('\n').map((a) => a.trim()).filter(Boolean) }
-        : { url }),
+        ? { command, args: args.split('\n').map((a) => a.trim()).filter(Boolean), oauth: null }
+        : { url, oauth: oauthInput(oauth) }),
       ...(headers.trim() ? { headers: parsePairs(headers, ':') } : {}),
       ...(env.trim() ? { env: parsePairs(env, '=') } : {}),
     };
@@ -182,6 +195,7 @@ function ToolServerForm({ server, onClose }: { server: AdminMcpServerView | null
               value={headers}
               onChange={setHeaders}
             />
+            <OAuthFields value={oauth} onChange={setOAuth} stored={server?.oauth} />
           </>
         )}
         <label className="flex items-center gap-2 text-sm">

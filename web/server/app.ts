@@ -63,6 +63,7 @@ import { workspacePromptRoutes } from './modules/workspace/prompts';
 import { memoryRoutes } from './modules/memories/routes';
 import { MemoryStore } from './modules/memories/store';
 import { MemoryLearner } from './modules/memories/learn';
+import { McpOAuth } from './mcp/oauth';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
 import { RagConfig } from './rag/config';
@@ -215,6 +216,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     web: { extract, policy: netPolicy, ...(deps.youtubeOrigin ? { youtubeOrigin: deps.youtubeOrigin } : {}) },
     log: app.log,
   });
+  const mcpOAuth = new McpOAuth({ db: deps.db.db, secrets, log: app.log });
   const mcp = new McpPools({
     db: deps.db.db,
     secrets,
@@ -225,6 +227,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     extract,
     netPolicy,
     access,
+    oauth: mcpOAuth,
   });
   const ctx: ServerContext = {
     config: deps.config,
@@ -263,6 +266,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     files,
     skills,
     mcp,
+    mcpOAuth,
     ldap: new LdapService({ db: deps.db.db, secrets, config: deps.config, log: app.log }),
     shares: new ShareService(deps.db.db),
     access,

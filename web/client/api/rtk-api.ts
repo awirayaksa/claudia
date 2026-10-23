@@ -674,6 +674,11 @@ export const api = createApi({
       query: (id) => ({ url: `/mcp/own/${id}`, method: 'DELETE' }),
       invalidatesTags: ['OwnMcp', 'McpServers'],
     }),
+    /** Sign one of your own servers out of OAuth (its tokens are revoked). */
+    disconnectOwnMcpOAuth: b.mutation<{ server: UserMcpServerView }, string>({
+      query: (id) => ({ url: `/mcp/own/${id}/oauth`, method: 'DELETE' }),
+      invalidatesTags: ['OwnMcp', 'McpServers'],
+    }),
 
     // ─── Folders ────────────────────────────────────────────────────────────
     folders: b.query<{ folders: Folder[] }, void>({ query: () => '/folders', providesTags: ['Folders'] }),
@@ -794,6 +799,11 @@ export const api = createApi({
       query: (id) => ({ url: `/admin/mcp-servers/${id}`, method: 'DELETE' }),
       invalidatesTags: ['AdminMcpServers', 'McpServers'],
     }),
+    /** Sign a global server out of OAuth (its tokens are revoked). */
+    disconnectMcpOAuth: b.mutation<{ server: AdminMcpServerView }, string>({
+      query: (id) => ({ url: `/admin/mcp-servers/${id}/oauth`, method: 'DELETE' }),
+      invalidatesTags: ['AdminMcpServers', 'McpServers'],
+    }),
     ldapSettings: b.query<LdapSettingsResponse, void>({ query: () => '/admin/ldap', providesTags: ['Ldap'] }),
     updateLdapSettings: b.mutation<LdapSettingsResponse, LdapSettingsUpdate>({
       query: (body) => ({ url: '/admin/ldap', method: 'PUT', body }),
@@ -874,6 +884,7 @@ export const {
   useUpdateMcpServerMutation,
   useRestartMcpServerMutation,
   useDeleteMcpServerMutation,
+  useDisconnectMcpOAuthMutation,
   useLdapSettingsQuery,
   useUpdateLdapSettingsMutation,
   useTestLdapMutation,
@@ -907,6 +918,7 @@ export const {
   useCreateOwnMcpServerMutation,
   useUpdateOwnMcpServerMutation,
   useDeleteOwnMcpServerMutation,
+  useDisconnectOwnMcpOAuthMutation,
   useAdminUserAccessQuery,
   useAdminSetUserGroupsMutation,
   useAdminGroupsQuery,

@@ -30,6 +30,7 @@ import type { CloudFiles } from './cloud/cloud-files';
 import type { ScheduleRunner } from './modules/schedules/service';
 import type { MemoryStore } from './modules/memories/store';
 import type { MemoryLearner } from './modules/memories/learn';
+import type { McpOAuth } from './mcp/oauth';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -48,6 +49,8 @@ export interface ServerContext {
   files: FileService;
   skills: SkillService;
   mcp: McpPools;
+  /** OAuth sign-ins to remote MCP servers. */
+  mcpOAuth: McpOAuth;
   ldap: LdapService;
   shares: ShareService;
   access: AccessService;

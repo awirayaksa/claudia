@@ -20,6 +20,15 @@ plus feature-parity work with Claude (issue #15):
   be undone. Temporary chats are never read; sensitive topics (health,
   finances…) are skipped unless the user allows them. Memories can belong to
   one folder (a project), and another assistant's memories can be imported.
+- **Remote MCP servers with OAuth sign-in** (Settings → Tools for your own
+  servers, Admin → Tools for shared ones): paste the server's URL, tick
+  "Sign in with OAuth" and press Connect. Claudia follows the MCP
+  authorization spec (protected-resource and authorization-server discovery,
+  dynamic client registration or a pre-registered client, PKCE), keeps the
+  tokens encrypted and refreshes them when they expire; Disconnect revokes
+  them. An admin's sign-in to a shared server is used by everyone. The
+  authorization server sends the browser back to `/api/mcp/oauth/callback`,
+  so set `CLAUDIA_PUBLIC_URL` behind a proxy.
 
 Phase 7 adds:
 

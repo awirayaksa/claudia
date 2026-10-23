@@ -71,6 +71,13 @@
       "when": 1792721992341,
       "tag": "0009_phase8_memory",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1792722653299,
+      "tag": "0010_mcp_oauth",
+      "breakpoints": true
     }
   ]
 }

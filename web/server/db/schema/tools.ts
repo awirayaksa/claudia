@@ -1,4 +1,4 @@
-import { boolean, index, jsonb, pgTable, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, jsonb, pgTable, text, timestamp, unique, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { users } from './identity';
 
 export type McpTransport = 'stdio' | 'streamable-http' | 'sse';
@@ -22,6 +22,34 @@ export const mcpServers = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index('mcp_servers_owner_idx').on(t.ownerId)]
+);
+
+/**
+ * OAuth sign-in to a remote MCP server (MCP authorization: discovery,
+ * dynamic client registration, PKCE). One per server: a user's own server
+ * signs in as its owner; a global one as the admin who connected it, for
+ * everyone. The client registration, tokens and PKCE verifier are one
+ * encrypted JSON blob.
+ */
+export const mcpOAuth = pgTable(
+  'mcp_oauth',
+  {
+    serverId: uuid('server_id')
+      .primaryKey()
+      .references(() => mcpServers.id, { onDelete: 'cascade' }),
+    /** Who signed in (and who may finish a pending sign-in). */
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    cipher: text('cipher').notNull(),
+    /** The `state` of a sign-in in progress, matched by the callback. */
+    pendingState: text('pending_state'),
+    pendingExpiresAt: timestamp('pending_expires_at', { withTimezone: true }),
+    /** Set once tokens were received; null while waiting for the first sign-in. */
+    connectedAt: timestamp('connected_at', { withTimezone: true }),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('mcp_oauth_state_idx').on(t.pendingState)]
 );
 
 /** Skills and (Phase 3) the prompt library. owner_id null = built-in / global. */

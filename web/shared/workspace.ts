@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { GrantView, ItemAccess } from './access';
+import { McpOAuthInput, type McpOAuthView } from './mcp';
 
 // ─── Custom models (model builder) ───────────────────────────────────────────
 
@@ -154,6 +155,8 @@ export const UserMcpServerInput = z.object({
   url: z.url().refine((u) => /^https?:\/\//i.test(u), 'Use an http(s) URL'),
   /** Omitted on update = keep the stored ones. */
   headers: z.record(z.string().min(1).max(200), z.string().max(10_000)).optional(),
+  /** Sign in with OAuth; null = no OAuth. */
+  oauth: McpOAuthInput.nullable().optional(),
   enabled: z.boolean().default(true),
 });
 export type UserMcpServerInput = z.infer<typeof UserMcpServerInput>;
@@ -165,5 +168,6 @@ export interface UserMcpServerView {
   transport: 'streamable-http' | 'sse';
   url: string;
   headerNames: string[];
+  oauth: McpOAuthView | null;
   enabled: boolean;
 }

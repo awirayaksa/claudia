@@ -1125,5 +1125,21 @@
     "deleteTitle": "Delete \"{{name}}\"?",
     "deleteFileBody": "The file is deleted from your workspace. Replies that link to it can no longer download it.",
     "deleteFolderBody": "The folder and everything in it are deleted from your workspace."
+  },
+  "mcpOAuth": {
+    "use": "Sign in with OAuth",
+    "useHelp": "For servers that ask you to sign in (MCP authorization). After saving, press Connect and sign in in the window that opens. Tokens are stored encrypted and refreshed automatically.",
+    "advanced": "Pre-registered client (optional)",
+    "advancedHelp": "Only if the server doesn’t let apps register themselves: the client ID (and secret) you got from it, with this callback address: /api/mcp/oauth/callback on this site.",
+    "clientId": "Client ID",
+    "clientSecret": "Client secret",
+    "secretKept": "Stored (blank keeps it)",
+    "scope": "Scope",
+    "connected": "Connected",
+    "needed": "Sign-in needed",
+    "connect": "Connect",
+    "reconnect": "Reconnect",
+    "waiting": "Waiting for sign-in…",
+    "disconnect": "Disconnect"
   }
 }
