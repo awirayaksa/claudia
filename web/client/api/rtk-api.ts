@@ -820,6 +820,11 @@ export const api = createApi({
       query: (id) => ({ url: `/admin/mcp-servers/${id}`, method: 'DELETE' }),
       invalidatesTags: ['AdminMcpServers', 'McpServers'],
     }),
+    codeStatus: b.query<{ dockerConfigured: boolean }, void>({ query: () => '/admin/code' }),
+    /** Reach the Docker daemon, pull the images if needed, and run a test program. */
+    testCodeSandbox: b.mutation<{ ok: boolean; error: string | null; version: string | null }, void>({
+      query: () => ({ url: '/admin/code/test', method: 'POST' }),
+    }),
     /** Sign a global server out of OAuth (its tokens are revoked). */
     disconnectMcpOAuth: b.mutation<{ server: AdminMcpServerView }, string>({
       query: (id) => ({ url: `/admin/mcp-servers/${id}/oauth`, method: 'DELETE' }),
@@ -906,6 +911,8 @@ export const {
   useRestartMcpServerMutation,
   useDeleteMcpServerMutation,
   useDisconnectMcpOAuthMutation,
+  useCodeStatusQuery,
+  useTestCodeSandboxMutation,
   useLdapSettingsQuery,
   useUpdateLdapSettingsMutation,
   useTestLdapMutation,

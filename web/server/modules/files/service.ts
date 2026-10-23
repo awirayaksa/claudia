@@ -97,6 +97,11 @@ export class FileService {
     return row;
   }
 
+  /** A file's bytes as uploaded. */
+  async content(row: FileRow): Promise<Buffer> {
+    return this.deps.storage.get(row.storageKey);
+  }
+
   async listOwned(userId: string, limit = 100): Promise<FileRow[]> {
     return this.deps.db.select().from(files).where(eq(files.userId, userId)).orderBy(desc(files.createdAt)).limit(limit);
   }

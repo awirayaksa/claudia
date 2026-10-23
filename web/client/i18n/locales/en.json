@@ -356,7 +356,27 @@
     "memoryHelp": "Users can switch learning off for themselves. Sensitive topics are only saved for users who allow them.",
     "memoryTools": "Let the model save memories during chats (the model must support tools)",
     "memoryExtraction": "Learn memories from chats once they go quiet",
-    "memoryModel": "Model for learning memories"
+    "memoryModel": "Model for learning memories",
+    "code": "Code interpreter",
+    "codeEngine": "Where code runs",
+    "codeEngines": {
+      "browser": "In the user’s browser (Python with Pyodide)",
+      "server": "In a sandbox on the server (Docker)",
+      "off": "Nowhere (off)"
+    },
+    "codeServerHelp": "Each run is a new container: no network, an unprivileged user, the limits below, and only the chat’s attachments in /workspace. Files it writes are given to the user.",
+    "codeNoDocker": "No Docker daemon is configured. Set CLAUDIA_CODE_DOCKER (see the README) and restart.",
+    "codePythonImage": "Python image",
+    "codeNodeImage": "Node.js image",
+    "code_memoryMb": "Memory (MB)",
+    "code_cpus": "CPUs",
+    "code_timeoutSeconds": "Time limit (seconds)",
+    "codeRuntime": "Container runtime (e.g. runsc for gVisor; empty: Docker’s default)",
+    "codeNetwork": "Let runs use the network",
+    "codeNetworkHelp": "Off by default. On, code can download packages but also reach anything this server’s network can.",
+    "codeTest": "Test the sandbox",
+    "codeTesting": "Testing… (images may be downloading)",
+    "codeTestOk": "Works (Docker {{version}})."
   },
   "notFound": {
     "title": "Page not found",
@@ -733,9 +753,11 @@
   },
   "tools": {
     "code": "Code",
-    "codeHelp": "Let the model run Python in your browser (in a sandbox) for calculations and data",
+    "codeHelp": "Let the model run code in a sandbox for calculations, data and charts",
     "image": "Image",
-    "imageHelp": "Let the model create images"
+    "imageHelp": "Let the model create images",
+    "running": "running…",
+    "done": "done"
   },
   "artifacts": {
     "preview": "Preview",

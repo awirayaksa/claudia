@@ -33,6 +33,7 @@ import type { MemoryLearner } from './modules/memories/learn';
 import type { McpOAuth } from './mcp/oauth';
 import type { FolderService } from './modules/chats/folders';
 import type { GitHubSources } from './rag/github-source';
+import type { CodeSandbox } from './code/sandbox';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -59,6 +60,8 @@ export interface ServerContext {
   usage: UsageService;
   rag: RagConfig;
   knowledge: KnowledgeService;
+  /** Server-side code runs (Docker). */
+  code: CodeSandbox;
   /** GitHub repositories synced into knowledge bases. */
   kbSources: GitHubSources;
   /** Folders (projects), shared or not. */

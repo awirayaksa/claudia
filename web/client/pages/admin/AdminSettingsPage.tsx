@@ -2,7 +2,14 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import type { AppSettingsResponse } from '@shared/settings';
-import { errorMessage, useAppSettingsQuery, useModelsQuery, useUpdateAppSettingMutation } from '../../api/rtk-api';
+import {
+  errorMessage,
+  useAppSettingsQuery,
+  useCodeStatusQuery,
+  useModelsQuery,
+  useTestCodeSandboxMutation,
+  useUpdateAppSettingMutation,
+} from '../../api/rtk-api';
 import { CapsFields, PermissionChecks } from '../../components/AccessFields';
 import { BannersEditor, DefaultsEditor } from './OpsSettings';
 
@@ -242,6 +249,10 @@ export function AdminSettingsPage() {
         </label>
       </Card>
 
+      <Card title={t('admin.code')}>
+        <CodeSettings value={draft.code} onChange={(code) => set('code', code)} />
+      </Card>
+
       <Card title={t('admin.builtinTools')}>
         <p className="mb-2 text-sm text-text-secondary">{t('admin.builtinToolsHelp')}</p>
         <div className="grid gap-1 sm:grid-cols-2">
@@ -332,6 +343,79 @@ export function AdminSettingsPage() {
         {saved && <span className="text-sm text-success">{t('app.saved')}</span>}
         {saveState.error && <span className="text-sm text-error">{errorMessage(saveState.error)}</span>}
       </div>
+    </div>
+  );
+}
+
+/** Where the code interpreter runs, and the server sandbox's limits. */
+function CodeSettings({ value, onChange }: { value: AppSettingsResponse['code']; onChange: (v: AppSettingsResponse['code']) => void }) {
+  const { t } = useTranslation();
+  const { data: status } = useCodeStatusQuery();
+  const [test, testState] = useTestCodeSandboxMutation();
+  const field = 'w-full rounded border border-border bg-background px-2 py-1';
+  const num = (key: 'memoryMb' | 'cpus' | 'timeoutSeconds', min: number, max: number, step = 1) => (
+    <label className="block text-sm">
+      <span className="mb-1 block">{t(`admin.code_${key}`)}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        className={field}
+        value={value[key]}
+        onChange={(e) => onChange({ ...value, [key]: Math.min(max, Math.max(min, Number(e.target.value) || min)) })}
+      />
+    </label>
+  );
+  return (
+    <div className="space-y-3">
+      <label className="block text-sm">
+        <span className="mb-1 block">{t('admin.codeEngine')}</span>
+        <select className={field} value={value.engine} onChange={(e) => onChange({ ...value, engine: e.target.value as typeof value.engine })} data-testid="code-engine">
+          <option value="browser">{t('admin.codeEngines.browser')}</option>
+          <option value="server">{t('admin.codeEngines.server')}</option>
+          <option value="off">{t('admin.codeEngines.off')}</option>
+        </select>
+      </label>
+      {value.engine === 'server' && (
+        <>
+          {status && !status.dockerConfigured && <p className="rounded border border-warning/40 px-3 py-2 text-xs text-text-secondary">{t('admin.codeNoDocker')}</p>}
+          <p className="text-xs text-text-secondary">{t('admin.codeServerHelp')}</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="block text-sm">
+              <span className="mb-1 block">{t('admin.codePythonImage')}</span>
+              <input className={field} value={value.pythonImage} onChange={(e) => onChange({ ...value, pythonImage: e.target.value })} />
+            </label>
+            <label className="block text-sm">
+              <span className="mb-1 block">{t('admin.codeNodeImage')}</span>
+              <input className={field} value={value.nodeImage} onChange={(e) => onChange({ ...value, nodeImage: e.target.value })} />
+            </label>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {num('memoryMb', 64, 16_384)}
+            {num('cpus', 0.1, 16, 0.1)}
+            {num('timeoutSeconds', 5, 3600)}
+          </div>
+          <label className="block text-sm">
+            <span className="mb-1 block">{t('admin.codeRuntime')}</span>
+            <input className={field} placeholder="runsc" value={value.runtime ?? ''} onChange={(e) => onChange({ ...value, runtime: e.target.value.trim() || null })} />
+          </label>
+          <label className="flex items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-0.5" checked={value.network} onChange={(e) => onChange({ ...value, network: e.target.checked })} />
+            <span>
+              {t('admin.codeNetwork')}
+              <span className="block text-xs text-text-secondary">{t('admin.codeNetworkHelp')}</span>
+            </span>
+          </label>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button size="sm" variant="secondary" disabled={!status?.dockerConfigured || testState.isLoading} onClick={() => void test()}>
+              {testState.isLoading ? t('admin.codeTesting') : t('admin.codeTest')}
+            </Button>
+            {testState.data?.ok && <span className="text-sm text-success">{t('admin.codeTestOk', { version: testState.data.version ?? '?' })}</span>}
+            {testState.data && !testState.data.ok && <span className="text-sm text-error">{testState.data.error}</span>}
+          </div>
+        </>
+      )}
     </div>
   );
 }

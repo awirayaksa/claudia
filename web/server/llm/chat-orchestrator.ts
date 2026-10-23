@@ -50,6 +50,8 @@ import type { KnowledgeService } from '../rag/knowledge';
 import { readableKbIds, sourcesPrompt, type SourceBuilder, type TurnSource } from '../rag/sources';
 import type { MessageRef } from '../../shared/knowledge';
 import { CLIENT_TOOL_NAMES, CODE_TOOL, NO_BROWSER_MESSAGE } from './client-tools';
+import { activeCodeEngine, RUN_CODE_TOOL, RUN_CODE_TOOL_NAME, runSummary as codeRunSummary, type CodeSandbox } from '../code/sandbox';
+import { workspaceMime } from '../../shared/workspace-files';
 import { generateImage, IMAGE_TOOL, IMAGE_TOOL_NAME } from '../media/images';
 import type { MediaConfig } from '../media/config';
 import type { Webhooks } from '../admin/webhooks';
@@ -84,8 +86,10 @@ export interface OrchestratorDeps {
   sources?: SourceBuilder;
   knowledge?: KnowledgeService;
   rag?: RagConfig;
-  /** Whether a sandbox origin exists (browser tools run there); without it, the code interpreter is off. */
+  /** Whether a sandbox origin exists (browser tools run there); without it, the browser code interpreter is off. */
   sandboxOrigin?: string | null;
+  /** Server-side code runs (without it, code runs in the browser only). */
+  code?: CodeSandbox;
   /** How long a browser tool may take to answer (default 120 s). */
   clientToolTimeoutMs?: number;
   /** Image generation (without it, it is off). */
@@ -140,6 +144,8 @@ interface RunPlan {
   code: boolean;
   /** The image generation tool is offered. */
   imageGen: boolean;
+  /** Where the code interpreter runs, when it is offered. */
+  codeEngine: 'browser' | 'server' | null;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
 }
 
@@ -212,7 +218,7 @@ export class ChatOrchestrator {
     const refs: MessageRef[] = existing ? (existing.meta?.refs ?? []) : req.refs;
     const webSearch = existing ? !!existing.meta?.webSearch : req.features.webSearch === true;
     const code = existing ? !!existing.meta?.code : req.features.code === true;
-    if (code) await this.checkCode(user);
+    const codeEngine = code ? await this.checkCode(user) : null;
     const imageGen = existing ? !!existing.meta?.imageGen : req.features.imageGen === true;
     if (imageGen) await this.checkImageGen(user);
     await this.checkRefs(user, refs, webSearch);
@@ -315,7 +321,7 @@ export class ChatOrchestrator {
         existing && req.params.effort === undefined && userNode.effort
           ? { ...req, params: { ...req.params, effort: userNode.effort } }
           : req;
-      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets, refs, webSearch, code, imageGen };
+      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets, refs, webSearch, code, codeEngine, imageGen };
       void withSpan('claudia.run', { 'claudia.run_id': run.id, 'claudia.chat_id': chat.id, 'enduser.id': user.id }, () => this.execute(plan)).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
         runs.finish(run, 'error');
@@ -551,13 +557,14 @@ export class ChatOrchestrator {
     try {
       const tools = [
         ...opts.toolset.definitions,
-        ...(plan.code ? [CODE_TOOL] : []),
+        ...(plan.codeEngine === 'browser' ? [CODE_TOOL] : plan.codeEngine === 'server' ? [RUN_CODE_TOOL] : []),
         ...(plan.imageGen ? [IMAGE_TOOL] : []),
         ...(opts.memory ? memoryToolDefinitions(!!chat.folderId) : []),
       ];
       const isMemoryTool = (name: string) => !!opts.memory && MEMORY_TOOL_NAMES.has(name);
-      const onServer = (name: string) => (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name);
-      const inBrowser = (name: string) => plan.code && CLIENT_TOOL_NAMES.has(name);
+      const onServer = (name: string) => (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name) || isServerCode(name);
+      const inBrowser = (name: string) => plan.codeEngine === 'browser' && CLIENT_TOOL_NAMES.has(name);
+      const isServerCode = (name: string) => plan.codeEngine === 'server' && name === RUN_CODE_TOOL_NAME;
       const firstTurnOnly = opts.toolset.firstTurnOnly || !!target.connection.quirks.toolsFirstTurnOnly;
       for (let iteration = 0; ; iteration++) {
         const offerTools = tools.length > 0 && (iteration === 0 || !firstTurnOnly);
@@ -634,7 +641,9 @@ export class ChatOrchestrator {
             async (span) => {
               const result = inBrowser(call.function.name)
                 ? await this.runInBrowser(plan, assistantId, call, signal)
-                : isMemoryTool(call.function.name)
+                : isServerCode(call.function.name)
+                  ? await this.runServerCode(plan, assistantId, call, signal)
+                  : isMemoryTool(call.function.name)
                   ? await this.memoryTool(plan, assistantId, call, opts.memory!)
                   : onServer(call.function.name)
                     ? await this.makeImage(plan, call, signal)
@@ -879,9 +888,94 @@ export class ChatOrchestrator {
     }
   }
 
-  private async checkCode(user: AuthUser): Promise<void> {
-    if (!this.deps.sandboxOrigin) throw badRequest('The code interpreter needs a sandbox origin (CLAUDIA_SANDBOX_ORIGIN).', 'code_unavailable');
+  /** Where the code interpreter runs for this turn, or a refusal. */
+  private async checkCode(user: AuthUser): Promise<'browser' | 'server'> {
+    const { engine } = await this.deps.settings.get('code');
+    const active = await activeCodeEngine(this.deps.settings, this.deps.sandboxOrigin, this.deps.code);
+    if (!active) {
+      throw badRequest(
+        engine === 'off'
+          ? 'The code interpreter is turned off.'
+          : engine === 'server'
+            ? 'Server-side code runs need a Docker daemon (CLAUDIA_CODE_DOCKER).'
+            : 'The code interpreter needs a sandbox origin (CLAUDIA_SANDBOX_ORIGIN).',
+        'code_unavailable'
+      );
+    }
     if (this.deps.access) await this.deps.access.require(user, 'features.code');
+    return active;
+  }
+
+  /**
+   * Run code in a server sandbox, with the turn's attachments in its working
+   * folder. Printed output streams to the browser as it comes; files the code
+   * writes are kept as the user's files and shown under the reply.
+   */
+  private async runServerCode(plan: RunPlan, messageId: string, call: ToolCall, signal: AbortSignal): Promise<ToolExecution> {
+    const fail = (message: string): ToolExecution => ({
+      serverId: 'claudia',
+      tool: RUN_CODE_TOOL_NAME,
+      result: { type: 'tool_result', callId: call.id, content: JSON.stringify({ error: message }), isError: true },
+    });
+    let args: { code?: unknown; language?: unknown };
+    try {
+      args = JSON.parse(call.function.arguments || '{}');
+    } catch {
+      return fail('Invalid arguments: expected JSON with "code".');
+    }
+    if (typeof args.code !== 'string' || !args.code.trim()) return fail('Give the program to run as "code".');
+    const language = args.language === 'node' ? 'node' : 'python';
+    const { files, code, runs } = this.deps;
+    if (!code || !files) return fail('Server-side code runs are not set up.');
+
+    // The attachments of this chat's path, the user's own and readable
+    const ids = [
+      ...new Set([...plan.history, plan.userNode].flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' && UUID.test(p.fileId) ? [p.fileId] : [])))),
+    ];
+    const inputs: Array<{ name: string; data: Buffer }> = [];
+    for (const row of await files.ownedByIds(plan.user.id, ids)) {
+      const data = await files.content(row).catch(() => null);
+      if (data) inputs.push({ name: row.name, data });
+    }
+
+    // Printed output, a few times a second
+    let pending = '';
+    let flushTimer: NodeJS.Timeout | null = null;
+    const flush = () => {
+      flushTimer = null;
+      if (!pending) return;
+      runs.emit(plan.run, { type: 'tool.output', messageId, callId: call.id, text: pending });
+      pending = '';
+    };
+    try {
+      const result = await code.run({
+        language,
+        code: args.code,
+        files: inputs,
+        signal,
+        onOutput: (_stream, text) => {
+          pending += text;
+          if (!flushTimer) flushTimer = setTimeout(flush, 200);
+        },
+      });
+      if (flushTimer) clearTimeout(flushTimer);
+      flush();
+      const extraParts: MessagePart[] = [];
+      for (const f of result.files) {
+        const row = await files.ingest(plan.user.id, { name: f.path.slice(0, 255), mime: workspaceMime(f.path), data: f.data });
+        extraParts.push({ type: 'file', fileId: row.id, name: row.name, mime: row.mime, size: row.size });
+      }
+      const failed = result.timedOut || result.oomKilled || result.stopped || (result.exitCode ?? 0) !== 0;
+      return {
+        serverId: 'claudia',
+        tool: RUN_CODE_TOOL_NAME,
+        result: { type: 'tool_result', callId: call.id, content: codeRunSummary(result, result.files.map((f) => f.path)), ...(failed ? { isError: true } : {}) },
+        ...(extraParts.length ? { extraParts } : {}),
+      };
+    } catch (err) {
+      if (flushTimer) clearTimeout(flushTimer);
+      return fail(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /**

@@ -48,7 +48,7 @@ merged into `main`). What is left:
 
 ## Deferred in the plan
 
-- [ ] Server-side (container) code execution.
+- [x] Server-side (container) code execution (Docker; see the README).
 - [ ] Sub-agents ("revisit after Phase 5", no decision yet).
 - [ ] Move the desktop app to the web's conversation format (message tree,
       sharing, multi-model).

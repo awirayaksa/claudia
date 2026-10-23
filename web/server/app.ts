@@ -66,6 +66,8 @@ import { MemoryLearner } from './modules/memories/learn';
 import { McpOAuth } from './mcp/oauth';
 import { FolderService } from './modules/chats/folders';
 import { GitHubSources } from './rag/github-source';
+import { CodeSandbox } from './code/sandbox';
+import { adminCodeRoutes } from './code/routes';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
 import { RagConfig } from './rag/config';
@@ -206,6 +208,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     webhooks,
   });
   const folderService = new FolderService({ db: deps.db.db, access });
+  const code = new CodeSandbox({ endpoint: deps.config.CLAUDIA_CODE_DOCKER ?? null, settings, log: app.log });
   const kbSources = new GitHubSources({
     db: deps.db.db,
     secrets,
@@ -271,6 +274,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       memories,
       memoryLearner,
       folders: folderService,
+      code,
       memoryIdleMs: deps.config.CLAUDIA_MEMORY_IDLE_SECONDS * 1000,
       ...deps.orchestrator,
     }),
@@ -287,6 +291,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     rag,
     knowledge,
     kbSources,
+    code,
     folders: folderService,
     memories,
     memoryLearner,
@@ -424,6 +429,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => mcpUserRoutes(a, ctx), { prefix: '/mcp' });
       await api.register((a) => toolRoutes(a, ctx), { prefix: '/tools' });
       await api.register((a) => adminMcpRoutes(a, ctx), { prefix: '/admin/mcp-servers' });
+      await api.register((a) => adminCodeRoutes(a, ctx), { prefix: '/admin/code' });
       await api.register((a) => adminUserRoutes(a, ctx), { prefix: '/admin/users' });
       await api.register((a) => adminConnectionRoutes(a, ctx), { prefix: '/admin/connections' });
       await api.register((a) => adminSettingsRoutes(a, ctx), { prefix: '/admin/settings' });

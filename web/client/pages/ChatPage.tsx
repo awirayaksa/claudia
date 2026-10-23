@@ -426,6 +426,7 @@ export function ChatPage() {
               path={path}
               running={running}
               modelName={modelName}
+              toolOutput={live?.toolOutput}
               onArenaVote={(turn, winner) => chat && void arenaVote({ chatId: chat.id, messageId: turn.id, winner })}
               onUndoMemory={(change) => chat && void undoMemory({ id: change.id, chatId: chat.id })}
               onSelect={(id) => chat && void updateChat({ id: chat.id, currentLeafId: id })}

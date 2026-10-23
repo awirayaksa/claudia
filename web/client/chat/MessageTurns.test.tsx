@@ -25,11 +25,11 @@ const node = (id: string, role: 'user' | 'assistant', text: string, extra: Parti
   ...extra,
 });
 
-function renderTurns(path: MessageNode[], onUndoMemory = vi.fn()) {
+function renderTurns(path: MessageNode[], onUndoMemory = vi.fn(), extra: { running?: boolean; toolOutput?: Record<string, string> } = {}) {
   render(
     <Provider store={createWebStore()}>
       <MemoryRouter>
-        <MessageTurns nodes={path} path={path} running={false} modelName={() => undefined} onUndoMemory={onUndoMemory} />
+        <MessageTurns nodes={path} path={path} running={extra.running ?? false} modelName={() => undefined} onUndoMemory={onUndoMemory} toolOutput={extra.toolOutput} />
       </MemoryRouter>
     </Provider>
   );
@@ -59,5 +59,23 @@ describe('message turns', () => {
     expect(divider).toHaveTextContent('The first exchange was summarized to fit the context');
     fireEvent.click(screen.getByText('The first exchange was summarized to fit the context'));
     expect(screen.getByText('They talked about one.')).toBeVisible();
+  });
+
+  it('shows what a running tool prints while the reply is written', () => {
+    const running = node('a', 'assistant', '', {
+      parentId: 'u',
+      status: 'streaming',
+      parts: [
+        { type: 'tool_call', callId: 'c1', alias: 'run_code', serverId: 'claudia', tool: 'run_code', args: '{}' },
+        { type: 'tool_call', callId: 'c0', alias: 'search', serverId: 's', tool: 'search', args: '{}' },
+        { type: 'tool_result', callId: 'c0', content: 'found' },
+      ],
+    });
+    renderTurns([node('u', 'user', 'Analyse it'), running], vi.fn(), { running: true, toolOutput: { c1: 'loading data\nrows: 3\n' } });
+    const live = screen.getByTestId('live-tools');
+    expect(live).toHaveTextContent('run_code');
+    expect(live).toHaveTextContent('running…');
+    expect(live).toHaveTextContent('search');
+    expect(screen.getByTestId('live-tool-output')).toHaveTextContent('rows: 3');
   });
 });

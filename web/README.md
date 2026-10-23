@@ -42,6 +42,14 @@ plus feature-parity work with Claude (issue #15):
   are replaced, removed ones leave, and an unchanged commit downloads
   nothing. Private repositories and GitHub Enterprise take an access token,
   stored encrypted; requests go through the SSRF guard.
+- **Code runs on the server** (Admin → Settings → Code interpreter): instead
+  of Pyodide in the browser, the model's `run_code` tool (Python or Node.js)
+  runs in a fresh Docker container per run: no network (unless allowed), an
+  unprivileged user without capabilities, memory, CPU, process and time
+  limits, optionally gVisor (`runsc`). The chat's attachments are copied into
+  `/workspace`; files the code writes (charts, spreadsheets…) come back under
+  the reply, and what it prints streams into the reply as it runs. See
+  [Code runs on the server](#code-runs-on-the-server).
 
 Phase 7 adds:
 
@@ -325,6 +333,7 @@ within about a minute and the branch can be answered again.
 | `ENABLE_PASSWORD_AUTH` | `true` | Local email + password sign-in |
 | `CLAUDIA_ADMIN_EMAIL`, `CLAUDIA_ADMIN_PASSWORD` | — | Create the first admin on first boot |
 | `CLAUDIA_ALLOW_STDIO_MCP` | `false` | Allow admins to configure stdio MCP servers (they run commands on the host, with only their own environment variables) |
+| `CLAUDIA_CODE_DOCKER` | — | Docker Engine API for server-side code runs: `unix:///var/run/docker.sock`, `tcp://host:2375` or `https://host:2376` (see [Code runs on the server](#code-runs-on-the-server)) |
 | `CLAUDIA_MEMORY_IDLE_SECONDS` | `120` | How long a chat stays quiet before it is read for memories to learn |
 | `ENABLE_LDAP` | — | Directory sign-in on/off; overrides the admin setting |
 | `LDAP_URL`, `LDAP_START_TLS` | — | `ldap://host:389` or `ldaps://host:636`; StartTLS for `ldap://` |
@@ -368,6 +377,36 @@ headers and environment variables, the LDAP bind password) with the new key.
 
 On a managed PostgreSQL where the app's role can't create extensions, run
 `CREATE EXTENSION vector;` once as an administrator before the first start.
+
+## Code runs on the server
+
+With **Admin → Settings → Code interpreter → In a sandbox on the server**,
+code the model writes runs in Docker containers that Claudia creates through
+the Engine API (`CLAUDIA_CODE_DOCKER`). Nothing is mounted from the host:
+attachments go in and output files come out through the API's archive
+endpoints, so the Docker host can be another machine. Each run gets a new
+container (removed afterwards) with `--network none`, user `65534`, all
+capabilities dropped, `no-new-privileges`, a process limit and the memory,
+CPU and time limits you set; a run that hits one is stopped and the model is
+told why.
+
+Access to a Docker API is powerful: whoever controls the app could start
+any container on that host. So:
+
+- **Safest:** a separate small VM that only runs code, with
+  [gVisor](https://gvisor.dev/docs/user_guide/install/) installed (set the
+  runtime to `runsc`), its API reachable only from the app (firewall, or TLS
+  with `https://`).
+- **Same host:** `docker compose -f docker-compose.yml -f compose.code.yml up -d`
+  puts a socket proxy in front of the local Docker socket that only allows
+  the endpoints code runs use.
+
+The default images (`python:3.12-slim`, `node:22-slim`) only have the
+standard libraries; build `web/docker/sandbox` (`docker build -t
+claudia-sandbox web/docker/sandbox`) for numpy, pandas, matplotlib,
+scikit-learn and more, plus Node.js, and set both images to
+`claudia-sandbox`. **Test the sandbox** pulls missing images and runs a test
+program. To run the real-Docker tests: `CLAUDIA_TEST_DOCKER=unix:///var/run/docker.sock npm test -- server/code`.
 
 ## OpenAI-compatible API
 

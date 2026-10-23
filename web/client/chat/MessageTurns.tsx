@@ -45,6 +45,8 @@ interface Props extends TurnHandlers {
   modelName: (id?: string) => string | undefined;
   /** Share links: no actions at all. */
   readOnly?: boolean;
+  /** What running tools printed so far, by call id (live runs). */
+  toolOutput?: Record<string, string>;
 }
 
 const FEEDBACK_REASONS = ['inaccurate', 'unhelpful', 'instructions', 'too_long', 'unsafe'] as const;
@@ -124,6 +126,38 @@ export function MessageTurns(props: Props) {
         <FollowUps items={last.followUps} onPick={(q) => props.onFollowUp?.(q)} />
       ) : null}
     </>
+  );
+}
+
+/** While a reply is being written: its tool calls, which are still running, and what they print. */
+function LiveTools({ node, output }: { node: MessageNode; output?: Record<string, string> }) {
+  const { t } = useTranslation();
+  const calls = node.parts.filter((p) => p.type === 'tool_call');
+  if (calls.length === 0) return null;
+  const done = new Set(node.parts.flatMap((p) => (p.type === 'tool_result' ? [p.callId] : [])));
+  return (
+    <ul className="mb-3 space-y-1.5 ps-[30px] text-xs" data-testid="live-tools">
+      {calls.map((c) => {
+        const printed = output?.[c.callId];
+        const running = !done.has(c.callId);
+        return (
+          <li key={c.callId} className="rounded-lg border border-border bg-surface">
+            <div className="flex items-center gap-2 px-3 py-1.5 text-text-secondary">
+              <span className={running ? 'animate-pulse text-accent' : 'text-success'} aria-hidden>
+                ●
+              </span>
+              <span className="font-mono">{c.tool || c.alias}</span>
+              <span>{running ? t('tools.running') : t('tools.done')}</span>
+            </div>
+            {running && printed && (
+              <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-border px-3 py-2 font-mono text-[11px]" data-testid="live-tool-output">
+                {printed.split('\n').slice(-40).join('\n')}
+              </pre>
+            )}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -247,7 +281,12 @@ function AssistantTurn(
   const { node, nodes, running, readOnly } = props;
   const navigate = useNavigate();
   if (node.status === 'streaming') {
-    return <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />;
+    return (
+      <>
+        <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />
+        <LiveTools node={node} output={props.toolOutput} />
+      </>
+    );
   }
   const versions = props.versions ?? siblingsOf(nodes, node);
   const index = versions.findIndex((v) => v.id === node.id);

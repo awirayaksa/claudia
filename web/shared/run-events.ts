@@ -19,6 +19,8 @@ export type RunEvent =
   | { type: 'message.tool_call'; messageId: string; part: PartOf<'tool_call'> }
   | { type: 'tool.started'; messageId: string; callId: string }
   | { type: 'tool.result'; messageId: string; part: PartOf<'tool_result'> }
+  /** What a running tool printed so far (server code runs), until its tool.result. */
+  | { type: 'tool.output'; messageId: string; callId: string; text: string }
   /**
    * A tool that runs in the browser (Phase 5: code interpreter). The client
    * answers with POST /api/runs/:id/tool-results; without an answer the

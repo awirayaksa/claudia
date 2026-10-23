@@ -49,6 +49,7 @@ claudia-web-<version>-airgap-amd64.tar.sha256   its checksum
 | `-Arch arm64` | For an ARM target (default `amd64`; built with emulation, slower) |
 | `-PgvectorImage <image>` | Database image (default `pgvector/pgvector:pg16`) |
 | `-NoLibreOffice` | Leave LibreOffice out of the image (about 600 MB smaller; Office files then convert to PDF approximately) |
+| `-CodeSandbox` | Also bundle `claudia-sandbox`, the image server-side code runs use (see [Code runs on the server](#code-runs-on-the-server)) |
 | `-SkipDockerPackages` | The target already has Docker and the compose plugin |
 | `-OutDir <dir>` | Where to write the bundle |
 | `-NoArchive` | Leave the bundle as a folder |
@@ -60,7 +61,8 @@ Inside the bundle:
 install.sh             installer and upgrader
 compose.yml            app + PostgreSQL (pgvector)
 compose.sandbox.yml    publishes the sandbox port
-images/                claudia-web.tar, pgvector.tar (docker save)
+images/                claudia-web.tar, pgvector.tar (docker save),
+                       claudia-sandbox.tar with -CodeSandbox
 debs/                  Docker Engine, containerd, compose and buildx plugins
                        for Ubuntu 24.04 (noble), with their dependencies
 bundle.env             version, commit and image names
@@ -123,6 +125,24 @@ Point the proxy at port 8080 and run the installer with
 port 8080. The proxy needs `proxy_buffering off`, a long `proxy_read_timeout`,
 and WebSocket upgrade for `/api/ws`. `web/docker/nginx.scale.conf` in the
 repository is a working example.
+
+### Code runs on the server
+
+By default the code interpreter runs Python in the user's browser, which
+downloads packages from the Pyodide CDN, so on an air-gapped network only
+the standard library works there. To run code on a Docker host instead,
+build the bundle with `-CodeSandbox` (its `claudia-sandbox` image has
+numpy, pandas, matplotlib and more, and Node.js) and:
+
+1. Choose the Docker host that runs the code. A separate VM is safest; this
+   host works too. On that host, `sudo docker load -i images/claudia-sandbox.tar`
+   (the installer already loaded it here).
+2. Let the app reach its Docker API, e.g. `CLAUDIA_CODE_DOCKER=tcp://10.0.0.30:2375`
+   in `/opt/claudia/.env` (protect that port: firewall it to this host, or
+   use TLS with `https://`), then `sudo docker compose up -d`.
+3. In **Admin → Settings → Code interpreter**, choose "In a sandbox on the
+   server", set both images to `claudia-sandbox:<version>` and press
+   **Test the sandbox**.
 
 ## Day to day
 
