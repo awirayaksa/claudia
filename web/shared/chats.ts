@@ -96,6 +96,8 @@ export const CompletionRequest = z.object({
   modelIds: z.array(z.string().min(1)).min(1).max(4),
   /** Answer the user node `parentId` again (new sibling replies); content and files are ignored. */
   regenerate: z.boolean().default(false),
+  /** Carry on this reply, cut off at the output limit, in the same message (by the model that wrote it). */
+  continueId: z.uuid().optional(),
   params: z
     .object({
       temperature: z.number().min(0).max(2).optional(),

@@ -72,6 +72,8 @@ export interface MessageMeta {
   compaction?: { summary: string; turns: number; modelId: string; at: string };
   /** Assistant nodes: memory changes made in or learned from this reply. */
   memoryChanges?: MemoryChangeView[];
+  /** Assistant nodes: cut off at the output limit (can be continued). */
+  stopReason?: 'length';
   /** Assistant nodes: the path up to here was read for memories to learn. */
   memoryScanned?: boolean;
 }

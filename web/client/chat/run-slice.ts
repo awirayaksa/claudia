@@ -98,6 +98,8 @@ const runSlice = createSlice({
             n.parts = e.parts;
             n.status = e.status;
             if (e.error) n.error = e.error;
+            if (e.stopReason) n.stopReason = e.stopReason;
+            else delete n.stopReason;
           }
           break;
         }

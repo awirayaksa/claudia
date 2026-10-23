@@ -146,7 +146,9 @@
     "removeModel": "Remove {{name}}",
     "compacted_one": "The first exchange was summarized to fit the context",
     "compacted_other": "The first {{count}} exchanges were summarized to fit the context",
-    "compactedSummary": "Summary the model sees instead"
+    "compactedSummary": "Summary the model sees instead",
+    "cutOff": "The reply reached the maximum length.",
+    "continue": "Continue"
   },
   "settings": {
     "title": "Settings",

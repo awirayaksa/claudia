@@ -358,6 +358,25 @@ export function ChatPage() {
     }
   };
 
+  const continueReply = async (node: MessageNode) => {
+    if (!chat || !node.parentId) return;
+    setSendError(null);
+    try {
+      const res = await sendCompletion({
+        chatId: chat.id,
+        parentId: node.parentId,
+        continueId: node.id,
+        // The server uses the model that wrote the reply
+        modelIds: [node.modelId ?? selectedModel],
+        params: sessionEffort ? { effort: sessionEffort } : {},
+        toolIds: enabledServerIds(mcpData?.servers),
+      }).unwrap();
+      follow(chat.id, res.runId);
+    } catch (err) {
+      setSendError(errorMessage(err));
+    }
+  };
+
   const editMessage = (node: MessageNode, text: string) => {
     const attachments = node.parts.flatMap((p) =>
       p.type === 'file' && p.fileId ? [{ id: p.fileId, type: 'file' as const, name: p.name, size: p.size ?? 0, mimeType: p.mime }] : []
@@ -432,6 +451,7 @@ export function ChatPage() {
               onSelect={(id) => chat && void updateChat({ id: chat.id, currentLeafId: id })}
               onEdit={editMessage}
               onRegenerate={regenerate}
+              onContinue={(node) => void continueReply(node)}
               onFork={fork}
               onRate={(node, rating, feedback) =>
                 chat && void rateMessage({ chatId: chat.id, messageId: node.id, rating, ...feedback })

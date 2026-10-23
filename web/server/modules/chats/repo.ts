@@ -105,6 +105,7 @@ export function toNode(m: MessageRow): MessageNode {
     ...(m.meta?.arena ? { arena: { winner: m.meta.arena.winner ?? null, models: m.meta.arena.models } } : {}),
     ...(m.meta?.compaction?.summary ? { compaction: { summary: m.meta.compaction.summary, turns: m.meta.compaction.turns } } : {}),
     ...(m.meta?.memoryChanges?.length ? { memoryChanges: m.meta.memoryChanges } : {}),
+    ...(m.meta?.stopReason === 'length' ? { stopReason: 'length' as const } : {}),
     createdAt: m.createdAt.toISOString(),
   };
 }

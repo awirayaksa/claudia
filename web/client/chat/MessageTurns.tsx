@@ -22,6 +22,8 @@ export interface TurnHandlers {
   /** Send an edited copy of a user message (a new version of it). */
   onEdit?: (node: MessageNode, text: string) => void;
   onRegenerate?: (node: MessageNode) => void;
+  /** Carry on a reply cut off at the output limit. */
+  onContinue?: (node: MessageNode) => void;
   onFork?: (node: MessageNode) => void;
   onRate?: (node: MessageNode, rating: 1 | -1 | null, feedback?: { comment?: string; reasons?: string[] }) => void;
   onFollowUp?: (text: string) => void;
@@ -161,6 +163,25 @@ function LiveTools({ node, output }: { node: MessageNode; output?: Record<string
   );
 }
 
+/** Under a reply that hit the output limit: say so, and offer to carry on. */
+function CutOffNotice({ disabled, onContinue }: { disabled: boolean; onContinue?: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="-mt-1 mb-4 flex flex-wrap items-center gap-2 ps-[30px] text-xs text-text-secondary" data-testid="cut-off">
+      <span>{t('chat.cutOff')}</span>
+      {onContinue && (
+        <button
+          className="rounded-full border border-border px-2.5 py-0.5 text-text-primary hover:border-accent hover:text-accent disabled:opacity-50"
+          disabled={disabled}
+          onClick={onContinue}
+        >
+          {t('chat.continue')}
+        </button>
+      )}
+    </div>
+  );
+}
+
 /** "Memory updated" under a reply: opens to list what changed, each undoable. */
 function MemoryChip({ changes, onUndo }: { changes: MemoryChange[]; onUndo?: (c: MemoryChange) => void }) {
   const { t } = useTranslation();
@@ -292,30 +313,35 @@ function AssistantTurn(
   const index = versions.findIndex((v) => v.id === node.id);
   const select = props.onVersion ?? ((id: string) => props.onSelect?.(leafUnder(nodes, id)));
   return (
-    <ChatMessage
-      message={toDisplayMessage(node)}
-      authorLabel={props.authorLabel}
-      onOpenSource={readOnly ? undefined : (src) => src.kind === 'chat' && src.id && navigate(`/c/${src.id}`)}
-      disabled={running}
-      onRetry={!readOnly && props.onRegenerate ? () => props.onRegenerate!(node) : undefined}
-      onBranch={!readOnly && props.onFork ? () => props.onFork!(node) : undefined}
-      rating={node.rating}
-      hideRatings={readOnly}
-      onRate={
-        !readOnly && props.onRate
-          ? (rating) => {
-              props.onRate!(node, rating);
-              if (rating === -1) props.onFeedback(node.id);
-            }
-          : undefined
-      }
-      actions={
-        <>
-          <VersionSwitcher index={index} count={versions.length} disabled={running} onChange={(i) => select(versions[i].id)} />
-          {!readOnly && props.readAloud && props.readAloud !== 'none' && <ReadAloudButton mode={props.readAloud} text={nodeText(node)} />}
-        </>
-      }
-    />
+    <>
+      <ChatMessage
+        message={toDisplayMessage(node)}
+        authorLabel={props.authorLabel}
+        onOpenSource={readOnly ? undefined : (src) => src.kind === 'chat' && src.id && navigate(`/c/${src.id}`)}
+        disabled={running}
+        onRetry={!readOnly && props.onRegenerate ? () => props.onRegenerate!(node) : undefined}
+        onBranch={!readOnly && props.onFork ? () => props.onFork!(node) : undefined}
+        rating={node.rating}
+        hideRatings={readOnly}
+        onRate={
+          !readOnly && props.onRate
+            ? (rating) => {
+                props.onRate!(node, rating);
+                if (rating === -1) props.onFeedback(node.id);
+              }
+            : undefined
+        }
+        actions={
+          <>
+            <VersionSwitcher index={index} count={versions.length} disabled={running} onChange={(i) => select(versions[i].id)} />
+            {!readOnly && props.readAloud && props.readAloud !== 'none' && <ReadAloudButton mode={props.readAloud} text={nodeText(node)} />}
+          </>
+        }
+      />
+      {node.stopReason === 'length' && !readOnly && (
+        <CutOffNotice disabled={running} onContinue={props.onContinue ? () => props.onContinue!(node) : undefined} />
+      )}
+    </>
   );
 }
 
