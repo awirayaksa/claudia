@@ -28,6 +28,7 @@ export const UserSettingsSchema = z.object({
       showReasoning: z.boolean(),
       showStatistics: z.boolean(),
       visualExplanations: z.boolean(),
+      pasteLongTextAsFile: z.boolean(),
       systemPrompt: z.string().max(100_000),
       systemPromptFileName: z.string().max(255),
       reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),

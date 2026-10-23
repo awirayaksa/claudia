@@ -26,6 +26,7 @@ const PREFERENCE_KEYS = [
   'showReasoning',
   'showStatistics',
   'visualExplanations',
+  'pasteLongTextAsFile',
   'systemPrompt',
   'systemPromptFileName',
   'updateCheckUrl',
