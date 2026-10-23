@@ -46,6 +46,49 @@ export const kbFiles = pgTable(
   (t) => [primaryKey({ columns: [t.kbId, t.fileId] }), index('kb_files_file_idx').on(t.fileId)]
 );
 
+/** What a GitHub source pulls: a repository, a branch or tag, and paths in it. */
+export interface GitHubSourceConfig {
+  /** "owner/name". */
+  repo: string;
+  /** Branch, tag or commit; null = the default branch. */
+  ref: string | null;
+  /** Folders ("docs/") and files to include; empty = the whole repository. */
+  paths: string[];
+  /** GitHub Enterprise: its API address; null = api.github.com. */
+  apiUrl: string | null;
+}
+
+/** What the last sync brought in: the commit, and each path's blob and the file made from it. */
+export interface GitHubSourceState {
+  commit?: string;
+  files?: Record<string, { sha: string; fileId: string }>;
+}
+
+/**
+ * Places a knowledge base pulls files from and can sync again (a GitHub
+ * repository). Its files are kept as the knowledge base owner's files.
+ */
+export const kbSources = pgTable(
+  'kb_sources',
+  {
+    id: uuid('id').primaryKey(),
+    kbId: uuid('kb_id')
+      .notNull()
+      .references(() => knowledgeBases.id, { onDelete: 'cascade' }),
+    kind: text('kind').$type<'github'>().notNull(),
+    config: jsonb('config').$type<GitHubSourceConfig>().notNull(),
+    /** An access token for private repositories, encrypted. */
+    tokenCipher: text('token_cipher'),
+    state: jsonb('state').$type<GitHubSourceState>().notNull().default({}),
+    status: text('status').$type<'queued' | 'syncing' | 'ready' | 'failed'>().notNull().default('queued'),
+    error: text('error'),
+    lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('kb_sources_kb_idx').on(t.kbId)]
+);
+
 export type ChunkSource = 'file' | 'memory';
 
 /**

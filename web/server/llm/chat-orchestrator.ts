@@ -41,6 +41,7 @@ import type { FileService } from '../modules/files/service';
 import type { SkillService } from '../modules/skills/service';
 import type { UsageService } from '../modules/usage/service';
 import type { MemoryStore } from '../modules/memories/store';
+import type { FolderService } from '../modules/chats/folders';
 import { MemoryLearner } from '../modules/memories/learn';
 import { MEMORY_TOOL_NAMES, memoryToolDefinitions, runMemoryTool } from '../modules/memories/tools';
 import type { AccessService } from '../auth/access';
@@ -91,6 +92,8 @@ export interface OrchestratorDeps {
   media?: MediaConfig;
   /** run.completed goes to admin webhooks. */
   webhooks?: Webhooks;
+  /** Folders shared with the user (without it, only their own folders apply). */
+  folders?: FolderService;
   /** Memories (without them, none are sent or learned). */
   memories?: MemoryStore;
   memoryLearner?: MemoryLearner;
@@ -354,7 +357,7 @@ export class ChatOrchestrator {
     if (typeof prefs.systemPrompt === 'string' && prefs.systemPrompt.trim()) before.push(sys(prefs.systemPrompt));
     const after: ChatMessage[] = [];
     const userText = plan.userNode.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
-    const folders = await this.repo.folderChain(user.id, chat.folderId);
+    const folders = await this.folderChain(user, chat.folderId);
     const folderIds = folders.map((f) => f.id);
     // Temporary chats never write memory; the model gets memory tools only if an admin allows them
     const learns = !!this.deps.memories && !chat.temporary && MemoryLearner.learns(userSettings);
@@ -694,6 +697,11 @@ export class ChatOrchestrator {
     return status;
   }
 
+  /** The folders whose instructions and knowledge apply, top-down (shared ones too). */
+  private folderChain(user: AuthUser, folderId: string | null) {
+    return this.deps.folders ? this.deps.folders.chain(user, folderId) : this.repo.folderChain(user.id, folderId);
+  }
+
   private maxTokens(plan: RunPlan, target: ResolvedModel): number | undefined {
     return plan.chat.params.maxTokens ?? target.custom?.params?.maxTokens;
   }
@@ -950,9 +958,20 @@ export class ChatOrchestrator {
     const { access, sources } = this.deps;
     if (!access || !sources) return [];
     const { user, chat, refs } = plan;
-    const folderKbs = (await this.repo.folderChain(user.id, chat.folderId)).flatMap((f) => f.knowledgeIds ?? []);
-    const mine = [...refs.flatMap((r) => (r.type === 'kb' ? [r.id] : [])), ...folderKbs];
+    const chain = await this.folderChain(user, chat.folderId);
+    const mine = [...refs.flatMap((r) => (r.type === 'kb' ? [r.id] : [])), ...chain.flatMap((f) => (f.userId === user.id ? (f.knowledgeIds ?? []) : []))];
     const kbIds = new Set(await readableKbIds(this.deps.db, mine, async (kb) => (await access.rights(user, 'knowledge', kb)).read));
+    // A shared folder's knowledge: what its owner can read (or the user can)
+    for (const f of chain) {
+      if (f.userId === user.id || !f.knowledgeIds?.length) continue;
+      const [owner] = await this.deps.db.select({ id: users.id, role: users.role }).from(users).where(eq(users.id, f.userId));
+      const ok = await readableKbIds(
+        this.deps.db,
+        f.knowledgeIds,
+        async (kb) => (await access.rights(user, 'knowledge', kb)).read || (!!owner && (await access.rights(owner, 'knowledge', kb)).read)
+      );
+      for (const id of ok) kbIds.add(id);
+    }
     for (const t of plan.targets) {
       const custom = t.model.custom;
       if (!custom?.knowledgeIds.length) continue;

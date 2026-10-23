@@ -19,6 +19,7 @@ import { ChatRepo, pathTo, toNode } from '../chats/repo';
 import { transcriptOf } from '../../llm/compaction';
 import { MAX_MEMORIES, MAX_MEMORY_CHARS, MEMORY_TOPICS, type MemoryTopic } from '../../../shared/workspace';
 import type { MemoryStore } from './store';
+import type { FolderService } from '../chats/folders';
 import { SENSITIVE_HINT } from './tools';
 import type { MessageNode } from '../../../../src/types/turn.types';
 
@@ -144,6 +145,7 @@ export class MemoryLearner {
       settings: AppSettings;
       models: ModelRegistry;
       store: MemoryStore;
+      folders: FolderService;
       jobs: JobQueue;
       log: FastifyBaseLogger;
     }
@@ -208,7 +210,7 @@ export class MemoryLearner {
 
     const model = await this.model(async () => (leaf.modelId ? this.deps.models.resolve(leaf.modelId, user.role, userId) : null));
     if (!model) return;
-    const folderIds = (await this.repo.folderChain(userId, chat.folderId)).map((f) => f.id);
+    const folderIds = (await this.deps.folders.chain({ id: userId, role: user.role }, chat.folderId)).map((f) => f.id);
     const known = await this.deps.store.forChat(userId, folderIds);
     const transcript = transcriptOf(fresh).slice(-TRANSCRIPT_CHARS);
     const res = await withTimeout(

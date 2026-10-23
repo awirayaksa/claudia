@@ -10,17 +10,20 @@ import type { FastifyInstance } from 'fastify';
 import { and, asc, eq, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ServerContext } from '../../context';
-import { files, kbFiles, knowledgeBases, users } from '../../db/schema';
+import { files, kbFiles, kbSources, knowledgeBases, users } from '../../db/schema';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors';
 import { uuidv7 } from '../../lib/ids';
 import { parsePatch } from '../../lib/validation';
 import { currentUser, requireAdmin, requireUser } from '../../auth/rbac';
 import type { Principal } from '../../auth/access';
 import { registerAccessRoutes } from '../workspace/access-routes';
-import { KnowledgeInput, RagSettingsUpdate, type KbFileView, type KnowledgeDetail, type KnowledgeView } from '../../../shared/knowledge';
+import { GitHubSourceInput, KnowledgeInput, RagSettingsUpdate, type KbFileView, type KnowledgeDetail, type KnowledgeView } from '../../../shared/knowledge';
+import { toSourceView } from '../../rag/github-source';
 
 const IdParams = z.object({ id: z.uuid() });
 const MAX_FILES = 1000;
+/** Repositories one knowledge base syncs. */
+const MAX_SOURCES = 10;
 
 type KbRow = typeof knowledgeBases.$inferSelect;
 
@@ -98,7 +101,57 @@ export async function knowledgeRoutes(app: FastifyInstance, ctx: ServerContext):
       chunks: f.link.chunkCount,
       addedAt: f.link.createdAt.toISOString(),
     }));
-    return { knowledge: { ...toView(row.kb, row.ownerName, Number(row.files), row.rights), files: fileViews } };
+    const sources = await ctx.db.select().from(kbSources).where(eq(kbSources.kbId, id)).orderBy(asc(kbSources.createdAt));
+    return { knowledge: { ...toView(row.kb, row.ownerName, Number(row.files), row.rights), files: fileViews, sources: sources.map(toSourceView) } };
+  });
+
+  // ─── Sources: a GitHub repository, synced into the knowledge base ──────────
+
+  const sourceOf = async (kbId: string, sourceId: string) => {
+    const [source] = await ctx.db.select().from(kbSources).where(and(eq(kbSources.id, sourceId), eq(kbSources.kbId, kbId)));
+    if (!source) throw notFound('Source');
+    return source;
+  };
+
+  app.post('/:id/sources', async (req, reply) => {
+    const me = currentUser(req);
+    const { id } = IdParams.parse(req.params);
+    await writable(me, id);
+    const body = GitHubSourceInput.parse(req.body);
+    const [{ n }] = await ctx.db.select({ n: sql<number>`count(*)::int` }).from(kbSources).where(eq(kbSources.kbId, id));
+    if (Number(n) >= MAX_SOURCES) throw badRequest(`A knowledge base can sync at most ${MAX_SOURCES} repositories.`, 'too_many_sources');
+    const [source] = await ctx.db
+      .insert(kbSources)
+      .values({
+        id: uuidv7(),
+        kbId: id,
+        kind: 'github',
+        config: { repo: body.repo, ref: body.ref || null, paths: body.paths, apiUrl: body.apiUrl ?? null },
+        tokenCipher: body.token ? ctx.secrets.encrypt(body.token) : null,
+        createdBy: me.id,
+      })
+      .returning();
+    await ctx.kbSources.queue(source.id);
+    reply.code(202);
+    return { source: toSourceView(source) };
+  });
+
+  // Pull the latest commit (nothing changes if the repository didn't)
+  app.post('/:id/sources/:sourceId/sync', async (req, reply) => {
+    const { id, sourceId } = z.object({ id: z.uuid(), sourceId: z.uuid() }).parse(req.params);
+    await writable(currentUser(req), id);
+    await sourceOf(id, sourceId);
+    await ctx.kbSources.queue(sourceId);
+    reply.code(202);
+    return { ok: true };
+  });
+
+  // The source goes, and so do the files it brought in
+  app.delete('/:id/sources/:sourceId', async (req) => {
+    const { id, sourceId } = z.object({ id: z.uuid(), sourceId: z.uuid() }).parse(req.params);
+    const row = await writable(currentUser(req), id);
+    await ctx.kbSources.remove(await sourceOf(id, sourceId), row.kb.ownerId);
+    return { ok: true };
   });
 
   app.post('/', async (req, reply) => {

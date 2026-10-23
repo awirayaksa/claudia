@@ -29,6 +29,19 @@ plus feature-parity work with Claude (issue #15):
   them. An admin's sign-in to a shared server is used by everyone. The
   authorization server sends the browser back to `/api/mcp/oauth/callback`,
   so set `CLAUDIA_PUBLIC_URL` behind a proxy.
+- **Shared folders (projects)** (a folder's menu → Share…): share a folder
+  with people or groups as viewers or editors. They see it, with its
+  subfolders, and their own chats in it use its instructions and knowledge
+  (searched with the owner's access); nobody sees anyone else's chats in it.
+  Editors can change its name, instructions and knowledge; only the owner
+  shares, moves or deletes it.
+- **GitHub repositories as knowledge** (Workspace → Knowledge → a knowledge
+  base → Add a GitHub repository): the chosen folders and files of a
+  branch or tag (documents, text and code, up to 500 files) come in as the
+  knowledge base's files. Sync now pulls the latest commit: changed files
+  are replaced, removed ones leave, and an unchanged commit downloads
+  nothing. Private repositories and GitHub Enterprise take an access token,
+  stored encrypted; requests go through the SSRF guard.
 
 Phase 7 adds:
 

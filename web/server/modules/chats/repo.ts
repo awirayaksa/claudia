@@ -61,13 +61,23 @@ export function toShareView(s: ShareRow): ShareView {
   return { token: s.token, title: s.title, createdAt: s.createdAt.toISOString(), updatedAt: s.updatedAt.toISOString() };
 }
 
-export function toFolder(f: FolderRow): Folder {
+/** A folder as its owner (default) or someone it was shared with sees it. */
+export function toFolder(
+  f: FolderRow,
+  as: { ownerName?: string | null; canEdit?: boolean; canManage?: boolean; shared?: boolean } = {}
+): Folder {
+  const mine = as.canManage ?? true;
   return {
     id: f.id,
     parentId: f.parentId,
     name: f.name,
     systemPrompt: f.systemPrompt,
     knowledgeIds: f.knowledgeIds ?? [],
+    mine,
+    ownerName: mine ? null : (as.ownerName ?? null),
+    canEdit: as.canEdit ?? true,
+    canManage: mine,
+    shared: as.shared ?? false,
     createdAt: f.createdAt.toISOString(),
   };
 }

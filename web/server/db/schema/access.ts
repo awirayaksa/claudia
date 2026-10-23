@@ -41,7 +41,7 @@ export const groupMembers = pgTable(
   (t) => [primaryKey({ columns: [t.groupId, t.userId] }), index('group_members_user_idx').on(t.userId)]
 );
 
-export type ResourceType = 'model' | 'prompt' | 'knowledge' | 'note' | 'channel';
+export type ResourceType = 'model' | 'prompt' | 'knowledge' | 'note' | 'channel' | 'folder';
 export type PrincipalType = 'user' | 'group' | 'public';
 
 /**

@@ -137,6 +137,15 @@ export const Folder = z.object({
   systemPrompt: z.string().nullable(),
   /** Knowledge bases searched for every chat in it. */
   knowledgeIds: z.array(z.string()),
+  /** Yours; else it (or a folder above it) was shared with you by `ownerName`. */
+  mine: z.boolean(),
+  ownerName: z.string().nullable(),
+  /** You may change its name, instructions and knowledge. */
+  canEdit: z.boolean(),
+  /** You may share, move and delete it (the owner). */
+  canManage: z.boolean(),
+  /** Yours, and shared with someone. */
+  shared: z.boolean(),
   createdAt: z.string(),
 });
 export type Folder = z.infer<typeof Folder>;

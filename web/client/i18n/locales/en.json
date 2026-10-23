@@ -643,7 +643,32 @@
     "fullContext": "Send whole documents when they fit",
     "fullContextHelp": "Instead of the most relevant passages. Good for a few short documents.",
     "deleteTitle": "Delete knowledge base?",
-    "deleteBody": "\"{{name}}\" and its index will be deleted. The files stay in your files."
+    "deleteBody": "\"{{name}}\" and its index will be deleted. The files stay in your files.",
+    "sources": "Synced from GitHub",
+    "sourcesHelp": "Keep a repository’s documentation in this knowledge base and sync it when it changes.",
+    "addGitHub": "Add a GitHub repository",
+    "repo": "Repository",
+    "ref": "Branch or tag",
+    "refPlaceholder": "Branch or tag (default branch)",
+    "paths": "Folders and files",
+    "pathsHelp": "One per line, e.g. docs/ or README.md. Empty: the whole repository. Only documents, text and code files are taken, up to 500.",
+    "privateRepo": "Private repository or GitHub Enterprise",
+    "token": "Access token",
+    "apiUrl": "API address (GitHub Enterprise)",
+    "tokenHelp": "A fine-grained token with read access to the repository’s contents. It is stored encrypted.",
+    "addAndSync": "Add and sync",
+    "private": "private",
+    "wholeRepo": "The whole repository",
+    "sourceFiles_one": "{{count}} file",
+    "sourceFiles_other": "{{count}} files",
+    "syncedAt": "synced {{when}}",
+    "syncNow": "Sync now",
+    "sourceStatus": {
+      "queued": "Waiting",
+      "syncing": "Syncing…",
+      "ready": "Up to date",
+      "failed": "Failed"
+    }
   },
   "folder": {
     "settings": "Folder settings",
@@ -651,7 +676,15 @@
     "systemPromptPlaceholder": "Instructions for every chat in this folder",
     "knowledge": "Knowledge bases",
     "knowledgeHelp": "Searched for every chat in this folder and its subfolders.",
-    "noKnowledge": "You have no knowledge bases yet (Workspace → Knowledge)."
+    "noKnowledge": "You have no knowledge bases yet (Workspace → Knowledge).",
+    "share": "Share…",
+    "shared": "shared",
+    "sharedHint": "Shared with others",
+    "sharedBy": "Shared with you by {{name}}",
+    "sharedViewer": "{{name}} shared this folder with you. Your chats in it use its instructions and knowledge; only you see them.",
+    "sharedEditor": "{{name}} shared this folder with you and lets you change its instructions and knowledge. Your chats in it are yours only.",
+    "ownerKnowledge_one": "Also {{count}} knowledge base the owner added.",
+    "ownerKnowledge_other": "Also {{count}} knowledge bases the owner added."
   },
   "rag": {
     "title": "Knowledge",

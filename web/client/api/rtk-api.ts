@@ -42,7 +42,16 @@ import type {
   WebhookView,
   WebhookWithSecret,
 } from '@shared/admin';
-import type { KnowledgeDetail, KnowledgeInput, KnowledgeView, RagSettingsResponse, RagSettingsUpdate, SearchHit } from '@shared/knowledge';
+import type {
+  GitHubSourceInput,
+  KbSourceView,
+  KnowledgeDetail,
+  KnowledgeInput,
+  KnowledgeView,
+  RagSettingsResponse,
+  RagSettingsUpdate,
+  SearchHit,
+} from '@shared/knowledge';
 import type {
   GrantInput,
   GrantView,
@@ -69,7 +78,7 @@ import type {
 } from '@shared/workspace';
 
 /** What can be shared, and where its access routes are. */
-export type AccessKind = 'models' | 'prompts' | 'knowledge' | 'notes' | 'channels';
+export type AccessKind = 'models' | 'prompts' | 'knowledge' | 'notes' | 'channels' | 'folders';
 
 export interface ApiErrorShape {
   status: number;
@@ -400,7 +409,7 @@ export const api = createApi({
         method: 'PUT',
         body: { grants },
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: 'Grants', id }, 'Models'],
+      invalidatesTags: (_r, _e, { id, kind }) => [{ type: 'Grants', id }, 'Models', ...(kind === 'folders' ? (['Folders'] as const) : [])],
     }),
     myGroups: b.query<{ groups: GroupRef[] }, void>({ query: () => '/directory/groups', providesTags: ['MyGroups'] }),
     findUsers: b.query<{ users: Array<{ id: string; name: string; email: string }> }, string>({
@@ -431,6 +440,18 @@ export const api = createApi({
     }),
     removeKnowledgeFile: b.mutation<{ ok: true }, { id: string; fileId: string }>({
       query: ({ id, fileId }) => ({ url: `/knowledge/${id}/files/${fileId}`, method: 'DELETE' }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    addKnowledgeSource: b.mutation<{ source: KbSourceView }, { id: string } & GitHubSourceInput>({
+      query: ({ id, ...body }) => ({ url: `/knowledge/${id}/sources`, method: 'POST', body }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Knowledge', id }],
+    }),
+    syncKnowledgeSource: b.mutation<{ ok: true }, { id: string; sourceId: string }>({
+      query: ({ id, sourceId }) => ({ url: `/knowledge/${id}/sources/${sourceId}/sync`, method: 'POST' }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Knowledge', id }],
+    }),
+    removeKnowledgeSource: b.mutation<{ ok: true }, { id: string; sourceId: string }>({
+      query: ({ id, sourceId }) => ({ url: `/knowledge/${id}/sources/${sourceId}`, method: 'DELETE' }),
       invalidatesTags: ['Knowledge'],
     }),
     reindexKnowledge: b.mutation<{ ok: true }, string>({
@@ -930,6 +951,9 @@ export const {
   useRemoveGroupMemberMutation,
   useKnowledgeListQuery,
   useKnowledgeQuery,
+  useAddKnowledgeSourceMutation,
+  useSyncKnowledgeSourceMutation,
+  useRemoveKnowledgeSourceMutation,
   useCreateKnowledgeMutation,
   useUpdateKnowledgeMutation,
   useDeleteKnowledgeMutation,

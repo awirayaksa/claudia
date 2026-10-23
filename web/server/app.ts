@@ -64,6 +64,8 @@ import { memoryRoutes } from './modules/memories/routes';
 import { MemoryStore } from './modules/memories/store';
 import { MemoryLearner } from './modules/memories/learn';
 import { McpOAuth } from './mcp/oauth';
+import { FolderService } from './modules/chats/folders';
+import { GitHubSources } from './rag/github-source';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
 import { RagConfig } from './rag/config';
@@ -203,11 +205,21 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     log: app.log,
     webhooks,
   });
+  const folderService = new FolderService({ db: deps.db.db, access });
+  const kbSources = new GitHubSources({
+    db: deps.db.db,
+    secrets,
+    files,
+    knowledge,
+    jobs: jobQueue,
+    policy: () => ({ allow: settings.peek('net.allowlist').hosts }),
+    log: app.log,
+  });
   // With embeddings on, memories are also searchable by meaning
   const memories = new MemoryStore(deps.db.db, async (memoryId) => {
     if (await rag.embedderKey()) await jobQueue.enqueue('memory.embed', { memoryId });
   });
-  const memoryLearner = new MemoryLearner({ db: deps.db.db, settings, models, store: memories, jobs: jobQueue, log: app.log });
+  const memoryLearner = new MemoryLearner({ db: deps.db.db, settings, models, store: memories, folders: folderService, jobs: jobQueue, log: app.log });
   const netPolicy = () => ({ allow: settings.peek('net.allowlist').hosts });
   const sources = new SourceBuilder({
     db: deps.db.db,
@@ -258,6 +270,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       webhooks,
       memories,
       memoryLearner,
+      folders: folderService,
       memoryIdleMs: deps.config.CLAUDIA_MEMORY_IDLE_SECONDS * 1000,
       ...deps.orchestrator,
     }),
@@ -273,6 +286,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     usage,
     rag,
     knowledge,
+    kbSources,
+    folders: folderService,
     memories,
     memoryLearner,
     jobs: jobQueue,

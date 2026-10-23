@@ -31,6 +31,8 @@ import type { ScheduleRunner } from './modules/schedules/service';
 import type { MemoryStore } from './modules/memories/store';
 import type { MemoryLearner } from './modules/memories/learn';
 import type { McpOAuth } from './mcp/oauth';
+import type { FolderService } from './modules/chats/folders';
+import type { GitHubSources } from './rag/github-source';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -57,6 +59,10 @@ export interface ServerContext {
   usage: UsageService;
   rag: RagConfig;
   knowledge: KnowledgeService;
+  /** GitHub repositories synced into knowledge bases. */
+  kbSources: GitHubSources;
+  /** Folders (projects), shared or not. */
+  folders: FolderService;
   /** What chats know about each user, and learning it from chats. */
   memories: MemoryStore;
   memoryLearner: MemoryLearner;
