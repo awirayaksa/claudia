@@ -5,7 +5,23 @@ app's code in `../src` (components, providers, stream parser) and
 `../electron/services` (MCP, built-in tools) through aliases and the platform
 adapter in `src/platform`. See [PLAN.md](PLAN.md) for the design and roadmap.
 
-Status: **Phase 7** (optional extras), the last phase of [PLAN.md](PLAN.md). Phase 7 adds:
+Status: **Phase 7** (optional extras), the last phase of [PLAN.md](PLAN.md),
+plus feature-parity work with Claude (issue #15):
+
+- **Long chats keep going** (Admin → Settings → Long chats): near the
+  model's context limit, the oldest exchanges are summarized and the summary
+  is sent in their place (the last few stay word for word). The summary is
+  kept on the chat and reused; a divider in the chat opens to show it.
+- **Memory that learns** (Settings → Memory): once a chat has been quiet for
+  a while, a model reads it for lasting facts (work, preferences, projects,
+  people) and merges them with what is remembered, grouped by topic. Admins
+  can also give the model memory tools to save, change and forget memories
+  during a chat. Every change shows as a chip under the reply, where it can
+  be undone. Temporary chats are never read; sensitive topics (health,
+  finances…) are skipped unless the user allows them. Memories can belong to
+  one folder (a project), and another assistant's memories can be imported.
+
+Phase 7 adds:
 
 - **Single sign-on** (Admin → Sign-in): any OpenID Connect provider (Entra
   ID, Google, Okta, Keycloak, Authentik…) as "Continue with …" buttons, with
@@ -129,7 +145,9 @@ Phase 3 (workspace):
   `{{variables}}` (and `{{name:default}}`) that the composer asks for before
   putting the text in the message box. Shared the same way as models.
 - **Memory** (Settings → Memory): things every chat should know about you,
-  sent with each message (can be switched off).
+  sent with each message (can be switched off). Since the feature-parity
+  work, memories are sorted into topics, can belong to one folder, are
+  learned from chats and can be imported (see the top of this file).
 - **Your own tool servers** (Settings → Tools): remote MCP servers (HTTP or
   SSE) through the SSRF guard, with the `mcp.user_servers` permission.
 - **API keys and an OpenAI-compatible API** (Settings → API keys): `ck-…`
@@ -285,6 +303,7 @@ within about a minute and the branch can be answered again.
 | `ENABLE_PASSWORD_AUTH` | `true` | Local email + password sign-in |
 | `CLAUDIA_ADMIN_EMAIL`, `CLAUDIA_ADMIN_PASSWORD` | — | Create the first admin on first boot |
 | `CLAUDIA_ALLOW_STDIO_MCP` | `false` | Allow admins to configure stdio MCP servers (they run commands on the host, with only their own environment variables) |
+| `CLAUDIA_MEMORY_IDLE_SECONDS` | `120` | How long a chat stays quiet before it is read for memories to learn |
 | `ENABLE_LDAP` | — | Directory sign-in on/off; overrides the admin setting |
 | `LDAP_URL`, `LDAP_START_TLS` | — | `ldap://host:389` or `ldaps://host:636`; StartTLS for `ldap://` |
 | `LDAP_BIND_MODE` | `search` | `search`: a service account looks the user up, then the user binds. `direct` (Active Directory): users bind as `username@domain`, the domain being `LDAP_SIGN_IN_DOMAIN`, else the `dc=` parts of `LDAP_USER_SEARCH_BASE` (the base DN); no service account or search |

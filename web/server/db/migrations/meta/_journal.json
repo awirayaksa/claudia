@@ -64,6 +64,13 @@
       "when": 1792295332079,
       "tag": "0008_phase7_extras",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1792721992341,
+      "tag": "0009_phase8_memory",
+      "breakpoints": true
     }
   ]
 }

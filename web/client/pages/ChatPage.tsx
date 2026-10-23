@@ -23,6 +23,7 @@ import {
   useForkChatMutation,
   useMcpServersQuery,
   useArenaVoteMutation,
+  useUndoMemoryChangeMutation,
   useChatsQuery,
   useNotesQuery,
   useKnowledgeListQuery,
@@ -91,6 +92,7 @@ export function ChatPage() {
   const skills = useAppSelector((s) => s.skills.skills);
   const { data: mcpData, refetch: refetchMcp } = useMcpServersQuery();
   const [arenaVote] = useArenaVoteMutation();
+  const [undoMemory] = useUndoMemoryChangeMutation();
   const { data: promptData } = usePromptsQuery({ scope: 'usable' });
   const { data: kbData } = useKnowledgeListQuery();
   const { data: recentChats } = useChatsQuery();
@@ -425,6 +427,7 @@ export function ChatPage() {
               running={running}
               modelName={modelName}
               onArenaVote={(turn, winner) => chat && void arenaVote({ chatId: chat.id, messageId: turn.id, winner })}
+              onUndoMemory={(change) => chat && void undoMemory({ id: change.id, chatId: chat.id })}
               onSelect={(id) => chat && void updateChat({ id: chat.id, currentLeafId: id })}
               onEdit={editMessage}
               onRegenerate={regenerate}

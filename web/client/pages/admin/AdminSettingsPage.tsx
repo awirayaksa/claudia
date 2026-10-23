@@ -217,6 +217,31 @@ export function AdminSettingsPage() {
         )}
       </Card>
 
+      <Card title={t('admin.memory')}>
+        <p className="mb-2 text-sm text-text-secondary">{t('admin.memoryHelp')}</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={draft.memory.extraction}
+            onChange={(e) => set('memory', { ...draft.memory, extraction: e.target.checked })}
+          />
+          {t('admin.memoryExtraction')}
+        </label>
+        <label className="mt-2 flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={draft.memory.tools} onChange={(e) => set('memory', { ...draft.memory, tools: e.target.checked })} />
+          {t('admin.memoryTools')}
+        </label>
+        <label className="mt-3 block text-sm">
+          <span className="mb-1 block">{t('admin.memoryModel')}</span>
+          <ModelSelect
+            value={draft.memory.model}
+            onChange={(model) => set('memory', { ...draft.memory, model })}
+            models={allModels.map((m) => m.id)}
+            emptyLabel={t('admin.sameAsChat')}
+          />
+        </label>
+      </Card>
+
       <Card title={t('admin.builtinTools')}>
         <p className="mb-2 text-sm text-text-secondary">{t('admin.builtinToolsHelp')}</p>
         <div className="grid gap-1 sm:grid-cols-2">

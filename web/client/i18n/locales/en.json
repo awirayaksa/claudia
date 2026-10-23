@@ -351,7 +351,12 @@
     "compactionEnabled": "Summarize earlier messages",
     "compactionThreshold": "Start at this share of the context (%)",
     "compactionKeep": "Recent exchanges always kept word for word",
-    "compactionModel": "Model for summaries"
+    "compactionModel": "Model for summaries",
+    "memory": "Memory",
+    "memoryHelp": "Users can switch learning off for themselves. Sensitive topics are only saved for users who allow them.",
+    "memoryTools": "Let the model save memories during chats (the model must support tools)",
+    "memoryExtraction": "Learn memories from chats once they go quiet",
+    "memoryModel": "Model for learning memories"
   },
   "notFound": {
     "title": "Page not found",
@@ -504,7 +509,7 @@
     "knowledgeHelp": "Searched whenever this model answers, with your access (people using the model don't need their own)."
   },
   "memory": {
-    "help": "Things every chat should know about you. They are sent to the model with each message.",
+    "help": "What chats know about you. It is sent to the model with each message, and can be learned from your chats.",
     "enabled": "Use my memories in chats",
     "placeholder": "e.g. I work in Python and prefer short answers",
     "add": "Add",
@@ -513,7 +518,42 @@
     "clear": "Delete all memories",
     "clearTitle": "Delete all memories?",
     "clearBody_one": "Your {{count}} memory will be deleted.",
-    "clearBody_other": "All {{count}} memories will be deleted."
+    "clearBody_other": "All {{count}} memories will be deleted.",
+    "learn": "Learn from my chats",
+    "learnHelp": "Lasting facts you mention (your work, preferences, projects) are saved here. Temporary chats are never used. Every change shows under the reply, where you can undo it.",
+    "sensitive": "Also remember sensitive topics",
+    "sensitiveHelp": "Health, finances, religion, politics and similar topics are skipped unless this is on.",
+    "topic": "Topic",
+    "scope": "Used in",
+    "allChats": "All chats",
+    "topics": {
+      "about": "About you",
+      "work": "Work",
+      "preferences": "Preferences",
+      "projects": "Projects",
+      "people": "People",
+      "other": "Other"
+    },
+    "sources": {
+      "model": "saved in a chat",
+      "auto": "learned",
+      "import": "imported"
+    },
+    "import": "Import from another assistant",
+    "importHelp": "Paste what another assistant remembers about you (for example ChatGPT’s list under Settings → Personalization → Manage memories). Each line becomes a memory, sorted into a topic.",
+    "importButton": "Import",
+    "importing": "Importing…",
+    "imported": "Added {{added}}, skipped {{skipped}} (duplicates, sensitive or over the limit).",
+    "chip_one": "Memory updated",
+    "chip_other": "{{count}} memories updated",
+    "chipUndone": "Memory change undone",
+    "changed": {
+      "add": "Saved",
+      "update": "Changed",
+      "delete": "Forgot"
+    },
+    "undo": "Undo",
+    "undone": "Undone"
   },
   "apiKeys": {
     "help": "Use the models you have here from other apps with an OpenAI-compatible API, including Claudia desktop as a custom provider.",

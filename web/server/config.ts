@@ -64,6 +64,8 @@ const EnvSchema = z.object({
   CLAUDIA_SANDBOX_PORT: z.coerce.number().int().min(1).max(65535).optional(),
   /** stdio MCP servers run commands on the host; admins only, and only when this is on. */
   CLAUDIA_ALLOW_STDIO_MCP: bool.default(false),
+  /** How long a chat stays quiet before it is read for memories to learn. */
+  CLAUDIA_MEMORY_IDLE_SECONDS: z.coerce.number().int().min(0).max(86_400).default(120),
   CLAUDIA_ADMIN_EMAIL: z.email().optional(),
   CLAUDIA_ADMIN_PASSWORD: z.string().min(8).optional(),
   /** Built client to serve. Defaults to dist/client next to the server bundle. */

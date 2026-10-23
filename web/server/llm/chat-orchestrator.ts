@@ -40,7 +40,9 @@ import { fallbackTitle, generateFollowUps, generateTitle } from './tasks';
 import type { FileService } from '../modules/files/service';
 import type { SkillService } from '../modules/skills/service';
 import type { UsageService } from '../modules/usage/service';
-import { memoryPrompt } from '../modules/memories/routes';
+import type { MemoryStore } from '../modules/memories/store';
+import { MemoryLearner } from '../modules/memories/learn';
+import { MEMORY_TOOL_NAMES, memoryToolDefinitions, runMemoryTool } from '../modules/memories/tools';
 import type { AccessService } from '../auth/access';
 import type { RagConfig } from '../rag/config';
 import type { KnowledgeService } from '../rag/knowledge';
@@ -89,6 +91,11 @@ export interface OrchestratorDeps {
   media?: MediaConfig;
   /** run.completed goes to admin webhooks. */
   webhooks?: Webhooks;
+  /** Memories (without them, none are sent or learned). */
+  memories?: MemoryStore;
+  memoryLearner?: MemoryLearner;
+  /** How long a chat stays quiet before it is read for memories (default 2 minutes). */
+  memoryIdleMs?: number;
 }
 
 /** What admin webhooks hear about a finished run (no message text). */
@@ -347,13 +354,22 @@ export class ChatOrchestrator {
     if (typeof prefs.systemPrompt === 'string' && prefs.systemPrompt.trim()) before.push(sys(prefs.systemPrompt));
     const after: ChatMessage[] = [];
     const userText = plan.userNode.parts.map((p) => (p.type === 'text' ? p.text : '')).join('');
-    if (userSettings.memory?.enabled !== false) {
-      const memory = await memoryPrompt(this.deps.db, user.id, (total) => this.relevantMemories(user.id, userText, total));
+    const folders = await this.repo.folderChain(user.id, chat.folderId);
+    const folderIds = folders.map((f) => f.id);
+    // Temporary chats never write memory; the model gets memory tools only if an admin allows them
+    const learns = !!this.deps.memories && !chat.temporary && MemoryLearner.learns(userSettings);
+    const memoryTools = learns && (await this.deps.settings.get('memory')).tools;
+    if (userSettings.memory?.enabled !== false && this.deps.memories) {
+      const memory = await this.deps.memories.prompt(user.id, {
+        folderIds,
+        pick: (total) => this.relevantMemories(user.id, userText, total),
+        withIds: memoryTools,
+      });
       if (memory) after.push({ role: 'system', content: memory });
     }
     // Like the desktop: the skill follows the global prompt
     if (plan.skillPrompt) after.push({ role: 'system', content: plan.skillPrompt });
-    for (const f of await this.repo.folderChain(user.id, chat.folderId)) {
+    for (const f of folders) {
       if (f.systemPrompt?.trim()) after.push(sys(f.systemPrompt));
     }
     if (chat.params.systemPrompt?.trim()) after.push(sys(chat.params.systemPrompt));
@@ -403,6 +419,7 @@ export class ChatOrchestrator {
             ],
             history,
             prefs,
+            memory: memoryTools ? { folderIds, sensitive: userSettings.memory?.sensitive === true } : null,
             toolset,
             fileOpts,
             reportTrim: i === 0,
@@ -429,6 +446,13 @@ export class ChatOrchestrator {
         this.deps.log.warn({ err: String(err), chatId: chat.id }, 'follow-up suggestions failed')
       );
     }
+    // Read the chat for memories once it has gone quiet
+    const answered = plan.targets[results.indexOf('completed')];
+    if (learns && answered && this.deps.memoryLearner) {
+      await this.deps.memoryLearner
+        .schedule(user.id, chat.id, answered.assistantId, this.deps.memoryIdleMs ?? 120_000)
+        .catch((err) => this.deps.log.warn({ err: String(err), chatId: chat.id }, 'scheduling memory learning failed'));
+    }
     await this.repo.touch(chat.id);
     this.deps.runs.finish(run, status);
     void this.deps.webhooks?.emit('run.completed', runSummary(plan, status));
@@ -444,6 +468,8 @@ export class ChatOrchestrator {
       /** The path to send (after the summary, when there is one). */
       history: MessageNode[];
       prefs: Record<string, any>;
+      /** The memory tools are offered (with what they need). */
+      memory: { folderIds: string[]; sensitive: boolean } | null;
       toolset: RunToolset;
       fileOpts: ToOpenAIOptions;
       reportTrim: boolean;
@@ -520,8 +546,14 @@ export class ChatOrchestrator {
     const ticker = setInterval(() => void persist().catch(() => {}), PERSIST_INTERVAL_MS);
 
     try {
-      const tools = [...opts.toolset.definitions, ...(plan.code ? [CODE_TOOL] : []), ...(plan.imageGen ? [IMAGE_TOOL] : [])];
-      const onServer = (name: string) => plan.imageGen && name === IMAGE_TOOL_NAME;
+      const tools = [
+        ...opts.toolset.definitions,
+        ...(plan.code ? [CODE_TOOL] : []),
+        ...(plan.imageGen ? [IMAGE_TOOL] : []),
+        ...(opts.memory ? memoryToolDefinitions(!!chat.folderId) : []),
+      ];
+      const isMemoryTool = (name: string) => !!opts.memory && MEMORY_TOOL_NAMES.has(name);
+      const onServer = (name: string) => (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name);
       const inBrowser = (name: string) => plan.code && CLIENT_TOOL_NAMES.has(name);
       const firstTurnOnly = opts.toolset.firstTurnOnly || !!target.connection.quirks.toolsFirstTurnOnly;
       for (let iteration = 0; ; iteration++) {
@@ -599,9 +631,11 @@ export class ChatOrchestrator {
             async (span) => {
               const result = inBrowser(call.function.name)
                 ? await this.runInBrowser(plan, assistantId, call, signal)
-                : onServer(call.function.name)
-                  ? await this.makeImage(plan, call, signal)
-                  : await opts.toolset.execute(call, signal);
+                : isMemoryTool(call.function.name)
+                  ? await this.memoryTool(plan, assistantId, call, opts.memory!)
+                  : onServer(call.function.name)
+                    ? await this.makeImage(plan, call, signal)
+                    : await opts.toolset.execute(call, signal);
               span.setAttribute('claudia.tool.server', result.serverId);
               if (result.result.isError) span.setStatus({ code: SpanStatusCode.ERROR });
               return result;
@@ -771,6 +805,22 @@ export class ChatOrchestrator {
       if (view) resolved.set(row.id, view);
     }
     return { resolveFile: (part) => resolved.get(part.fileId) ?? null };
+  }
+
+  /** A memory tool call, as the user; a change shows as a chip under the reply. */
+  private async memoryTool(
+    plan: RunPlan,
+    messageId: string,
+    call: ToolCall,
+    memory: { folderIds: string[]; sensitive: boolean }
+  ): Promise<ToolExecution> {
+    const { execution, change } = await runMemoryTool(
+      this.deps.memories!,
+      { userId: plan.user.id, chatId: plan.chat.id, folderId: plan.chat.folderId, folderIds: memory.folderIds, messageId, sensitive: memory.sensitive },
+      call
+    );
+    if (change) this.deps.runs.emit(plan.run, { type: 'message.memory', messageId, change });
+    return execution;
   }
 
   private async checkImageGen(user: AuthUser): Promise<void> {

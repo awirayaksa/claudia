@@ -68,6 +68,15 @@ export const AppSettingsSchema = {
     /** Model that writes the summaries; null = the chat's model. */
     model: z.string().nullable(),
   }),
+  /** How memories are learned (users can still switch learning off for themselves). */
+  memory: z.object({
+    /** Offer the model tools to save, change and forget memories during a chat. */
+    tools: z.boolean(),
+    /** Once a chat goes quiet, a model reads it for lasting facts. */
+    extraction: z.boolean(),
+    /** Model for learning and for sorting imports; null = the task model, else the chat's model. */
+    model: z.string().nullable(),
+  }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -99,6 +108,8 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   'auth.mfa': { require: 'off' },
   arena: { enabled: false, models: [] },
   compaction: { enabled: true, threshold: 0.8, keepRecentTurns: 4, model: null },
+  // Tools are off by default: not every model takes tools, and a tool the provider refuses fails the reply
+  memory: { tools: false, extraction: true, model: null },
 };
 
 export class AppSettings {

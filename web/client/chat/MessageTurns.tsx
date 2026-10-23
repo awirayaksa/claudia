@@ -32,7 +32,11 @@ export interface TurnHandlers {
   readAloud?: 'none' | 'browser' | 'server';
   /** A blind comparison's vote. */
   onArenaVote?: (turn: MessageNode, winner: 'a' | 'b' | 'tie') => void;
+  /** Undo a memory the model saved, changed or forgot (none: the chip only shows them). */
+  onUndoMemory?: (change: MemoryChange) => void;
 }
+
+type MemoryChange = NonNullable<MessageNode['memoryChanges']>[number];
 
 interface Props extends TurnHandlers {
   nodes: MessageNode[];
@@ -92,6 +96,7 @@ export function MessageTurns(props: Props) {
     return (
       <div key={node.id}>
         {reply}
+        {!readOnly && node.memoryChanges?.length ? <MemoryChip changes={node.memoryChanges} onUndo={props.onUndoMemory} /> : null}
         {props.onArtifact && node.status !== 'streaming' && <ArtifactChips node={node} onOpen={props.onArtifact} />}
         {feedbackFor && nodes.find((n) => n.id === feedbackFor)?.parentId === node.parentId && (
           <FeedbackForm
@@ -119,6 +124,44 @@ export function MessageTurns(props: Props) {
         <FollowUps items={last.followUps} onPick={(q) => props.onFollowUp?.(q)} />
       ) : null}
     </>
+  );
+}
+
+/** "Memory updated" under a reply: opens to list what changed, each undoable. */
+function MemoryChip({ changes, onUndo }: { changes: MemoryChange[]; onUndo?: (c: MemoryChange) => void }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const live = changes.filter((c) => !c.undone).length;
+  return (
+    <div className="-mt-1 mb-4 ps-[30px] text-xs" data-testid="memory-chip">
+      <button
+        className="inline-flex items-center gap-1.5 rounded-full border border-border px-2.5 py-0.5 text-text-secondary hover:border-accent hover:text-accent"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <span aria-hidden>✦</span>
+        {live > 0 ? t('memory.chip', { count: live }) : t('memory.chipUndone')}
+      </button>
+      {open && (
+        <ul className="mt-2 max-w-xl divide-y divide-border rounded-lg border border-border bg-surface">
+          {changes.map((c) => (
+            <li key={c.id} className="flex items-start gap-2 px-3 py-2">
+              <span className="shrink-0 text-text-secondary">{t(`memory.changed.${c.action}`)}</span>
+              <span className={`min-w-0 flex-1 break-words ${c.undone ? 'text-text-secondary line-through' : ''}`}>{c.content}</span>
+              {c.undone ? (
+                <span className="shrink-0 text-text-secondary">{t('memory.undone')}</span>
+              ) : (
+                onUndo && (
+                  <button className="shrink-0 text-accent hover:underline" onClick={() => onUndo(c)}>
+                    {t('memory.undo')}
+                  </button>
+                )
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

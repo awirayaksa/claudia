@@ -61,6 +61,8 @@ import { UsageService } from './modules/usage/service';
 import { workspaceModelRoutes } from './modules/workspace/models';
 import { workspacePromptRoutes } from './modules/workspace/prompts';
 import { memoryRoutes } from './modules/memories/routes';
+import { MemoryStore } from './modules/memories/store';
+import { MemoryLearner } from './modules/memories/learn';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
 import { RagConfig } from './rag/config';
@@ -200,6 +202,11 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     log: app.log,
     webhooks,
   });
+  // With embeddings on, memories are also searchable by meaning
+  const memories = new MemoryStore(deps.db.db, async (memoryId) => {
+    if (await rag.embedderKey()) await jobQueue.enqueue('memory.embed', { memoryId });
+  });
+  const memoryLearner = new MemoryLearner({ db: deps.db.db, settings, models, store: memories, jobs: jobQueue, log: app.log });
   const netPolicy = () => ({ allow: settings.peek('net.allowlist').hosts });
   const sources = new SourceBuilder({
     db: deps.db.db,
@@ -246,6 +253,9 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       sandboxOrigin: sandboxOriginFor(deps.config),
       media,
       webhooks,
+      memories,
+      memoryLearner,
+      memoryIdleMs: deps.config.CLAUDIA_MEMORY_IDLE_SECONDS * 1000,
       ...deps.orchestrator,
     }),
     storage,
@@ -259,6 +269,8 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     usage,
     rag,
     knowledge,
+    memories,
+    memoryLearner,
     jobs: jobQueue,
     events,
     media,

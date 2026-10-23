@@ -96,6 +96,11 @@ const runSlice = createSlice({
           if (n) n.parts = [...e.citations.map((c) => ({ type: 'citation' as const, ...c })), ...n.parts.filter((p) => p.type !== 'citation')];
           break;
         }
+        case 'message.memory': {
+          const n = live.nodes[e.messageId];
+          if (n) n.memoryChanges = [...(n.memoryChanges ?? []), e.change];
+          break;
+        }
         case 'message.followups': {
           const n = live.nodes[e.messageId];
           if (n) n.followUps = e.followUps;

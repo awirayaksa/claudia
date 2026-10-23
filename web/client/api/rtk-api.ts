@@ -59,6 +59,8 @@ import type {
   CreatedApiKey,
   CustomModelInput,
   CustomModelView,
+  MemoryChangeView,
+  MemoryTopic,
   MemoryView,
   PromptInput,
   PromptView,
@@ -621,13 +623,22 @@ export const api = createApi({
 
     // ─── Memory, API keys, usage, own tool servers ──────────────────────────
     memories: b.query<{ memories: MemoryView[] }, void>({ query: () => '/me/memories', providesTags: ['Memories'] }),
-    addMemory: b.mutation<{ memory: MemoryView }, string>({
-      query: (content) => ({ url: '/me/memories', method: 'POST', body: { content } }),
+    addMemory: b.mutation<{ memory: MemoryView }, { content: string; topic?: MemoryTopic; folderId?: string | null }>({
+      query: (body) => ({ url: '/me/memories', method: 'POST', body }),
       invalidatesTags: ['Memories'],
     }),
-    updateMemory: b.mutation<{ memory: MemoryView }, { id: string; content: string }>({
-      query: ({ id, content }) => ({ url: `/me/memories/${id}`, method: 'PATCH', body: { content } }),
+    updateMemory: b.mutation<{ memory: MemoryView }, { id: string; content: string; topic?: MemoryTopic; folderId?: string | null }>({
+      query: ({ id, ...body }) => ({ url: `/me/memories/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['Memories'],
+    }),
+    importMemories: b.mutation<{ added: number; skipped: number }, string>({
+      query: (text) => ({ url: '/me/memories/import', method: 'POST', body: { text } }),
+      invalidatesTags: ['Memories'],
+    }),
+    /** Undo a change the model made to memories; refreshes the chat that shows its chip. */
+    undoMemoryChange: b.mutation<{ change: MemoryChangeView }, { id: string; chatId: string }>({
+      query: ({ id }) => ({ url: `/me/memories/changes/${id}/undo`, method: 'POST' }),
+      invalidatesTags: (_r, _e, { chatId }) => ['Memories', { type: 'Chat', id: chatId }],
     }),
     deleteMemory: b.mutation<{ ok: true }, string>({
       query: (id) => ({ url: `/me/memories/${id}`, method: 'DELETE' }),
@@ -886,6 +897,8 @@ export const {
   useUpdateMemoryMutation,
   useDeleteMemoryMutation,
   useClearMemoriesMutation,
+  useImportMemoriesMutation,
+  useUndoMemoryChangeMutation,
   useApiKeysQuery,
   useCreateApiKeyMutation,
   useDeleteApiKeyMutation,

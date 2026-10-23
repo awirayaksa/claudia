@@ -28,6 +28,8 @@ import type { Webhooks } from './admin/webhooks';
 import type { OidcService } from './auth/providers/oidc';
 import type { CloudFiles } from './cloud/cloud-files';
 import type { ScheduleRunner } from './modules/schedules/service';
+import type { MemoryStore } from './modules/memories/store';
+import type { MemoryLearner } from './modules/memories/learn';
 
 /** Everything a route or service needs, built once at startup. */
 export interface ServerContext {
@@ -52,6 +54,9 @@ export interface ServerContext {
   usage: UsageService;
   rag: RagConfig;
   knowledge: KnowledgeService;
+  /** What chats know about each user, and learning it from chats. */
+  memories: MemoryStore;
+  memoryLearner: MemoryLearner;
   jobs: JobQueue;
   events: EventHub;
   media: MediaConfig;

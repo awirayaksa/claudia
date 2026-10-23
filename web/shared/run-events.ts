@@ -6,6 +6,7 @@
 import type { MessageNode, MessagePart, PartOf } from '../../src/types/turn.types';
 import type { MessageUsage } from '../../src/types/statistics.types';
 import type { CitationSource } from '../../src/types/turn.types';
+import type { MemoryChangeView } from './workspace';
 
 export type RunStatus = 'completed' | 'stopped' | 'error';
 
@@ -28,6 +29,8 @@ export type RunEvent =
   /** A part added to a reply outside text and tools (generated images). */
   | { type: 'message.part'; messageId: string; part: MessagePart }
   | { type: 'message.citations'; messageId: string; citations: Array<{ index: number; source: CitationSource }> }
+  /** The model saved, changed or forgot a memory (undoable from the reply). */
+  | { type: 'message.memory'; messageId: string; change: MemoryChangeView }
   /** Suggested next questions, after the reply is complete. */
   | { type: 'message.followups'; messageId: string; followUps: string[] }
   | { type: 'message.completed'; messageId: string; status: RunStatus; error?: string; parts: MessagePart[] }

@@ -77,5 +77,14 @@ export interface MessageNode {
    * context window; later sends down this path use the summary instead.
    */
   compaction?: { summary: string; turns: number };
+  /** Web, assistant nodes: memories the model saved, changed or forgot in this reply (undoable). */
+  memoryChanges?: Array<{
+    id: string;
+    action: 'add' | 'update' | 'delete';
+    memoryId: string;
+    topic: string;
+    content: string;
+    undone: boolean;
+  }>;
   createdAt: string;
 }
