@@ -16,10 +16,12 @@ import type { SharedChat } from '../../../shared/chats';
 import { workspaceMime } from '../../../shared/workspace-files';
 import { ChatRepo, maskArena, pathTo, toNode, type ChatRow, type ShareRow } from '../chats/repo';
 import { MEMORY_TOOL_NAMES } from '../memories/tools';
+import { CHAT_SEARCH_TOOL_NAMES } from '../chats/chat-search';
 
-/** A node's parts without its memory tool calls and their results. */
+/** A node's parts without its memory and past-chat tool calls and their results (they show the owner's other data). */
 function withoutMemoryTools(parts: MessagePart[]): MessagePart[] {
-  const calls = new Set(parts.flatMap((p) => (p.type === 'tool_call' && p.serverId === 'claudia' && MEMORY_TOOL_NAMES.has(p.tool) ? [p.callId] : [])));
+  const private_ = (tool: string) => MEMORY_TOOL_NAMES.has(tool) || CHAT_SEARCH_TOOL_NAMES.has(tool);
+  const calls = new Set(parts.flatMap((p) => (p.type === 'tool_call' && p.serverId === 'claudia' && private_(p.tool) ? [p.callId] : [])));
   return calls.size === 0 ? parts : parts.filter((p) => !((p.type === 'tool_call' || p.type === 'tool_result') && calls.has(p.callId)));
 }
 
@@ -36,6 +38,8 @@ function cleanPart(p: MessagePart): MessagePart {
   // Citations keep what they show (title, page, link, snippet), not file or chat ids
   if (p.type === 'citation' && p.source.kind !== 'url') {
     const { id: _id, ...source } = p.source;
+    // Another of the owner's chats: its title only, not what was said in it
+    if (source.kind === 'chat') delete source.snippet;
     return { ...p, source };
   }
   return p;

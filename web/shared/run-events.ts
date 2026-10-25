@@ -35,7 +35,15 @@ export type RunEvent =
   | { type: 'message.memory'; messageId: string; change: MemoryChangeView }
   /** Suggested next questions, after the reply is complete. */
   | { type: 'message.followups'; messageId: string; followUps: string[] }
-  | { type: 'message.completed'; messageId: string; status: RunStatus; error?: string; parts: MessagePart[] }
+  | {
+      type: 'message.completed';
+      messageId: string;
+      status: RunStatus;
+      error?: string;
+      /** length: cut off at the output limit (it can be continued). */
+      stopReason?: 'length';
+      parts: MessagePart[];
+    }
   /** Something the user should know about the request, e.g. history trimmed to fit. */
   | {
       type: 'run.notice';

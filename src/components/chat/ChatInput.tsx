@@ -15,6 +15,8 @@ import { setEffortLevel } from '../../store/slices/composerSlice';
 import { parseEffortDirective } from '../../utils/effort-utils';
 import { getPlatform } from '../../platform';
 import { useT } from '../../i18n';
+import { Modal } from '../common/Modal';
+import { isLongPaste, lineCount, pastedTextFile } from '../../utils/pasted-text';
 
 interface ChatInputProps {
   onSend: (message: string, attachments?: Attachment[]) => void;
@@ -102,6 +104,12 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
   const contextMenuRef = useRef<HTMLDivElement>(null);
 
   const { uploadFiles, uploading, progress, error: uploadError } = useFileUpload();
+
+  // Long pastes become "Pasted text" attachments (unless turned off in Preferences)
+  const pasteLongAsFile = useAppSelector((state) => state.settings.preferences.pasteLongTextAsFile) !== false;
+  const [pastedTexts, setPastedTexts] = useState<Record<string, string>>({});
+  const [viewingPaste, setViewingPaste] = useState<string | null>(null);
+  const pasteCount = useRef(0);
 
   const dispatch = useAppDispatch();
 
@@ -230,6 +238,7 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
       onSend(expandedMessage.trim(), attachments.length > 0 ? attachments : undefined);
       setMessage('');
       setAttachments([]);
+      setPastedTexts({});
       // Reset textarea height
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
@@ -307,8 +316,19 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
     if (files.length > 0) {
       e.preventDefault(); // Prevent default paste behavior for files
       await handleFilesSelected(files);
+      return;
     }
-    // Otherwise, allow normal text paste
+    // A long text is attached instead (the model still gets all of it); otherwise a normal paste
+    const text = e.clipboardData.getData('text/plain');
+    if (pasteLongAsFile && isLongPaste(text)) {
+      e.preventDefault();
+      pasteCount.current += 1;
+      const [attachment] = await uploadFiles([pastedTextFile(text, pasteCount.current)]);
+      if (attachment) {
+        setAttachments((prev) => [...prev, attachment]);
+        setPastedTexts((prev) => ({ ...prev, [attachment.id]: text }));
+      }
+    }
   };
 
   const handleContextMenu = (e: MouseEvent<HTMLTextAreaElement>) => {
@@ -507,6 +527,15 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
 
   const removeAttachment = (id: string) => {
     setAttachments((prev) => prev.filter((att) => att.id !== id));
+    setPastedTexts(({ [id]: _gone, ...rest }) => rest);
+  };
+
+  /** A pasted-text chip back into the message box. */
+  const pasteInline = (id: string) => {
+    const text = pastedTexts[id];
+    setViewingPaste(null);
+    removeAttachment(id);
+    if (text !== undefined) insertTextAtCursor(text);
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -541,14 +570,34 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                 </svg>
               )}
-              <div className="flex-1 min-w-0">
-                <p className="text-xs font-medium text-text-primary truncate max-w-[150px]">
-                  {attachment.name}
-                </p>
-                <p className="text-xs text-text-secondary">
-                  {formatFileSize(attachment.size)}
-                </p>
-              </div>
+              {pastedTexts[attachment.id] !== undefined ? (
+                <button
+                  type="button"
+                  className="flex-1 min-w-0 text-start"
+                  onClick={() => setViewingPaste(attachment.id)}
+                  title={t('chatInput.viewPasted', 'Show the pasted text')}
+                  data-testid="pasted-text-chip"
+                >
+                  <p className="text-xs font-medium text-text-primary truncate max-w-[150px]">
+                    {attachment.name.replace(/\.txt$/, '')}
+                  </p>
+                  <p className="text-xs text-text-secondary">
+                    {t('chatInput.pastedSize', '{{lines}} lines · {{chars}} characters', {
+                      lines: lineCount(pastedTexts[attachment.id]),
+                      chars: pastedTexts[attachment.id].length.toLocaleString(),
+                    })}
+                  </p>
+                </button>
+              ) : (
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-text-primary truncate max-w-[150px]">
+                    {attachment.name}
+                  </p>
+                  <p className="text-xs text-text-secondary">
+                    {formatFileSize(attachment.size)}
+                  </p>
+                </div>
+              )}
               <button
                 onClick={() => removeAttachment(attachment.id)}
                 className="text-text-secondary hover:text-error"
@@ -561,6 +610,29 @@ export const ChatInput = forwardRef<ChatInputRef, ChatInputProps>(({
             </div>
           ))}
         </div>
+      )}
+
+      {viewingPaste && pastedTexts[viewingPaste] !== undefined && (
+        <Modal
+          isOpen
+          onClose={() => setViewingPaste(null)}
+          title={attachments.find((a) => a.id === viewingPaste)?.name.replace(/\.txt$/, '') ?? ''}
+          size="lg"
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button variant="secondary" size="sm" onClick={() => pasteInline(viewingPaste)}>
+                {t('chatInput.pasteInline', 'Put it in the message instead')}
+              </Button>
+              <Button size="sm" onClick={() => setViewingPaste(null)}>
+                {t('common.close', 'Close')}
+              </Button>
+            </div>
+          }
+        >
+          <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap break-words rounded border border-border bg-background p-3 font-mono text-xs" data-testid="pasted-text">
+            {pastedTexts[viewingPaste]}
+          </pre>
+        </Modal>
       )}
 
       {/* MCP Server Toggles */}

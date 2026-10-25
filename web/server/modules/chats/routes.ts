@@ -21,7 +21,8 @@ import {
   UpdateChatRequest,
   type ChatDetail,
 } from '../../../shared/chats';
-import { ChatRepo, maskArena, toChatSummary, toFolder, toNode, toShareView } from './repo';
+import { ChatRepo, maskArena, pathTo, toChatSummary, toFolder, toNode, toShareView } from './repo';
+import { chatToMarkdown } from '../../../../src/services/chat/chat-markdown';
 import { ChatTransfer, dropNulls } from './transfer';
 import { readableKbIds } from '../../rag/sources';
 
@@ -219,12 +220,44 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     return { chat: toChatSummary(forked) };
   });
 
+  // One chat: Claudia JSON (every branch, re-importable), or the shown branch as Markdown or PDF
   app.get('/:id/export', async (req, reply) => {
+    const me = currentUser(req);
     const { id } = IdParams.parse(req.params);
-    await ctx.access.require(currentUser(req), 'chat.export');
-    const data = await transfer.exportChats(currentUser(req).id, [id]);
-    reply.header('Content-Disposition', 'attachment; filename="claudia-chat.json"');
-    return data;
+    const { format } = z.object({ format: z.enum(['json', 'md', 'pdf']).default('json') }).parse(req.query);
+    await ctx.access.require(me, 'chat.export');
+    if (format === 'json') {
+      const data = await transfer.exportChats(me.id, [id]);
+      reply.header('Content-Disposition', 'attachment; filename="claudia-chat.json"');
+      return data;
+    }
+    const chat = await repo.getOwned(me.id, id);
+    const path = pathTo(maskArena((await repo.messages(chat.id)).map(toNode)), chat.currentLeafId).filter((n) => n.status !== 'streaming');
+    const names = new Map((await ctx.models.forUser(me)).map((m) => [m.id, m.name]));
+    const base = chat.title.replace(/[\\/:*?"<>|\x00-\x1f]+/g, ' ').trim().slice(0, 80) || 'chat';
+    const filename = (ext: string) => `attachment; filename="${base.replace(/[^\x20-\x7e]/g, '_')}.${ext}"; filename*=UTF-8''${encodeURIComponent(`${base}.${ext}`)}`;
+    if (format === 'md') {
+      reply.header('Content-Type', 'text/markdown; charset=utf-8').header('Content-Disposition', filename('md'));
+      return chatToMarkdown({ title: chat.title, path, modelName: (m) => names.get(m) ?? m });
+    }
+    // PDF: the user's images are embedded (up to 20, 5 MB each)
+    const imageIds = [...new Set(path.flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' && p.mime.startsWith('image/') && p.fileId ? [p.fileId] : []))))].slice(0, 20);
+    const images: Record<string, string> = {};
+    for (const row of await ctx.files.ownedByIds(me.id, imageIds)) {
+      if (row.size > 5 * 1024 * 1024) continue;
+      const data = await ctx.files.content(row).catch(() => null);
+      if (data) images[`image-${row.id}`] = `data:${row.mime};base64,${data.toString('base64')}`;
+    }
+    const markdown = chatToMarkdown({
+      title: chat.title,
+      path,
+      modelName: (m) => names.get(m) ?? m,
+      folding: 'quote',
+      imageRef: (f) => (images[`image-${f.fileId}`] ? `image-${f.fileId}` : null),
+    });
+    const pdf = await ctx.extract.renderMarkdownPdf(markdown, { pageSize: 'A4', landscape: false, title: chat.title }, images);
+    reply.header('Content-Type', 'application/pdf').header('Content-Disposition', filename('pdf'));
+    return reply.send(pdf);
   });
 
   // Create the share link, or refresh its snapshot

@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useBlocker } from 'react-router-dom';
+import { useBlocker, useSearchParams } from 'react-router-dom';
 import { ThemeSettings } from '@/components/settings/ThemeSettings';
 import { PreferencesSettings } from '@/components/settings/PreferencesSettings';
 import { SkillSettings } from '@/components/settings/SkillSettings';
@@ -24,6 +24,7 @@ import { WorkspaceFiles } from './settings/WorkspaceFiles';
 import { DataSettings } from './settings/DataSettings';
 import { ConnectionsManager } from './admin/ConnectionsPage';
 import { MemorySettings } from './settings/MemorySettings';
+import { StylesSettings } from './settings/StylesSettings';
 import { ApiKeysSettings } from './settings/ApiKeysSettings';
 import { CAP_KEYS } from '@shared/access';
 import { formatUsage } from '../components/AccessFields';
@@ -33,6 +34,7 @@ type Tab =
   | 'appearance'
   | 'preferences'
   | 'memory'
+  | 'styles'
   | 'tools'
   | 'skills'
   | 'files'
@@ -55,7 +57,9 @@ export function SettingsPage() {
 
 function SettingsTabs() {
   const { t } = useTranslation();
-  const [tab, setTab] = useState<Tab>('appearance');
+  // ?tab=styles (from the composer's style menu) opens that tab
+  const [params] = useSearchParams();
+  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'styles' ? 'styles' : 'appearance'));
   const permissions = usePermissions();
   const draft = useSettingsDraft()!;
 
@@ -75,6 +79,7 @@ function SettingsTabs() {
           { id: 'appearance', label: t('settings.appearance') },
           { id: 'preferences', label: t('settings.preferences') },
           { id: 'memory', label: t('settings.memory') },
+          { id: 'styles', label: t('settings.styles') },
           { id: 'tools', label: t('settings.tools') },
           { id: 'skills', label: t('settings.skills') },
           { id: 'files', label: t('settings.files') },
@@ -88,6 +93,7 @@ function SettingsTabs() {
         {tab === 'appearance' && <ThemeSettings />}
         {tab === 'preferences' && <PreferencesSettings />}
         {tab === 'memory' && <MemorySettings />}
+        {tab === 'styles' && <StylesSettings />}
         {tab === 'tools' && <ToolsSettings />}
         {tab === 'skills' && <SkillSettings />}
         {tab === 'files' && (

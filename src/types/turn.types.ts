@@ -77,6 +77,8 @@ export interface MessageNode {
    * context window; later sends down this path use the summary instead.
    */
   compaction?: { summary: string; turns: number };
+  /** Assistant nodes: the reply was cut off at the output limit and can be continued. */
+  stopReason?: 'length';
   /** Web, assistant nodes: memories the model saved, changed or forgot in this reply (undoable). */
   memoryChanges?: Array<{
     id: string;

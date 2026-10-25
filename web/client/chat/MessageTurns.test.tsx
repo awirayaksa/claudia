@@ -28,11 +28,11 @@ const node = (id: string, role: 'user' | 'assistant', text: string, extra: Parti
   ...extra,
 });
 
-function renderTurns(path: MessageNode[], onUndoMemory = vi.fn(), extra: { running?: boolean; toolOutput?: Record<string, string> } = {}) {
+function renderTurns(path: MessageNode[], onUndoMemory = vi.fn(), extra: { running?: boolean; toolOutput?: Record<string, string>; onContinue?: (n: MessageNode) => void } = {}) {
   render(
     <Provider store={createWebStore()}>
       <MemoryRouter>
-        <MessageTurns nodes={path} path={path} running={extra.running ?? false} modelName={() => undefined} onUndoMemory={onUndoMemory} toolOutput={extra.toolOutput} />
+        <MessageTurns nodes={path} path={path} running={extra.running ?? false} modelName={() => undefined} onUndoMemory={onUndoMemory} toolOutput={extra.toolOutput} onContinue={extra.onContinue} />
       </MemoryRouter>
     </Provider>
   );
@@ -80,5 +80,14 @@ describe('message turns', () => {
     expect(live).toHaveTextContent('running…');
     expect(live).toHaveTextContent('search');
     expect(screen.getByTestId('live-tool-output')).toHaveTextContent('rows: 3');
+  });
+
+  it('offers to continue a reply cut off at the output limit', () => {
+    const onContinue = vi.fn();
+    const cut = node('a', 'assistant', 'The list goes on and', { parentId: 'u', stopReason: 'length' });
+    renderTurns([node('u', 'user', 'List everything'), cut], vi.fn(), { onContinue });
+    expect(screen.getByTestId('cut-off')).toHaveTextContent('The reply reached the maximum length.');
+    fireEvent.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onContinue).toHaveBeenCalledWith(cut);
   });
 });

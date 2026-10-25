@@ -159,10 +159,15 @@ describe('learning from chats', () => {
     fx.mock.push({ text: ['Sure.'] });
     await say(fx, 'Write me a hello world.');
     expect(systemOf(lastStream(fx))).toContain('Prefers TypeScript');
+    // That chat is read too, once it is quiet
+    await fx.app.ctx.jobs.idle();
+    const learnCalls = () => fx.mock.requests.filter((r) => !r.stream && String(r.messages[0].content).includes('long-term memory'));
+    expect(learnCalls()).toHaveLength(2);
 
     // The same reply is not read twice
-    await fx.app.ctx.memoryLearner.extract(chat.userId, t.chatId, t.assistantMessageIds[0]);
-    expect(fx.mock.requests.filter((r) => !r.stream && String(r.messages[0].content).includes('long-term memory'))).toHaveLength(2);
+    const me = (await fx.admin.get('/api/me')).json().user.id;
+    await fx.app.ctx.memoryLearner.extract(me, t.chatId, t.assistantMessageIds[0]);
+    expect(learnCalls()).toHaveLength(2);
   });
 
   it('merges with what it knows, and only reads what is new since last time', async () => {

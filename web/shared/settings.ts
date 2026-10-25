@@ -28,6 +28,7 @@ export const UserSettingsSchema = z.object({
       showReasoning: z.boolean(),
       showStatistics: z.boolean(),
       visualExplanations: z.boolean(),
+      pasteLongTextAsFile: z.boolean(),
       systemPrompt: z.string().max(100_000),
       systemPromptFileName: z.string().max(255),
       reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
@@ -43,6 +44,8 @@ export const UserSettingsSchema = z.object({
       learn: z.boolean(),
       /** Health, finances and similar topics may be saved too (default off). */
       sensitive: z.boolean(),
+      /** New messages may search the user's earlier chats (the "Past chats" switch starts on). */
+      pastChats: z.boolean(),
     })
     .partial()
     .optional(),

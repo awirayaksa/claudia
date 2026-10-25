@@ -146,7 +146,14 @@
     "removeModel": "Remove {{name}}",
     "compacted_one": "The first exchange was summarized to fit the context",
     "compacted_other": "The first {{count}} exchanges were summarized to fit the context",
-    "compactedSummary": "Summary the model sees instead"
+    "compactedSummary": "Summary the model sees instead",
+    "cutOff": "The reply reached the maximum length.",
+    "continue": "Continue",
+    "exportAs": {
+      "md": "Markdown",
+      "pdf": "PDF",
+      "json": "Claudia JSON (all versions)"
+    }
   },
   "settings": {
     "title": "Settings",
@@ -195,7 +202,8 @@
     "noSharedLinks": "You haven't shared any chats.",
     "revokeLink": "Delete link",
     "memory": "Memory",
-    "apiKeys": "API keys"
+    "apiKeys": "API keys",
+    "styles": "Styles"
   },
   "admin": {
     "title": "Administration",
@@ -573,7 +581,9 @@
       "delete": "Forgot"
     },
     "undo": "Undo",
-    "undone": "Undone"
+    "undone": "Undone",
+    "pastChats": "Search my past chats",
+    "pastChatsHelp": "The model may look through your earlier chats when you refer to them (\"what did we decide about…\"), and links the ones it used. Only your own chats; never temporary ones; inside a folder, only that folder’s. Switches “Past chats” on for new messages; the model must support tools."
   },
   "apiKeys": {
     "help": "Use the models you have here from other apps with an OpenAI-compatible API, including Claudia desktop as a custom provider.",
@@ -757,7 +767,9 @@
     "image": "Image",
     "imageHelp": "Let the model create images",
     "running": "running…",
-    "done": "done"
+    "done": "done",
+    "pastChats": "Past chats",
+    "pastChatsHelp": "Let the model search your earlier chats when you refer to them"
   },
   "artifacts": {
     "preview": "Preview",
@@ -1196,5 +1208,26 @@
     "reconnect": "Reconnect",
     "waiting": "Waiting for sign-in…",
     "disconnect": "Disconnect"
+  },
+  "styles": {
+    "title": "Writing style",
+    "pick": "Writing style",
+    "manage": "Manage styles…",
+    "help": "How replies are written. Pick a style from the pen button next to the message box; the chat keeps it. Normal sends no style.",
+    "forEveryone": "for everyone",
+    "sharedBy": "shared by {{name}}",
+    "share": "Share",
+    "new": "New style",
+    "writeForMe": "Write it for me",
+    "writeForMeHelp": "Paste some writing you like (yours or anyone’s), describe the style, or both; the model drafts the instructions, which you can edit before saving.",
+    "samples": "Samples of the writing",
+    "describe": "Or describe it, e.g. “like a friendly support agent, short paragraphs”",
+    "write": "Write the style",
+    "writing": "Writing…",
+    "name": "Name",
+    "description": "Short description (optional)",
+    "instructions": "Instructions",
+    "instructionsPlaceholder": "How the replies should be written: tone, length, structure, words to use or avoid…",
+    "everyone": "Make it available to everyone"
   }
 }

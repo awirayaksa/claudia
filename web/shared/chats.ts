@@ -31,6 +31,8 @@ export const ChatParamsSchema = z.object({
   frequencyPenalty: z.number().min(-2).max(2).nullable(),
   presencePenalty: z.number().min(-2).max(2).nullable(),
   systemPrompt: z.string().max(100_000).nullable(),
+  /** The writing style last used (set by the server with each message). */
+  styleId: z.string().max(64).nullable(),
 });
 export type ChatParams = { [K in keyof z.infer<typeof ChatParamsSchema>]?: Exclude<z.infer<typeof ChatParamsSchema>[K], null> };
 
@@ -96,6 +98,10 @@ export const CompletionRequest = z.object({
   modelIds: z.array(z.string().min(1)).min(1).max(4),
   /** Answer the user node `parentId` again (new sibling replies); content and files are ignored. */
   regenerate: z.boolean().default(false),
+  /** The writing style: a built-in id ("concise") or a style's id; unset = Normal. */
+  styleId: z.string().min(1).max(64).optional(),
+  /** Carry on this reply, cut off at the output limit, in the same message (by the model that wrote it). */
+  continueId: z.uuid().optional(),
   params: z
     .object({
       temperature: z.number().min(0).max(2).optional(),

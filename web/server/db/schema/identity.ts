@@ -13,7 +13,7 @@ export interface UserSettings {
   /** Tool servers this user switched on or off (default: global on, built-ins off). */
   mcp?: { enabled: Record<string, boolean> };
   /** Saved memories are added to every chat; learning and sensitive topics (see shared/settings). */
-  memory?: { enabled?: boolean; learn?: boolean; sensitive?: boolean };
+  memory?: { enabled?: boolean; learn?: boolean; sensitive?: boolean; pastChats?: boolean };
   /** The web app's language; null (or unset) follows the browser. */
   language?: string | null;
 }

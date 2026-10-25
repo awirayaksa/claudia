@@ -68,6 +68,7 @@ import { FolderService } from './modules/chats/folders';
 import { GitHubSources } from './rag/github-source';
 import { CodeSandbox } from './code/sandbox';
 import { adminCodeRoutes } from './code/routes';
+import { styleRoutes } from './modules/styles/routes';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
 import { RagConfig } from './rag/config';
@@ -430,6 +431,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => toolRoutes(a, ctx), { prefix: '/tools' });
       await api.register((a) => adminMcpRoutes(a, ctx), { prefix: '/admin/mcp-servers' });
       await api.register((a) => adminCodeRoutes(a, ctx), { prefix: '/admin/code' });
+      await api.register((a) => styleRoutes(a, ctx), { prefix: '/styles' });
       await api.register((a) => adminUserRoutes(a, ctx), { prefix: '/admin/users' });
       await api.register((a) => adminConnectionRoutes(a, ctx), { prefix: '/admin/connections' });
       await api.register((a) => adminSettingsRoutes(a, ctx), { prefix: '/admin/settings' });

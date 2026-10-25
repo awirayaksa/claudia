@@ -50,6 +50,21 @@ plus feature-parity work with Claude (issue #15):
   `/workspace`; files the code writes (charts, spreadsheets…) come back under
   the reply, and what it prints streams into the reply as it runs. See
   [Code runs on the server](#code-runs-on-the-server).
+- **Continue** a reply cut off at the output limit: it says so, and Continue
+  carries on in the same message (usage adds up both parts).
+- **Long pastes become attachments** (Preferences → Attach long pastes): a
+  paste of 2,000 characters or 40 lines becomes a "Pasted text" chip that is
+  sent whole; click it to read it or put it back in the message box.
+- **Writing styles** (the pen button by the message box; Settings → Styles):
+  Normal, Concise, Explanatory, Formal, and styles of your own, written by
+  hand or drafted by the model from a sample of writing. Shared like prompts;
+  admins can make styles for everyone. The chat keeps the last one used.
+- **Export a chat as Markdown or PDF** (the chat menu), besides Claudia JSON:
+  the branch that is shown, tool calls folded, images embedded in the PDF.
+- **Past chats** (the clock button above the message box; Settings → Memory
+  to have it on by default): the model can search your earlier chats and
+  list recent ones, and cites the ones it used. Only your own, never
+  temporary ones, and inside a folder only that folder's.
 
 Phase 7 adds:
 

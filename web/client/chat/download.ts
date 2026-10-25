@@ -4,7 +4,10 @@ import { apiFetchRaw, toApiError } from '../api/http';
 export async function downloadFrom(path: string, fallbackName: string): Promise<void> {
   const res = await apiFetchRaw(path);
   if (!res.ok) throw await toApiError(res);
-  const name = /filename="([^"]+)"/.exec(res.headers.get('content-disposition') ?? '')?.[1] ?? fallbackName;
+  const disposition = res.headers.get('content-disposition') ?? '';
+  // The UTF-8 name when given (titles in any script), else the plain one
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(disposition)?.[1];
+  const name = (utf8 ? decodeURIComponent(utf8) : /filename="([^"]+)"/.exec(disposition)?.[1]) ?? fallbackName;
   saveBlob(await res.blob(), name);
 }
 

@@ -52,6 +52,7 @@ import type {
   RagSettingsUpdate,
   SearchHit,
 } from '@shared/knowledge';
+import type { StyleInput, StyleView } from '@shared/styles';
 import type {
   GrantInput,
   GrantView,
@@ -78,7 +79,7 @@ import type {
 } from '@shared/workspace';
 
 /** What can be shared, and where its access routes are. */
-export type AccessKind = 'models' | 'prompts' | 'knowledge' | 'notes' | 'channels' | 'folders';
+export type AccessKind = 'models' | 'prompts' | 'knowledge' | 'notes' | 'channels' | 'folders' | 'styles';
 
 export interface ApiErrorShape {
   status: number;
@@ -111,6 +112,7 @@ export const api = createApi({
   reducerPath: 'api',
   baseQuery,
   tagTypes: [
+    'Styles',
     'Session',
     'Chats',
     'Chat',
@@ -642,6 +644,25 @@ export const api = createApi({
       invalidatesTags: ['Plugins'],
     }),
 
+    // ─── Writing styles ─────────────────────────────────────────────────────
+    styles: b.query<{ styles: StyleView[] }, void>({ query: () => '/styles', providesTags: ['Styles'] }),
+    createStyle: b.mutation<{ style: StyleView }, StyleInput>({
+      query: (body) => ({ url: '/styles', method: 'POST', body }),
+      invalidatesTags: ['Styles'],
+    }),
+    updateStyle: b.mutation<{ style: StyleView }, { id: string } & Partial<StyleInput>>({
+      query: ({ id, ...body }) => ({ url: `/styles/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Styles'],
+    }),
+    deleteStyle: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/styles/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Styles'],
+    }),
+    /** Draft a style from writing samples or a description (not saved). */
+    generateStyle: b.mutation<{ name: string; description: string; instructions: string }, { samples?: string; description?: string }>({
+      query: (body) => ({ url: '/styles/generate', method: 'POST', body }),
+    }),
+
     // ─── Memory, API keys, usage, own tool servers ──────────────────────────
     memories: b.query<{ memories: MemoryView[] }, void>({ query: () => '/me/memories', providesTags: ['Memories'] }),
     addMemory: b.mutation<{ memory: MemoryView }, { content: string; topic?: MemoryTopic; folderId?: string | null }>({
@@ -931,6 +952,11 @@ export const {
   useSetGrantsMutation,
   useMyGroupsQuery,
   useFindUsersQuery,
+  useStylesQuery,
+  useCreateStyleMutation,
+  useUpdateStyleMutation,
+  useDeleteStyleMutation,
+  useGenerateStyleMutation,
   useMemoriesQuery,
   useAddMemoryMutation,
   useUpdateMemoryMutation,

@@ -9,7 +9,7 @@
 import { eq, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Database } from '../db/client';
-import { messages, usageEvents, users, type MessageMeta, type UserSettings, notes } from '../db/schema';
+import { chats, messages, usageEvents, users, type MessageMeta, type UserSettings, notes } from '../db/schema';
 import { badRequest } from '../lib/errors';
 import { uuidv7 } from '../lib/ids';
 import type { AuthUser } from '../auth/sessions';
@@ -52,6 +52,9 @@ import type { MessageRef } from '../../shared/knowledge';
 import { CLIENT_TOOL_NAMES, CODE_TOOL, NO_BROWSER_MESSAGE } from './client-tools';
 import { activeCodeEngine, RUN_CODE_TOOL, RUN_CODE_TOOL_NAME, runSummary as codeRunSummary, type CodeSandbox } from '../code/sandbox';
 import { workspaceMime } from '../../shared/workspace-files';
+import { resolveStyle, stylePrompt } from '../modules/styles/routes';
+import { CHAT_SEARCH_TOOL_NAMES, CHAT_SEARCH_TOOLS, ChatSearch, runChatSearchTool } from '../modules/chats/chat-search';
+import { isBuiltinStyle } from '../../shared/styles';
 import { generateImage, IMAGE_TOOL, IMAGE_TOOL_NAME } from '../media/images';
 import type { MediaConfig } from '../media/config';
 import type { Webhooks } from '../admin/webhooks';
@@ -146,7 +149,32 @@ interface RunPlan {
   imageGen: boolean;
   /** Where the code interpreter runs, when it is offered. */
   codeEngine: 'browser' | 'server' | null;
+  /** Continuing this reply (cut off at the output limit): it keeps its parts and grows. */
+  continueNode: MessageNode | null;
+  /** The writing style of the turn. */
+  style: { id: string; name: string; instructions: string } | null;
+  /** The model may search the user's earlier chats. */
+  pastChats: boolean;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
+}
+
+/** What continuing a cut-off reply sends after the conversation. */
+export function continuationMessages(reply: MessageNode, prefill: boolean): ChatMessage[] {
+  const rounds = toOpenAIMessages([{ ...reply, status: 'completed' }]);
+  const last = rounds[rounds.length - 1];
+  // Anthropic carries on from a final assistant message (which must not end in whitespace)
+  if (prefill && last?.role === 'assistant' && typeof last.content === 'string' && last.content.trim()) {
+    return [...rounds.slice(0, -1), { ...last, content: last.content.trimEnd() }];
+  }
+  return [
+    ...rounds,
+    {
+      role: 'user',
+      content:
+        'Your reply above was cut off at the output limit. Continue it exactly where it stopped, mid-word or mid-line if needed: ' +
+        "no greeting, no summary of what you said, and don't repeat anything. If you were inside a code block, keep writing the code without opening a new block.",
+    },
+  ];
 }
 
 function addUsage(a: MessageUsage | undefined, b: MessageUsage): MessageUsage {
@@ -162,34 +190,44 @@ function addUsage(a: MessageUsage | undefined, b: MessageUsage): MessageUsage {
 
 export class ChatOrchestrator {
   private readonly repo: ChatRepo;
+  private readonly chatSearch: ChatSearch;
 
   constructor(private readonly deps: OrchestratorDeps) {
     this.repo = new ChatRepo(deps.db);
+    this.chatSearch = new ChatSearch(deps.db);
   }
 
   async start(user: AuthUser, chatId: string, req: CompletionRequest): Promise<CompletionResponse> {
     const { db, models, runs, settings } = this.deps;
-    if (!req.regenerate && !req.content.trim() && req.fileIds.length === 0) {
+    if (!req.regenerate && !req.continueId && !req.content.trim() && req.fileIds.length === 0) {
       throw badRequest('The message is empty.', 'empty_message');
     }
 
     const chat = await this.repo.getOwned(user.id, chatId);
     await this.deps.usage?.check(user);
+    const rows = await this.repo.messages(chat.id);
+    const all = rows.map(toNode);
+
+    // Continuing: the same reply carries on, by the model that wrote it
+    const continuing = req.continueId ? rows.find((r) => r.id === req.continueId) : undefined;
+    if (req.continueId && (!continuing || continuing.role !== 'assistant' || continuing.status === 'streaming' || !continuing.modelId)) {
+      throw badRequest('Only a finished reply can be continued.', 'invalid_continue');
+    }
+
     // "Arena": two eligible models, picked at random, answer without their names
-    const arena = await this.arenaPick(user, req);
-    const modelIds = arena ? arena.models : req.modelIds;
+    const arena = continuing ? null : await this.arenaPick(user, req);
+    const modelIds = continuing ? [continuing.modelId!] : arena ? arena.models : req.modelIds;
     const targetsResolved = await Promise.all(modelIds.map((id) => models.resolve(id, user.role, user.id)));
     const limits = await settings.get('limits');
 
-    const rows = await this.repo.messages(chat.id);
-    const all = rows.map(toNode);
-    if (req.parentId && !all.some((n) => n.id === req.parentId)) {
+    const parentId = continuing ? continuing.parentId : req.parentId;
+    if (parentId && !all.some((n) => n.id === parentId)) {
       throw badRequest('The message to reply to is not part of this chat.', 'invalid_parent');
     }
 
-    // Regenerating: answer an existing user turn again, as new sibling replies
-    const existing = req.regenerate ? rows.find((r) => r.id === req.parentId) : undefined;
-    if (req.regenerate && (!existing || existing.role !== 'user')) {
+    // Regenerating: answer an existing user turn again, as new sibling replies (continuing: the turn it answers)
+    const existing = req.regenerate || continuing ? rows.find((r) => r.id === parentId) : undefined;
+    if ((req.regenerate || continuing) && (!existing || existing.role !== 'user')) {
       throw badRequest('Only a message you sent can be answered again.', 'invalid_parent');
     }
 
@@ -221,13 +259,21 @@ export class ChatOrchestrator {
     const codeEngine = code ? await this.checkCode(user) : null;
     const imageGen = existing ? !!existing.meta?.imageGen : req.features.imageGen === true;
     if (imageGen) await this.checkImageGen(user);
+    const pastChats = existing ? !!existing.meta?.pastChats : req.features.pastChats === true;
     await this.checkRefs(user, refs, webSearch);
+    // The writing style: a regeneration (or continuation) keeps the turn's
+    const styleId = existing ? existing.meta?.style : req.styleId;
+    const style =
+      styleId && (isBuiltinStyle(styleId) || this.deps.access)
+        ? await resolveStyle({ db: this.deps.db, access: this.deps.access! }, user, styleId)
+        : null;
+    if (!existing && styleId && !style && styleId !== 'normal') throw badRequest('That writing style was not found.', 'style_not_found');
 
     const run = await runs.start({
       userId: user.id,
       chatId: chat.id,
       // One run per branch: new turns lock the node they follow, regenerations the turn they answer
-      lockKey: existing ? `${chat.id}:answers:${existing.id}` : `${chat.id}:${req.parentId ?? 'root'}`,
+      lockKey: continuing ? `${chat.id}:continue:${continuing.id}` : existing ? `${chat.id}:answers:${existing.id}` : `${chat.id}:${req.parentId ?? 'root'}`,
       maxConcurrent: limits.concurrentRuns,
     });
 
@@ -245,6 +291,8 @@ export class ChatOrchestrator {
           ...(webSearch ? { webSearch: true } : {}),
           ...(code ? { code: true } : {}),
           ...(imageGen ? { imageGen: true } : {}),
+          ...(style ? { style: style.id } : {}),
+          ...(pastChats ? { pastChats: true } : {}),
         };
         userNode = {
           id: uuidv7(),
@@ -271,10 +319,15 @@ export class ChatOrchestrator {
         };
       }
       const history = pathTo(all, userNode.parentId);
-      const targets = targetsResolved.map((model) => ({ assistantId: uuidv7(), model }));
+      const targets = targetsResolved.map((model) => ({ assistantId: continuing?.id ?? uuidv7(), model }));
+      const continueNode = continuing ? toNode(continuing) : null;
 
       await db.transaction(async (tx) => {
         if (newUserRow) await tx.insert(messages).values(newUserRow);
+        if (continuing) {
+          await tx.update(messages).set({ status: 'streaming', error: null, updatedAt: now }).where(eq(messages.id, continuing.id));
+          return;
+        }
         for (const t of targets) {
           await tx.insert(messages).values({
             id: t.assistantId,
@@ -290,6 +343,12 @@ export class ChatOrchestrator {
       });
       // Answering one turn again doesn't change which models the chat uses
       await this.repo.touch(chat.id, { currentLeafId: targets[0].assistantId, ...(existing ? {} : { modelIds: req.modelIds }) });
+      // The chat remembers the style last used
+      const chatStyle = style?.id ?? null;
+      if (!existing && (chat.params.styleId ?? null) !== chatStyle) {
+        const { styleId: _old, ...params } = chat.params;
+        await db.update(chats).set({ params: chatStyle ? { ...params, styleId: chatStyle } : params }).where(eq(chats.id, chat.id));
+      }
 
       runs.emit(run, {
         type: 'run.started',
@@ -299,7 +358,11 @@ export class ChatOrchestrator {
         assistantMessageIds: targets.map((t) => t.assistantId),
       });
       if (!existing) runs.emit(run, { type: 'message.created', message: userNode });
-      for (const t of targets) {
+      if (continueNode) {
+        const { stopReason: _stopped, ...rest } = continueNode;
+        runs.emit(run, { type: 'message.created', message: { ...rest, status: 'streaming' } });
+      }
+      for (const t of continueNode ? [] : targets) {
         runs.emit(run, {
           type: 'message.created',
           message: {
@@ -321,7 +384,24 @@ export class ChatOrchestrator {
         existing && req.params.effort === undefined && userNode.effort
           ? { ...req, params: { ...req.params, effort: userNode.effort } }
           : req;
-      const plan: RunPlan = { run, user, chat, req: effectiveReq, history, userNode, skillPrompt, targets, refs, webSearch, code, codeEngine, imageGen };
+      const plan: RunPlan = {
+        run,
+        user,
+        chat,
+        req: effectiveReq,
+        history,
+        userNode,
+        skillPrompt,
+        targets,
+        refs,
+        webSearch,
+        code,
+        codeEngine,
+        imageGen,
+        continueNode,
+        style,
+        pastChats,
+      };
       void withSpan('claudia.run', { 'claudia.run_id': run.id, 'claudia.chat_id': chat.id, 'enduser.id': user.id }, () => this.execute(plan)).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
         runs.finish(run, 'error');
@@ -382,6 +462,8 @@ export class ChatOrchestrator {
       if (f.systemPrompt?.trim()) after.push(sys(f.systemPrompt));
     }
     if (chat.params.systemPrompt?.trim()) after.push(sys(chat.params.systemPrompt));
+    // The writing style, apart from the system prompts
+    if (plan.style) after.push({ role: 'system', content: stylePrompt(plan.style) });
 
     // Sources (knowledge, references, web), numbered for citations, last
     const sources = await this.gatherSources(plan, userText).catch((err) => {
@@ -488,8 +570,11 @@ export class ChatOrchestrator {
     const { run, chat, req } = plan;
     const { runs, db, settings } = this.deps;
     const builder = new PartsBuilder();
-    for (const c of opts.citations) builder.add(c);
-    if (opts.citations.length > 0) {
+    // Continuing: the reply keeps what it has (its citations too) and grows
+    const continued = plan.continueNode?.id === assistantId ? plan.continueNode : null;
+    for (const p of continued?.parts ?? []) builder.add(structuredClone(p));
+    if (!continued) for (const c of opts.citations) builder.add(c);
+    if (!continued && opts.citations.length > 0) {
       runs.emit(run, {
         type: 'message.citations',
         messageId: assistantId,
@@ -499,9 +584,12 @@ export class ChatOrchestrator {
     const limits = await settings.get('limits');
     const signal = run.controller.signal;
     const started = Date.now();
-    let usage: MessageUsage | undefined;
+    // The reply's total (both parts of a continued one); this run's own for the usage records
+    let usage: MessageUsage | undefined = continued?.usage;
+    let runUsage: MessageUsage | undefined;
     let status: RunStatus = 'completed';
     let error: string | undefined;
+    let lastReason: string | undefined;
 
     // Request, then chat, then custom model, then the user's preferences
     const model = target.custom?.params ?? {};
@@ -548,7 +636,17 @@ export class ChatOrchestrator {
         .set({
           parts: builder.parts,
           updatedAt: new Date(),
-          ...(final ? { status, error: error ?? null, usage: usage ?? null } : {}),
+          ...(final
+            ? {
+                status,
+                error: error ?? null,
+                usage: usage ?? null,
+                // Cut off at the output limit: the reply can be continued
+                meta: lastReason === 'length' && status === 'completed'
+                  ? sql`${messages.meta} || '{"stopReason":"length"}'::jsonb`
+                  : sql`${messages.meta} - 'stopReason'`,
+              }
+            : {}),
         })
         .where(eq(messages.id, assistantId));
     };
@@ -560,9 +658,12 @@ export class ChatOrchestrator {
         ...(plan.codeEngine === 'browser' ? [CODE_TOOL] : plan.codeEngine === 'server' ? [RUN_CODE_TOOL] : []),
         ...(plan.imageGen ? [IMAGE_TOOL] : []),
         ...(opts.memory ? memoryToolDefinitions(!!chat.folderId) : []),
+        ...(plan.pastChats ? CHAT_SEARCH_TOOLS : []),
       ];
+      const isChatSearch = (name: string) => plan.pastChats && CHAT_SEARCH_TOOL_NAMES.has(name);
       const isMemoryTool = (name: string) => !!opts.memory && MEMORY_TOOL_NAMES.has(name);
-      const onServer = (name: string) => (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name) || isServerCode(name);
+      const onServer = (name: string) =>
+        (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name) || isServerCode(name) || isChatSearch(name);
       const inBrowser = (name: string) => plan.codeEngine === 'browser' && CLIENT_TOOL_NAMES.has(name);
       const isServerCode = (name: string) => plan.codeEngine === 'server' && name === RUN_CODE_TOOL_NAME;
       const firstTurnOnly = opts.toolset.firstTurnOnly || !!target.connection.quirks.toolsFirstTurnOnly;
@@ -572,10 +673,15 @@ export class ChatOrchestrator {
         const turnSoFar = toOpenAIMessages([
           { id: assistantId, chatId: chat.id, parentId: null, role: 'assistant', parts: builder.parts, status: 'streaming', createdAt: '' },
         ]).filter((m) => m.role !== 'assistant' || m.tool_calls);
+        // Continuing, first request: the reply so far, then carry on from its last word
+        const messagesNow =
+          continued && iteration === 0
+            ? continuationMessages(continued, target.connection.type === 'anthropic')
+            : turnSoFar;
 
         const request: ChatCompletionRequest = {
           model: target.providerModelId,
-          messages: [...budget.messages, ...turnSoFar],
+          messages: [...budget.messages, ...messagesNow],
           ...(temperature !== undefined ? { temperature } : {}),
           ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
           ...(topP !== undefined ? { top_p: topP } : {}),
@@ -597,6 +703,7 @@ export class ChatOrchestrator {
           },
           onUsage: (u) => {
             usage = addUsage(usage, u);
+            runUsage = addUsage(runUsage, u);
             runs.emit(run, { type: 'message.usage', messageId: assistantId, usage });
           },
           onToolCalls: (calls) => {
@@ -604,6 +711,7 @@ export class ChatOrchestrator {
           },
         });
 
+        lastReason = reason;
         if (reason === 'aborted') {
           status = 'stopped';
           break;
@@ -641,6 +749,8 @@ export class ChatOrchestrator {
             async (span) => {
               const result = inBrowser(call.function.name)
                 ? await this.runInBrowser(plan, assistantId, call, signal)
+                : isChatSearch(call.function.name)
+                  ? await this.searchChats(plan, assistantId, call, builder)
                 : isServerCode(call.function.name)
                   ? await this.runServerCode(plan, assistantId, call, signal)
                   : isMemoryTool(call.function.name)
@@ -683,10 +793,11 @@ export class ChatOrchestrator {
       messageId: assistantId,
       status,
       ...(error ? { error } : {}),
+      ...(lastReason === 'length' && status === 'completed' ? { stopReason: 'length' as const } : {}),
       parts: builder.parts,
     });
 
-    if (usage) {
+    if (runUsage) {
       await db
         .insert(usageEvents)
         .values({
@@ -696,9 +807,9 @@ export class ChatOrchestrator {
           modelId: target.model.id,
           connectionId: target.connection.id,
           kind: 'chat',
-          promptTokens: usage.prompt_tokens ?? 0,
-          completionTokens: usage.completion_tokens ?? 0,
-          cost: usage.cost ?? null,
+          promptTokens: runUsage.prompt_tokens ?? 0,
+          completionTokens: runUsage.completion_tokens ?? 0,
+          cost: runUsage.cost ?? null,
           latencyMs: Date.now() - started,
         })
         .catch((err) => this.deps.log.warn({ err: String(err) }, 'recording usage failed'));
@@ -822,6 +933,40 @@ export class ChatOrchestrator {
       if (view) resolved.set(row.id, view);
     }
     return { resolveFile: (part) => resolved.get(part.fileId) ?? null };
+  }
+
+  /**
+   * Search the user's earlier chats (only theirs, not temporary ones, and
+   * inside a folder only that folder's). The chats found are added to the
+   * reply's sources, numbered after the ones it has, so the model cites them
+   * and the user can open them.
+   */
+  private async searchChats(plan: RunPlan, messageId: string, call: ToolCall, builder: PartsBuilder): Promise<ToolExecution> {
+    const folderIds = plan.chat.folderId
+      ? [plan.chat.folderId, ...((await this.deps.folders?.descendants(plan.chat.folderId)) ?? [])]
+      : null;
+    const cited = builder.parts.flatMap((p) => (p.type === 'citation' ? [p] : []));
+    const next = cited.reduce((n, c) => Math.max(n, c.index), 0) + 1;
+    try {
+      const { content, isError, sources } = await runChatSearchTool(
+        this.chatSearch,
+        { userId: plan.user.id, excludeChatId: plan.chat.id, folderIds },
+        call,
+        next
+      );
+      if (sources.length) {
+        for (const src of sources) builder.add({ type: 'citation', index: src.index, source: src.source });
+        const all = builder.parts.flatMap((p) => (p.type === 'citation' ? [{ index: p.index, source: p.source }] : []));
+        this.deps.runs.emit(plan.run, { type: 'message.citations', messageId, citations: all });
+      }
+      return { serverId: 'claudia', tool: call.function.name, result: { type: 'tool_result', callId: call.id, content, ...(isError ? { isError: true } : {}) } };
+    } catch (err) {
+      return {
+        serverId: 'claudia',
+        tool: call.function.name,
+        result: { type: 'tool_result', callId: call.id, content: JSON.stringify({ error: err instanceof Error ? err.message : String(err) }), isError: true },
+      };
+    }
   }
 
   /** A memory tool call, as the user; a change shows as a chip under the reply. */
