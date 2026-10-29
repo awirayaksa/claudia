@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import type { GrantView, ItemAccess } from './access';
+import { McpOAuthInput, type McpOAuthView } from './mcp';
 
 // ─── Custom models (model builder) ───────────────────────────────────────────
 
@@ -81,13 +82,44 @@ export interface WithGrants {
 // ─── Memory ──────────────────────────────────────────────────────────────────
 
 export const MAX_MEMORIES = 200;
-export const MemoryInput = z.object({ content: z.string().trim().min(1).max(1000) });
+export const MAX_MEMORY_CHARS = 1000;
+
+/** What a memory is about; the Memory settings group them by topic. */
+export const MEMORY_TOPICS = ['about', 'work', 'preferences', 'projects', 'people', 'other'] as const;
+export type MemoryTopic = (typeof MEMORY_TOPICS)[number];
+/** user: typed in settings; model: saved by the model during a chat; auto: learned after a chat; import: from another assistant. */
+export type MemorySource = 'user' | 'model' | 'auto' | 'import';
+
+export const MemoryInput = z.object({
+  content: z.string().trim().min(1).max(MAX_MEMORY_CHARS),
+  topic: z.enum(MEMORY_TOPICS).optional(),
+  /** Only for chats in this folder; null (or unset) for every chat. */
+  folderId: z.uuid().nullable().optional(),
+});
 
 export interface MemoryView {
   id: string;
   content: string;
+  topic: MemoryTopic;
+  source: MemorySource;
+  folderId: string | null;
+  chatId: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+/** Another assistant's memory export (pasted text, a list or JSON), at most 100 kB. */
+export const MemoryImportInput = z.object({ text: z.string().trim().min(1).max(100_000) });
+
+/** A change the model made to memories, shown as a chip under its reply. */
+export interface MemoryChangeView {
+  id: string;
+  action: 'add' | 'update' | 'delete';
+  memoryId: string;
+  topic: MemoryTopic;
+  /** The text after the change (before it, for a deletion). */
+  content: string;
+  undone: boolean;
 }
 
 // ─── API keys ────────────────────────────────────────────────────────────────
@@ -123,6 +155,8 @@ export const UserMcpServerInput = z.object({
   url: z.url().refine((u) => /^https?:\/\//i.test(u), 'Use an http(s) URL'),
   /** Omitted on update = keep the stored ones. */
   headers: z.record(z.string().min(1).max(200), z.string().max(10_000)).optional(),
+  /** Sign in with OAuth; null = no OAuth. */
+  oauth: McpOAuthInput.nullable().optional(),
   enabled: z.boolean().default(true),
 });
 export type UserMcpServerInput = z.infer<typeof UserMcpServerInput>;
@@ -134,5 +168,6 @@ export interface UserMcpServerView {
   transport: 'streamable-http' | 'sse';
   url: string;
   headerNames: string[];
+  oauth: McpOAuthView | null;
   enabled: boolean;
 }

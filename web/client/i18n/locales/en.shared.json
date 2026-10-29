@@ -11,11 +11,14 @@
     "hint": "Enter to send · Shift+Enter for new line ·",
     "hintEffort": "to set effort for one message",
     "paste": "Paste",
+    "pastedSize": "{{lines}} lines · {{chars}} characters",
+    "pasteInline": "Put it in the message instead",
     "pastePlain": "Paste as plain text",
     "placeholder": "Type your message...",
     "removeAttachment": "Remove {{name}}",
     "send": "Send message",
-    "uploading": "Uploading files..."
+    "uploading": "Uploading files...",
+    "viewPasted": "Show the pasted text"
   },
   "citations": {
     "open": "Open",
@@ -111,6 +114,8 @@
     "modelHelp": "Configure model parameters for API requests.",
     "modelTitle": "Model Preferences",
     "note": "Note:",
+    "pasteLongAsFile": "Attach long pastes",
+    "pasteLongAsFileHelp": "Pasting a long text (2,000 characters or 40 lines) adds it as a \"Pasted text\" attachment instead of filling the message box. \"Paste as plain text\" in the right-click menu always pastes into the box.",
     "reset": "Reset",
     "selectFile": "Select .txt or .md file",
     "showReasoning": "Show Reasoning",

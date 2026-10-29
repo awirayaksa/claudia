@@ -32,7 +32,8 @@ export interface Principal {
 }
 
 /** Personal items (notes): admins get no rights over other people's, only what is shared with them. */
-const PERSONAL = new Set<ResourceType>(['note']);
+// Admins get no access of their own to these
+const PERSONAL = new Set<ResourceType>(['note', 'folder']);
 
 export interface ItemRights {
   read: boolean;

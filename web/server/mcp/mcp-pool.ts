@@ -27,6 +27,7 @@ import { forbidden, notFound } from '../lib/errors';
 import { changedFiles, snapshotWorkspace } from '../workspace/files';
 import { guardedTransport, type GuardedTransport } from '../net/safe-fetch';
 import type { AccessService } from '../auth/access';
+import type { McpOAuth, StoredOAuthConfig } from './oauth';
 
 const USER_IDLE_MS = 10 * 60_000;
 const TOOL_TIMEOUT_MS = 120_000;
@@ -51,6 +52,8 @@ export interface StoredMcpConfig {
   command?: string;
   args?: string[];
   env?: Record<string, string>;
+  /** Sign in with OAuth (HTTP / SSE). */
+  oauth?: StoredOAuthConfig;
 }
 
 export type McpServerRow = typeof mcpServers.$inferSelect;
@@ -67,7 +70,12 @@ export interface ServerView {
   enabled: boolean;
   error: string | null;
   tools: MCPTool[];
+  /** Signs in with OAuth: whether it is connected. */
+  oauth?: { connected: boolean };
 }
+
+/** Shown on a server that signs in with OAuth but has no tokens yet. */
+export const OAUTH_REQUIRED = 'Sign in to use this server.';
 
 interface UserPool {
   manager: MCPClientManager;
@@ -82,6 +90,8 @@ export interface McpPoolDeps extends BuiltinDeps {
   log: FastifyBaseLogger;
   /** Without it, nobody has their own servers. */
   access?: AccessService;
+  /** OAuth sign-ins (without it, servers that need one don't start). */
+  oauth?: McpOAuth;
 }
 
 export class McpPools {
@@ -134,8 +144,14 @@ export class McpPools {
       return;
     }
     const stored = this.decrypt(row);
+    const authProvider = stored.oauth ? await this.deps.oauth?.providerFor(row.id, stored.oauth) : undefined;
+    // Waiting for an admin to sign in
+    if (stored.oauth && !authProvider) return;
     try {
-      await this.global.startServer(this.toConfig(row, stored), stored.headers ? { headers: stored.headers } : {});
+      await this.global.startServer(this.toConfig(row, stored), {
+        ...(stored.headers ? { headers: stored.headers } : {}),
+        ...(authProvider ? { authProvider } : {}),
+      });
       this.deps.log.info({ server: row.name, tools: this.global.getServerTools(row.id).length }, 'MCP server ready');
     } catch (err) {
       this.deps.log.warn({ server: row.name, err: err instanceof Error ? err.message : String(err) }, 'MCP server failed to start');
@@ -200,10 +216,26 @@ export class McpPools {
     const status = pool.manager.getServerStatus(row.id);
     if (status === 'ready' || status === 'starting' || status === 'initializing') return;
     const stored = this.decrypt(row);
+    const authProvider = stored.oauth ? await this.deps.oauth?.providerFor(row.id, stored.oauth) : undefined;
+    // Waiting for the user to sign in
+    if (stored.oauth && !authProvider) return;
     await pool.manager.startServer(this.toConfig(row, stored), {
       fetch: this.guarded.fetch,
       ...(stored.headers ? { headers: stored.headers } : {}),
+      ...(authProvider ? { authProvider } : {}),
     });
+  }
+
+  /** The fetch a server's OAuth requests go through: the SSRF guard for user servers. */
+  oauthFetch(row: McpServerRow): (url: string | URL, init?: RequestInit) => Promise<Response> {
+    return (row.ownerId ? this.guarded.fetch : fetch) as (url: string | URL, init?: RequestInit) => Promise<Response>;
+  }
+
+  /** Signed-in state of the OAuth servers among `rows`. */
+  private async oauthState(rows: McpServerRow[]): Promise<Map<string, { connected: boolean }>> {
+    const oauthRows = rows.filter((r) => r.transport !== 'stdio' && this.decrypt(r).oauth);
+    const connected = this.deps.oauth ? await this.deps.oauth.connectedSet(oauthRows.map((r) => r.id)) : new Set<string>();
+    return new Map(oauthRows.map((r) => [r.id, { connected: connected.has(r.id) }]));
   }
 
   /** Forget a running instance of the user's own server (after it changes or goes). */
@@ -241,9 +273,18 @@ export class McpPools {
   async serversFor(userId: string): Promise<ServerView[]> {
     const prefs = await this.userPrefs(userId);
     const views: ServerView[] = [];
-    for (const row of await this.globalRows()) {
+    const globals = await this.globalRows();
+    const owns = await this.ownRows(userId);
+    const oauth = await this.oauthState([...globals, ...owns]);
+    // A server waiting for a sign-in says so (only its owner, or an admin, can sign in)
+    const withOAuth = (row: McpServerRow, view: ServerView): ServerView => {
+      const state = oauth.get(row.id);
+      if (!state) return view;
+      return { ...view, oauth: state, error: view.error ?? (state.connected ? null : OAUTH_REQUIRED) };
+    };
+    for (const row of globals) {
       if (!row.enabled) continue;
-      views.push({
+      views.push(withOAuth(row, {
         id: row.id,
         name: row.name,
         description: row.description,
@@ -253,7 +294,7 @@ export class McpPools {
         enabled: this.isOn(prefs, row.id, 'global'),
         error: this.global.getServerError(row.id) ?? null,
         tools: this.global.getServerTools(row.id),
-      });
+      }));
     }
     const pool = this.users.get(userId);
     const allowed = new Set(await this.allowedBuiltins());
@@ -285,9 +326,9 @@ export class McpPools {
         tools: row.operations.map((op) => ({ name: op.name, description: op.description, inputSchema: op.inputSchema as MCPTool['inputSchema'] })),
       });
     }
-    for (const row of await this.ownRows(userId)) {
+    for (const row of owns) {
       if (!row.enabled) continue;
-      views.push({
+      views.push(withOAuth(row, {
         id: row.id,
         name: row.name,
         description: row.description,
@@ -297,7 +338,7 @@ export class McpPools {
         enabled: this.isOn(prefs, row.id, 'user'),
         error: pool?.manager.getServerError(row.id) ?? null,
         tools: pool?.manager.getServerTools(row.id) ?? [],
-      });
+      }));
     }
     return views;
   }

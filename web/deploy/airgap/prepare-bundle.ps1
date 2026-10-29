@@ -8,7 +8,8 @@
   as the release workflow does. The bundle holds everything the target needs:
 
     images\     claudia-web (built from the release, with LibreOffice for
-                exact Office to PDF conversions) and pgvector/pgvector
+                exact Office to PDF conversions) and pgvector/pgvector,
+                and with -CodeSandbox the code interpreter's sandbox image
     debs\       Docker Engine and the compose plugin for Ubuntu 24.04 (noble),
                 with the dependencies a fresh install lacks
     install.sh, compose.yml, compose.sandbox.yml, README.md
@@ -39,6 +40,10 @@
   Build the image without LibreOffice (about 600 MB smaller). Word, Excel
   and PowerPoint files are then converted to PDF approximately.
 
+.PARAMETER CodeSandbox
+  Also build and bundle claudia-sandbox (web/docker/sandbox), the image
+  server-side code runs use, so they work without internet.
+
 .PARAMETER SkipDockerPackages
   Leave out the Docker Engine packages (the target already has Docker and
   the compose plugin).
@@ -63,6 +68,7 @@ param(
   [string]$OutDir,
   [string]$PgvectorImage = 'pgvector/pgvector:pg16',
   [switch]$NoLibreOffice,
+  [switch]$CodeSandbox,
   [switch]$SkipDockerPackages,
   [switch]$NoFetch,
   [switch]$NoArchive
@@ -189,6 +195,7 @@ if ($dirty -and -not $releaseTag) {
 }
 
 $image = "claudia-web:$version"
+$sandboxImage = "claudia-sandbox:$version"
 $name = "claudia-web-$version-airgap-$Arch"
 $bundle = Join-Path $OutDir $name
 $work = Join-Path ([IO.Path]::GetTempPath()) "claudia-airgap-$($sha.Substring(0, 12))"
@@ -236,7 +243,19 @@ try {
   Write-Step "Pulling $PgvectorImage"
   Invoke-Native 'docker pull' { docker pull --platform $platform $PgvectorImage }
 
-  foreach ($pair in @(@($image, 'claudia-web.tar'), @($PgvectorImage, 'pgvector.tar'))) {
+  $saves = @(@($image, 'claudia-web.tar'), @($PgvectorImage, 'pgvector.tar'))
+  if ($CodeSandbox) {
+    Write-Step "Building $sandboxImage"
+    Invoke-Native 'docker build (sandbox)' {
+      docker build --platform $platform --load `
+        -t $sandboxImage `
+        --label "org.opencontainers.image.version=$version" `
+        ([IO.Path]::Combine($src, 'web', 'docker', 'sandbox'))
+    }
+    $saves += , @($sandboxImage, 'claudia-sandbox.tar')
+  }
+
+  foreach ($pair in $saves) {
     $img = $pair[0]
     $file = Join-Path $imagesDir $pair[1]
     Write-Step "Saving $img"
@@ -291,6 +310,7 @@ try {
     "CLAUDIA_REVISION='$sha'",
     "CLAUDIA_IMAGE='$image'",
     "PGVECTOR_IMAGE='$PgvectorImage'",
+    "CODE_SANDBOX_IMAGE='$(if ($CodeSandbox) { $sandboxImage } else { '' })'",
     "BUNDLE_ARCH='$Arch'",
     "BUNDLE_CREATED='$((Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ'))'"
   )

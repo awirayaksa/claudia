@@ -9,7 +9,7 @@ import { useT } from '../../i18n';
 export function PreferencesSettings() {
   const t = useT();
   const dispatch = useAppDispatch();
-  const { temperature, showReasoning, showStatistics, visualExplanations, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
+  const { temperature, showReasoning, showStatistics, visualExplanations, pasteLongTextAsFile, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
 
   const platform = getPlatform();
 
@@ -19,6 +19,7 @@ export function PreferencesSettings() {
   const handleShowReasoningChange = (value: boolean) => dispatch(setPreferences({ showReasoning: value }));
   const handleShowStatisticsChange = (value: boolean) => dispatch(setPreferences({ showStatistics: value }));
   const handleVisualExplanationsChange = (value: boolean) => dispatch(setPreferences({ visualExplanations: value }));
+  const handlePasteLongChange = (value: boolean) => dispatch(setPreferences({ pasteLongTextAsFile: value }));
   const handleSystemPromptChange = (value: string) => dispatch(setPreferences({ systemPrompt: value, systemPromptFileName: '' }));
 
   const handleSelectFile = async () => {
@@ -136,6 +137,21 @@ export function PreferencesSettings() {
             <div className="text-sm font-medium text-text-primary">{t('preferences.visualExplanations', 'Visual explanations')}</div>
             <div className="text-xs text-text-secondary">
               {t('preferences.visualExplanationsHelp', 'Let the model illustrate explanations with diagrams (added before your system prompt)')}
+            </div>
+          </div>
+        </label>
+        <label className="mt-4 flex items-center gap-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={pasteLongTextAsFile !== false}
+            onChange={(e) => handlePasteLongChange(e.target.checked)}
+            className="h-4 w-4 rounded border-border bg-surface text-accent focus:ring-2 focus:ring-accent focus:ring-offset-0"
+            data-testid="paste-long-as-file"
+          />
+          <div className="flex-1">
+            <div className="text-sm font-medium text-text-primary">{t('preferences.pasteLongAsFile', 'Attach long pastes')}</div>
+            <div className="text-xs text-text-secondary">
+              {t('preferences.pasteLongAsFileHelp', 'Pasting a long text (2,000 characters or 40 lines) adds it as a "Pasted text" attachment instead of filling the message box. "Paste as plain text" in the right-click menu always pastes into the box.')}
             </div>
           </div>
         </label>

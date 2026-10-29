@@ -29,6 +29,7 @@ export const UserSettingsSchema = z.object({
       showReasoning: z.boolean(),
       showStatistics: z.boolean(),
       visualExplanations: z.boolean(),
+      pasteLongTextAsFile: z.boolean(),
       systemPrompt: z.string().max(100_000),
       systemPromptFileName: z.string().max(255),
       reasoningEffort: z.enum(['minimal', 'low', 'medium', 'high', 'xhigh']).nullable(),
@@ -36,7 +37,19 @@ export const UserSettingsSchema = z.object({
     })
     .partial(),
   defaultModel: z.string().max(500).optional(),
-  memory: z.object({ enabled: z.boolean() }).optional(),
+  memory: z
+    .object({
+      /** Memories are added to chats (default on). */
+      enabled: z.boolean(),
+      /** The model may save memories during chats and learn them afterwards (default on). */
+      learn: z.boolean(),
+      /** Health, finances and similar topics may be saved too (default off). */
+      sensitive: z.boolean(),
+      /** New messages may search the user's earlier chats (the "Past chats" switch starts on). */
+      pastChats: z.boolean(),
+    })
+    .partial()
+    .optional(),
   /** The web app's language ("ar"); null follows the browser. */
   language: z
     .string()
@@ -82,5 +95,17 @@ export const AppSettingsResponse = z.object({
   audit: z.object({ retentionDays: z.number() }),
   'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
   arena: z.object({ enabled: z.boolean(), models: z.array(z.string()) }),
+  compaction: z.object({ enabled: z.boolean(), threshold: z.number(), keepRecentTurns: z.number(), model: z.string().nullable() }),
+  memory: z.object({ tools: z.boolean(), extraction: z.boolean(), model: z.string().nullable() }),
+  code: z.object({
+    engine: z.enum(['browser', 'server', 'off']),
+    pythonImage: z.string(),
+    nodeImage: z.string(),
+    memoryMb: z.number(),
+    cpus: z.number(),
+    timeoutSeconds: z.number(),
+    network: z.boolean(),
+    runtime: z.string().nullable(),
+  }),
 });
 export type AppSettingsResponse = z.infer<typeof AppSettingsResponse>;

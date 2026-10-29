@@ -10,6 +10,7 @@ import { clearMfaTicket, completeSignIn, mfaRequiredFor, readMfaTicket } from '.
 import { mfaStatus, verifyMfaCode } from './mfa';
 import { LocalAuthProvider } from './providers/local';
 import { sandboxOriginFor } from '../sandbox';
+import { activeCodeEngine } from '../code/sandbox';
 import {
   REFRESH_COOKIE,
   clearAuthCookies,
@@ -71,7 +72,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
       permissions,
       features: {
         webSearch,
-        codeInterpreter: !!sandboxOriginFor(ctx.config),
+        codeInterpreter: !!(await activeCodeEngine(ctx.settings, sandboxOriginFor(ctx.config), ctx.code)),
         imageGen: media.image.engine !== 'none',
         voiceInput: mode(media.stt.engine),
         readAloud: mode(media.tts.engine),

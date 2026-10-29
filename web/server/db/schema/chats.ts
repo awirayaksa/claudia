@@ -18,6 +18,7 @@ import type { MessageNode, MessagePart, MessageStatus } from '../../../../src/ty
 import type { MessageUsage } from '../../../../src/types/statistics.types';
 import { users } from './identity';
 import type { MessageRef } from '../../../shared/knowledge';
+import type { MemoryChangeView } from '../../../shared/workspace';
 
 /** Desktop projects import as top-level folders. */
 export const folders = pgTable(
@@ -46,6 +47,8 @@ export interface ChatParams {
   frequencyPenalty?: number;
   presencePenalty?: number;
   systemPrompt?: string;
+  /** The writing style last used in the chat (a built-in id or a style's id). */
+  styleId?: string;
 }
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
@@ -61,12 +64,24 @@ export interface MessageMeta {
   /** User nodes: #kb, #url and #chat references, and whether the web was searched. */
   refs?: MessageRef[];
   webSearch?: boolean;
+  /** User nodes: the model could search the user's earlier chats. */
+  pastChats?: boolean;
+  /** User nodes: the writing style the turn was sent with. */
+  style?: string;
   /** User nodes: the code interpreter was offered. */
   code?: boolean;
   /** User nodes: image generation was offered. */
   imageGen?: boolean;
   /** User nodes of a blind comparison: the real models (A, B) and the vote. */
   arena?: { models: [string, string]; winner?: 'a' | 'b' | 'tie' };
+  /** The path up to here was summarized (`turns` turns, folding in any earlier summary). */
+  compaction?: { summary: string; turns: number; modelId: string; at: string };
+  /** Assistant nodes: memory changes made in or learned from this reply. */
+  memoryChanges?: MemoryChangeView[];
+  /** Assistant nodes: cut off at the output limit (can be continued). */
+  stopReason?: 'length';
+  /** Assistant nodes: the path up to here was read for memories to learn. */
+  memoryScanned?: boolean;
 }
 
 export interface MessageFeedback {

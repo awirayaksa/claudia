@@ -1,7 +1,7 @@
 import { EventEmitter } from 'events';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport, getDefaultEnvironment } from '@modelcontextprotocol/sdk/client/stdio.js';
-import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
+import { StreamableHTTPClientTransport, type StreamableHTTPClientTransportOptions } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js';
@@ -41,6 +41,8 @@ export interface MCPClientOptions {
   fetch?: typeof fetch;
   /** HTTP / SSE: extra request headers, e.g. an Authorization token. */
   headers?: Record<string, string>;
+  /** HTTP / SSE: OAuth sign-in (MCP authorization); the transport adds and refreshes the bearer token. */
+  authProvider?: StreamableHTTPClientTransportOptions['authProvider'];
   /**
    * built-in: merged over config.builtinConfig. Holds in-process values that
    * can't be stored, such as an injected text extractor or HTTP getter.
@@ -264,6 +266,7 @@ export class MCPClientWrapper extends EventEmitter {
     this.transport = new StreamableHTTPClientTransport(new URL(this.config.url), {
       ...(this.options.headers ? { requestInit: { headers: this.options.headers } } : {}),
       ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+      ...(this.options.authProvider ? { authProvider: this.options.authProvider } : {}),
     });
   }
 
@@ -279,6 +282,7 @@ export class MCPClientWrapper extends EventEmitter {
     this.transport = new SSEClientTransport(new URL(this.config.url), {
       ...(this.options.headers ? { requestInit: { headers: this.options.headers } } : {}),
       ...(this.options.fetch ? { fetch: this.options.fetch } : {}),
+      ...(this.options.authProvider ? { authProvider: this.options.authProvider } : {}),
     });
   }
 

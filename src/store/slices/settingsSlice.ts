@@ -43,6 +43,8 @@ export interface SettingsState {
     updateCheckUrl: string;
     /** Default reasoning effort; null = leave it to the provider. */
     reasoningEffort: ReasoningEffort | null;
+    /** Long pastes become a "Pasted text" attachment (on unless turned off). */
+    pasteLongTextAsFile?: boolean;
   };
   profiles: ProfileMeta[];
   currentProfileId: string | null;
@@ -74,6 +76,7 @@ const initialState: SettingsState = {
     systemPromptFileName: '',
     updateCheckUrl: '',
     reasoningEffort: null,
+    pasteLongTextAsFile: true,
   },
   profiles: [],
   currentProfileId: null,

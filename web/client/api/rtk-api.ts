@@ -43,7 +43,17 @@ import type {
   WebhookView,
   WebhookWithSecret,
 } from '@shared/admin';
-import type { KnowledgeDetail, KnowledgeInput, KnowledgeView, RagSettingsResponse, RagSettingsUpdate, SearchHit } from '@shared/knowledge';
+import type {
+  GitHubSourceInput,
+  KbSourceView,
+  KnowledgeDetail,
+  KnowledgeInput,
+  KnowledgeView,
+  RagSettingsResponse,
+  RagSettingsUpdate,
+  SearchHit,
+} from '@shared/knowledge';
+import type { StyleInput, StyleView } from '@shared/styles';
 import type {
   GrantInput,
   GrantView,
@@ -60,6 +70,8 @@ import type {
   CreatedApiKey,
   CustomModelInput,
   CustomModelView,
+  MemoryChangeView,
+  MemoryTopic,
   MemoryView,
   PromptInput,
   PromptView,
@@ -68,7 +80,7 @@ import type {
 } from '@shared/workspace';
 
 /** What can be shared, and where its access routes are. */
-export type AccessKind = 'models' | 'prompts' | 'knowledge' | 'notes' | 'channels';
+export type AccessKind = 'models' | 'prompts' | 'knowledge' | 'notes' | 'channels' | 'folders' | 'styles';
 
 export interface ApiErrorShape {
   status: number;
@@ -101,6 +113,7 @@ export const api = createApi({
   reducerPath: 'api',
   baseQuery,
   tagTypes: [
+    'Styles',
     'Session',
     'Chats',
     'Chat',
@@ -403,7 +416,7 @@ export const api = createApi({
         method: 'PUT',
         body: { grants },
       }),
-      invalidatesTags: (_r, _e, { id }) => [{ type: 'Grants', id }, 'Models'],
+      invalidatesTags: (_r, _e, { id, kind }) => [{ type: 'Grants', id }, 'Models', ...(kind === 'folders' ? (['Folders'] as const) : [])],
     }),
     myGroups: b.query<{ groups: GroupRef[] }, void>({ query: () => '/directory/groups', providesTags: ['MyGroups'] }),
     findUsers: b.query<{ users: Array<{ id: string; name: string; email: string }> }, string>({
@@ -434,6 +447,18 @@ export const api = createApi({
     }),
     removeKnowledgeFile: b.mutation<{ ok: true }, { id: string; fileId: string }>({
       query: ({ id, fileId }) => ({ url: `/knowledge/${id}/files/${fileId}`, method: 'DELETE' }),
+      invalidatesTags: ['Knowledge'],
+    }),
+    addKnowledgeSource: b.mutation<{ source: KbSourceView }, { id: string } & GitHubSourceInput>({
+      query: ({ id, ...body }) => ({ url: `/knowledge/${id}/sources`, method: 'POST', body }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Knowledge', id }],
+    }),
+    syncKnowledgeSource: b.mutation<{ ok: true }, { id: string; sourceId: string }>({
+      query: ({ id, sourceId }) => ({ url: `/knowledge/${id}/sources/${sourceId}/sync`, method: 'POST' }),
+      invalidatesTags: (_r, _e, { id }) => [{ type: 'Knowledge', id }],
+    }),
+    removeKnowledgeSource: b.mutation<{ ok: true }, { id: string; sourceId: string }>({
+      query: ({ id, sourceId }) => ({ url: `/knowledge/${id}/sources/${sourceId}`, method: 'DELETE' }),
       invalidatesTags: ['Knowledge'],
     }),
     reindexKnowledge: b.mutation<{ ok: true }, string>({
@@ -635,15 +660,43 @@ export const api = createApi({
       invalidatesTags: ['Plugins'],
     }),
 
+    // ─── Writing styles ─────────────────────────────────────────────────────
+    styles: b.query<{ styles: StyleView[] }, void>({ query: () => '/styles', providesTags: ['Styles'] }),
+    createStyle: b.mutation<{ style: StyleView }, StyleInput>({
+      query: (body) => ({ url: '/styles', method: 'POST', body }),
+      invalidatesTags: ['Styles'],
+    }),
+    updateStyle: b.mutation<{ style: StyleView }, { id: string } & Partial<StyleInput>>({
+      query: ({ id, ...body }) => ({ url: `/styles/${id}`, method: 'PATCH', body }),
+      invalidatesTags: ['Styles'],
+    }),
+    deleteStyle: b.mutation<{ ok: true }, string>({
+      query: (id) => ({ url: `/styles/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['Styles'],
+    }),
+    /** Draft a style from writing samples or a description (not saved). */
+    generateStyle: b.mutation<{ name: string; description: string; instructions: string }, { samples?: string; description?: string }>({
+      query: (body) => ({ url: '/styles/generate', method: 'POST', body }),
+    }),
+
     // ─── Memory, API keys, usage, own tool servers ──────────────────────────
     memories: b.query<{ memories: MemoryView[] }, void>({ query: () => '/me/memories', providesTags: ['Memories'] }),
-    addMemory: b.mutation<{ memory: MemoryView }, string>({
-      query: (content) => ({ url: '/me/memories', method: 'POST', body: { content } }),
+    addMemory: b.mutation<{ memory: MemoryView }, { content: string; topic?: MemoryTopic; folderId?: string | null }>({
+      query: (body) => ({ url: '/me/memories', method: 'POST', body }),
       invalidatesTags: ['Memories'],
     }),
-    updateMemory: b.mutation<{ memory: MemoryView }, { id: string; content: string }>({
-      query: ({ id, content }) => ({ url: `/me/memories/${id}`, method: 'PATCH', body: { content } }),
+    updateMemory: b.mutation<{ memory: MemoryView }, { id: string; content: string; topic?: MemoryTopic; folderId?: string | null }>({
+      query: ({ id, ...body }) => ({ url: `/me/memories/${id}`, method: 'PATCH', body }),
       invalidatesTags: ['Memories'],
+    }),
+    importMemories: b.mutation<{ added: number; skipped: number }, string>({
+      query: (text) => ({ url: '/me/memories/import', method: 'POST', body: { text } }),
+      invalidatesTags: ['Memories'],
+    }),
+    /** Undo a change the model made to memories; refreshes the chat that shows its chip. */
+    undoMemoryChange: b.mutation<{ change: MemoryChangeView }, { id: string; chatId: string }>({
+      query: ({ id }) => ({ url: `/me/memories/changes/${id}/undo`, method: 'POST' }),
+      invalidatesTags: (_r, _e, { chatId }) => ['Memories', { type: 'Chat', id: chatId }],
     }),
     deleteMemory: b.mutation<{ ok: true }, string>({
       query: (id) => ({ url: `/me/memories/${id}`, method: 'DELETE' }),
@@ -677,6 +730,11 @@ export const api = createApi({
     }),
     deleteOwnMcpServer: b.mutation<{ ok: true }, string>({
       query: (id) => ({ url: `/mcp/own/${id}`, method: 'DELETE' }),
+      invalidatesTags: ['OwnMcp', 'McpServers'],
+    }),
+    /** Sign one of your own servers out of OAuth (its tokens are revoked). */
+    disconnectOwnMcpOAuth: b.mutation<{ server: UserMcpServerView }, string>({
+      query: (id) => ({ url: `/mcp/own/${id}/oauth`, method: 'DELETE' }),
       invalidatesTags: ['OwnMcp', 'McpServers'],
     }),
 
@@ -799,6 +857,16 @@ export const api = createApi({
       query: (id) => ({ url: `/admin/mcp-servers/${id}`, method: 'DELETE' }),
       invalidatesTags: ['AdminMcpServers', 'McpServers'],
     }),
+    codeStatus: b.query<{ dockerConfigured: boolean }, void>({ query: () => '/admin/code' }),
+    /** Reach the Docker daemon, pull the images if needed, and run a test program. */
+    testCodeSandbox: b.mutation<{ ok: boolean; error: string | null; version: string | null }, void>({
+      query: () => ({ url: '/admin/code/test', method: 'POST' }),
+    }),
+    /** Sign a global server out of OAuth (its tokens are revoked). */
+    disconnectMcpOAuth: b.mutation<{ server: AdminMcpServerView }, string>({
+      query: (id) => ({ url: `/admin/mcp-servers/${id}/oauth`, method: 'DELETE' }),
+      invalidatesTags: ['AdminMcpServers', 'McpServers'],
+    }),
     ldapSettings: b.query<LdapSettingsResponse, void>({ query: () => '/admin/ldap', providesTags: ['Ldap'] }),
     updateLdapSettings: b.mutation<LdapSettingsResponse, LdapSettingsUpdate>({
       query: (body) => ({ url: '/admin/ldap', method: 'PUT', body }),
@@ -880,6 +948,9 @@ export const {
   useUpdateMcpServerMutation,
   useRestartMcpServerMutation,
   useDeleteMcpServerMutation,
+  useDisconnectMcpOAuthMutation,
+  useCodeStatusQuery,
+  useTestCodeSandboxMutation,
   useLdapSettingsQuery,
   useUpdateLdapSettingsMutation,
   useTestLdapMutation,
@@ -898,11 +969,18 @@ export const {
   useSetGrantsMutation,
   useMyGroupsQuery,
   useFindUsersQuery,
+  useStylesQuery,
+  useCreateStyleMutation,
+  useUpdateStyleMutation,
+  useDeleteStyleMutation,
+  useGenerateStyleMutation,
   useMemoriesQuery,
   useAddMemoryMutation,
   useUpdateMemoryMutation,
   useDeleteMemoryMutation,
   useClearMemoriesMutation,
+  useImportMemoriesMutation,
+  useUndoMemoryChangeMutation,
   useApiKeysQuery,
   useCreateApiKeyMutation,
   useDeleteApiKeyMutation,
@@ -911,6 +989,7 @@ export const {
   useCreateOwnMcpServerMutation,
   useUpdateOwnMcpServerMutation,
   useDeleteOwnMcpServerMutation,
+  useDisconnectOwnMcpOAuthMutation,
   useAdminUserAccessQuery,
   useAdminSetUserGroupsMutation,
   useAdminGroupsQuery,
@@ -922,6 +1001,9 @@ export const {
   useRemoveGroupMemberMutation,
   useKnowledgeListQuery,
   useKnowledgeQuery,
+  useAddKnowledgeSourceMutation,
+  useSyncKnowledgeSourceMutation,
+  useRemoveKnowledgeSourceMutation,
   useCreateKnowledgeMutation,
   useUpdateKnowledgeMutation,
   useDeleteKnowledgeMutation,

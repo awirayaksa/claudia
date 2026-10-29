@@ -6,6 +6,7 @@
 import type { MessageNode, MessagePart, PartOf, ToolApproval } from '../../src/types/turn.types';
 import type { MessageUsage } from '../../src/types/statistics.types';
 import type { CitationSource } from '../../src/types/turn.types';
+import type { MemoryChangeView } from './workspace';
 
 export type RunStatus = 'completed' | 'stopped' | 'error';
 
@@ -18,6 +19,8 @@ export type RunEvent =
   | { type: 'message.tool_call'; messageId: string; part: PartOf<'tool_call'> }
   | { type: 'tool.started'; messageId: string; callId: string }
   | { type: 'tool.result'; messageId: string; part: PartOf<'tool_result'> }
+  /** What a running tool printed so far (server code runs), until its tool.result. */
+  | { type: 'tool.output'; messageId: string; callId: string; text: string }
   /**
    * A tool that runs in the browser (Phase 5: code interpreter). The client
    * answers with POST /api/runs/:id/tool-results; without an answer the
@@ -35,14 +38,27 @@ export type RunEvent =
   /** A part added to a reply outside text and tools (generated images). */
   | { type: 'message.part'; messageId: string; part: MessagePart }
   | { type: 'message.citations'; messageId: string; citations: Array<{ index: number; source: CitationSource }> }
+  /** The model saved, changed or forgot a memory (undoable from the reply). */
+  | { type: 'message.memory'; messageId: string; change: MemoryChangeView }
   /** Suggested next questions, after the reply is complete. */
   | { type: 'message.followups'; messageId: string; followUps: string[] }
-  | { type: 'message.completed'; messageId: string; status: RunStatus; error?: string; parts: MessagePart[] }
+  | {
+      type: 'message.completed';
+      messageId: string;
+      status: RunStatus;
+      error?: string;
+      /** length: cut off at the output limit (it can be continued). */
+      stopReason?: 'length';
+      parts: MessagePart[];
+    }
   /** Something the user should know about the request, e.g. history trimmed to fit. */
   | {
       type: 'run.notice';
-      /** sources: a knowledge, reference or web search note; sources_failed: they couldn't be loaded. */
-      code: 'history_trimmed' | 'context_trimmed' | 'context_overflow' | 'sources' | 'sources_failed';
+      /**
+       * sources: a knowledge, reference or web search note; sources_failed: they couldn't be loaded;
+       * history_compacted: earlier turns were summarized to fit.
+       */
+      code: 'history_trimmed' | 'history_compacted' | 'context_trimmed' | 'context_overflow' | 'sources' | 'sources_failed';
       message: string;
     }
   | { type: 'chat.updated'; chatId: string; title?: string }

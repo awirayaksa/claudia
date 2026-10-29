@@ -144,11 +144,19 @@ function trimDocuments(docs: ContextDocument[], budgetTokens: number): { docs: C
   return { docs: out, trimmed: true };
 }
 
-export function fitToContext(input: BudgetInput): BudgetResult {
+/** The model's window and the tokens a prompt may use in it (after the margin and the reply's room). */
+export function promptLimit(input: Pick<BudgetInput, 'model' | 'contextWindow' | 'modelContextLengths' | 'outputReserve'>): {
+  window: number;
+  limit: number;
+} {
   const window =
     input.contextWindow ?? getContextWindow(input.model, input.modelContextLengths) ?? DEFAULT_CONTEXT_WINDOW;
   const reserve = Math.min(input.outputReserve ?? DEFAULT_OUTPUT_RESERVE, Math.floor(window / 2));
-  const limit = Math.floor(window * (1 - SAFETY_MARGIN)) - reserve;
+  return { window, limit: Math.floor(window * (1 - SAFETY_MARGIN)) - reserve };
+}
+
+export function fitToContext(input: BudgetInput): BudgetResult {
+  const { window, limit } = promptLimit(input);
 
   const fixed = estimateMessagesTokens(input.system) + estimateMessagesTokens(input.current);
   let remaining = limit - fixed;
@@ -195,5 +203,63 @@ export function fitToContext(input: BudgetInput): BudgetResult {
     droppedTurns: turns.length - kept.length,
     trimmedContext,
     overflow,
+  };
+}
+
+/** Default share of the prompt limit above which earlier turns are summarized. */
+export const DEFAULT_COMPACTION_THRESHOLD = 0.8;
+/** Default number of most recent turns that are always sent word for word. */
+export const DEFAULT_KEEP_RECENT_TURNS = 4;
+/** After compacting, the prompt aims at this share of the limit, so the next sends don't compact again at once. */
+const COMPACTION_TARGET = 0.5;
+/** Room counted for the summary that replaces the folded turns. */
+export const SUMMARY_TOKENS = 1_500;
+
+export interface CompactionInput {
+  /** The prompt limit, from `promptLimit`. */
+  limit: number;
+  /** Tokens that are always sent: system messages, an earlier summary, the current turn. */
+  fixedTokens: number;
+  /** Estimated tokens of each history turn (see `groupTurns`), oldest first. */
+  turnTokens: number[];
+  /** Share of the limit that starts a compaction (default 0.8). */
+  threshold?: number;
+  /** Most recent turns never folded into the summary (default 4). */
+  keepRecentTurns?: number;
+}
+
+/**
+ * How many of the oldest history turns to fold into a summary: none while the
+ * prompt is under `threshold` of the limit; else enough for the rest to come
+ * down to about half the limit, never touching the last `keepRecentTurns`.
+ * Turns are whole, so a tool call always stays with its results.
+ */
+export function planCompaction(input: CompactionInput): number {
+  const threshold = input.threshold ?? DEFAULT_COMPACTION_THRESHOLD;
+  const keep = Math.max(0, input.keepRecentTurns ?? DEFAULT_KEEP_RECENT_TURNS);
+  const foldable = Math.max(0, input.turnTokens.length - keep);
+  if (foldable === 0 || input.limit <= 0) return 0;
+
+  let total = input.fixedTokens + input.turnTokens.reduce((s, t) => s + t, 0);
+  if (total <= input.limit * threshold) return 0;
+
+  const target = input.limit * COMPACTION_TARGET;
+  total += SUMMARY_TOKENS;
+  let fold = 0;
+  while (fold < foldable && total > target) {
+    total -= input.turnTokens[fold];
+    fold++;
+  }
+  return fold;
+}
+
+/** The system message that stands in for the summarized turns. */
+export function compactionMessage(summary: string): ChatMessage {
+  return {
+    role: 'system',
+    content:
+      'The earlier part of this conversation was summarized to fit the context window. ' +
+      'The original messages are not shown; this is the summary:\n\n' +
+      summary,
   };
 }

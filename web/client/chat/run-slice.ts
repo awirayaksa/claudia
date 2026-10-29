@@ -19,6 +19,8 @@ export interface LiveRun {
   title?: string;
   /** Tools waiting for this browser to run them (code interpreter). */
   clientRequests: Array<{ callId: string; name: string; args: string; messageId: string }>;
+  /** What running tools printed so far (server code runs), by call id. */
+  toolOutput: Record<string, string>;
 }
 
 export type RunState = Record<string, LiveRun>;
@@ -36,7 +38,7 @@ const runSlice = createSlice({
     runFollowed(state, action: PayloadAction<{ chatId: string; runId: string }>) {
       const { chatId, runId } = action.payload;
       if (state[chatId]?.runId === runId) return;
-      state[chatId] = { runId, lastSeq: 0, done: false, nodes: {}, leafId: null, notices: [], clientRequests: [] };
+      state[chatId] = { runId, lastSeq: 0, done: false, nodes: {}, leafId: null, notices: [], clientRequests: [], toolOutput: {} };
     },
     runEvent(state, action: PayloadAction<{ chatId: string; envelope: RunEventEnvelope }>) {
       const { chatId, envelope } = action.payload;
@@ -66,7 +68,15 @@ const runSlice = createSlice({
           const n = live.nodes[e.messageId];
           if (n) n.parts.push(e.part);
           // Answered (by this tab, another one, or the timeout)
-          if (e.type === 'tool.result') live.clientRequests = live.clientRequests.filter((r) => r.callId !== e.part.callId);
+          if (e.type === 'tool.result') {
+            live.clientRequests = live.clientRequests.filter((r) => r.callId !== e.part.callId);
+            delete live.toolOutput[e.part.callId];
+          }
+          break;
+        }
+        case 'tool.output': {
+          // The last 20 000 characters are plenty to watch
+          live.toolOutput[e.callId] = ((live.toolOutput[e.callId] ?? '') + e.text).slice(-20_000);
           break;
         }
         case 'tool.client_request':
@@ -94,12 +104,19 @@ const runSlice = createSlice({
             n.parts = e.parts;
             n.status = e.status;
             if (e.error) n.error = e.error;
+            if (e.stopReason) n.stopReason = e.stopReason;
+            else delete n.stopReason;
           }
           break;
         }
         case 'message.citations': {
           const n = live.nodes[e.messageId];
           if (n) n.parts = [...e.citations.map((c) => ({ type: 'citation' as const, ...c })), ...n.parts.filter((p) => p.type !== 'citation')];
+          break;
+        }
+        case 'message.memory': {
+          const n = live.nodes[e.messageId];
+          if (n) n.memoryChanges = [...(n.memoryChanges ?? []), e.change];
           break;
         }
         case 'message.followups': {

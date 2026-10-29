@@ -1,8 +1,9 @@
 /**
  * Share links. A share is a snapshot of the chat's visible path at the time
  * it was (re)shared, readable by anyone with the token. The snapshot keeps
- * only what a reader needs: no internal ids, no file ids, no ratings, and no
- * MCP-UI resources (interactive tool UIs only work for their owner).
+ * only what a reader needs: no internal ids, no file ids, no ratings, no
+ * MCP-UI resources (interactive tool UIs only work for their owner), and no
+ * memory tool calls (they can list everything the owner's memory holds).
  */
 import crypto from 'node:crypto';
 import { and, desc, eq } from 'drizzle-orm';
@@ -14,6 +15,15 @@ import type { MessageNode, MessagePart } from '../../../../src/types/turn.types'
 import type { SharedChat } from '../../../shared/chats';
 import { workspaceMime } from '../../../shared/workspace-files';
 import { ChatRepo, maskArena, pathTo, toNode, type ChatRow, type ShareRow } from '../chats/repo';
+import { MEMORY_TOOL_NAMES } from '../memories/tools';
+import { CHAT_SEARCH_TOOL_NAMES } from '../chats/chat-search';
+
+/** A node's parts without its memory and past-chat tool calls and their results (they show the owner's other data). */
+function withoutMemoryTools(parts: MessagePart[]): MessagePart[] {
+  const private_ = (tool: string) => MEMORY_TOOL_NAMES.has(tool) || CHAT_SEARCH_TOOL_NAMES.has(tool);
+  const calls = new Set(parts.flatMap((p) => (p.type === 'tool_call' && p.serverId === 'claudia' && private_(p.tool) ? [p.callId] : [])));
+  return calls.size === 0 ? parts : parts.filter((p) => !((p.type === 'tool_call' || p.type === 'tool_result') && calls.has(p.callId)));
+}
 
 function cleanPart(p: MessagePart): MessagePart {
   if (p.type === 'file') return { type: 'file', fileId: '', name: p.name, mime: p.mime, ...(p.size !== undefined ? { size: p.size } : {}) };
@@ -28,6 +38,8 @@ function cleanPart(p: MessagePart): MessagePart {
   // Citations keep what they show (title, page, link, snippet), not file or chat ids
   if (p.type === 'citation' && p.source.kind !== 'url') {
     const { id: _id, ...source } = p.source;
+    // Another of the owner's chats: its title only, not what was said in it
+    if (source.kind === 'chat') delete source.snippet;
     return { ...p, source };
   }
   return p;
@@ -42,7 +54,7 @@ export function snapshotOf(nodes: MessageNode[], leafId: string | null): Message
     chatId: '',
     parentId: n.parentId ? (ids.get(n.parentId) ?? null) : null,
     role: n.role,
-    parts: n.parts.map(cleanPart),
+    parts: withoutMemoryTools(n.parts).map(cleanPart),
     ...(n.modelId ? { modelId: n.modelId } : {}),
     ...(n.usage ? { usage: n.usage } : {}),
     ...(n.effort ? { effort: n.effort } : {}),

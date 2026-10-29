@@ -61,6 +61,38 @@ export const AppSettingsSchema = {
   'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
   /** Blind comparisons: a model called "Arena" answers with two of these, unnamed until the user votes. */
   arena: z.object({ enabled: z.boolean(), models: z.array(z.string()).max(50) }),
+  /** Near the context limit, summarize the oldest turns instead of dropping them. */
+  compaction: z.object({
+    enabled: z.boolean(),
+    /** Share of the model's usable context that starts a compaction. */
+    threshold: z.number().min(0.3).max(0.95),
+    /** Most recent turns always sent word for word. */
+    keepRecentTurns: z.number().int().min(1).max(20),
+    /** Model that writes the summaries; null = the chat's model. */
+    model: z.string().nullable(),
+  }),
+  /** Where the code interpreter runs: the user's browser (Pyodide), a Docker sandbox on the server, or nowhere. */
+  code: z.object({
+    engine: z.enum(['browser', 'server', 'off']),
+    pythonImage: z.string().trim().min(1).max(300),
+    nodeImage: z.string().trim().min(1).max(300),
+    memoryMb: z.number().int().min(64).max(16_384),
+    cpus: z.number().min(0.1).max(16),
+    timeoutSeconds: z.number().int().min(5).max(3600),
+    /** Let runs reach the network (off: no network at all). */
+    network: z.boolean(),
+    /** A container runtime such as runsc (gVisor); null = Docker's default. */
+    runtime: z.string().trim().max(100).nullable(),
+  }),
+  /** How memories are learned (users can still switch learning off for themselves). */
+  memory: z.object({
+    /** Offer the model tools to save, change and forget memories during a chat. */
+    tools: z.boolean(),
+    /** Once a chat goes quiet, a model reads it for lasting facts. */
+    extraction: z.boolean(),
+    /** Model for learning and for sorting imports; null = the task model, else the chat's model. */
+    model: z.string().nullable(),
+  }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -92,6 +124,19 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   audit: { retentionDays: 365 },
   'auth.mfa': { require: 'off' },
   arena: { enabled: false, models: [] },
+  compaction: { enabled: true, threshold: 0.8, keepRecentTurns: 4, model: null },
+  code: {
+    engine: 'browser',
+    pythonImage: 'python:3.12-slim',
+    nodeImage: 'node:22-slim',
+    memoryMb: 512,
+    cpus: 1,
+    timeoutSeconds: 60,
+    network: false,
+    runtime: null,
+  },
+  // Tools are off by default: not every model takes tools, and a tool the provider refuses fails the reply
+  memory: { tools: false, extraction: true, model: null },
 };
 
 export class AppSettings {
