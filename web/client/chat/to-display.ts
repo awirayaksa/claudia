@@ -85,6 +85,7 @@ export function toDisplayMessage(node: MessageNode): Message {
     id: c.callId,
     type: 'function',
     function: { name: c.tool || c.alias, arguments: c.args },
+    ...(c.approval ? { approval: c.approval } : {}),
   }));
   const toolResults: ToolResult[] = results.map((r) => {
     const call = calls.find((c) => c.callId === r.callId);

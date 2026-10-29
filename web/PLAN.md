@@ -271,6 +271,7 @@ Tables:
   - `mcp_servers`(id, owner_id (null = global), transport, builtin_id, config_cipher, enabled)
   - `tool_servers` (OpenAPI)
   - `plugins`(id, version, manifest, bundle_key, enabled, settings)
+  - `azdo_connections`(user_id, server_id, pat_cipher, display_name, default_project, verified_at): a user's personal access token for one of the admin's Azure DevOps Server collections (`app_config` key `azdo.servers`)
 - **Operations:**
   - `usage_events`(user_id, chat_id, model_id, connection_id, prompt_tokens, completion_tokens, cost, latency_ms, created_at)
   - `webhooks`(url, events, secret_cipher)
@@ -361,6 +362,7 @@ Library: `ldapts`.
   - `run.started`, `message.created`;
   - `message.delta`, `message.reasoning`, `message.tool_call`;
   - `tool.started`, `tool.result`, `tool.client_request`;
+  - `tool.approval_request`, `tool.approval_resolved`;
   - `message.usage`, `message.citations`;
   - `message.completed`, with status `completed`, `stopped` or `error`;
   - `run.completed`.
@@ -374,6 +376,11 @@ Library: `ldapts`.
 - Some tools must run in the browser: the Pyodide code interpreter, and anything needing browser-only APIs.
 - The server emits `tool.client_request { runId, callId, name, args }`. The client runs the tool and posts `POST /api/runs/:id/tool-results { callId, result }`.
 - The server waits up to a timeout (default 120 s). If no client answers, for example because the tab was closed, it records an error result and continues.
+
+#### Tool approvals
+- A toolset can mark calls that wait for the user (`RunToolset.needsApproval`). Today: the Azure DevOps built-in's tools without `readOnlyHint: true` (`APPROVAL_BUILTINS` in `mcp-pool.ts`).
+- The server sets `approval: 'pending'` on the `tool_call` part, emits `tool.approval_request { runId, messageId, callId }` and waits (default 10 min, `approvalTimeoutMs`). The client shows the arguments with Approve / Reject and posts `POST /api/runs/:id/approvals { callId, approved }` (first answer wins, on any instance; later ones get 404).
+- `tool.approval_resolved` carries `approved`, `rejected` or `expired`, which stays on the part. A call that isn't approved never runs: the model gets an error result saying so. Stopping the run rejects it.
 
 #### MCP
 - **Pools:** one `MCPClientManager` per scope:
@@ -400,6 +407,7 @@ Library: `ldapts`.
   - **Fetch:** uses `safe-fetch` on the server.
   - **msoffice:** `convert_to_pdf` is hidden when not running on Windows.
   - **Diagram:** unchanged, plus a render timeout.
+  - **Azure DevOps** (web only, `platforms: ['web']`): work items on the admin's Azure DevOps Server / TFS collections. The server gets an `azdo` client, never a token: `server/azdo/azdo-service.ts` signs each request with the user's encrypted PAT, builds the URL as a path under the collection, allows the collection's host through `safe-fetch` and refuses redirects. Writes wait for approval.
 
 #### Sandbox origin and file serving (infrastructure in Phase 1a)
 - **What it serves:** `CLAUDIA_SANDBOX_ORIGIN` serves the static pages in `web/sandbox/`:

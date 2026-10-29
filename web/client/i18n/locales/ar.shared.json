@@ -280,9 +280,13 @@
     "title": "المظهر"
   },
   "tool": {
+    "approved": "تمت الموافقة",
     "arguments": "الوسائط:",
+    "awaitingApproval": "بانتظار موافقتك",
     "error": "خطأ",
     "errorLabel": "خطأ:",
+    "expired": "لم تتم الموافقة في الوقت المحدد",
+    "rejected": "مرفوض",
     "result": "النتيجة:",
     "running": "جارٍ التنفيذ...",
     "success": "نجاح"

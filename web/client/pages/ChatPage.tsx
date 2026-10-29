@@ -35,6 +35,7 @@ import {
   useSendCompletionMutation,
   useSessionQuery,
   useStopRunMutation,
+  useAnswerToolApprovalMutation,
   useUpdateChatMutation,
   useUpdateMySettingsMutation,
 } from '../api/rtk-api';
@@ -141,6 +142,7 @@ export function ChatPage() {
   const [createChat] = useCreateChatMutation();
   const [sendCompletion] = useSendCompletionMutation();
   const [stopRun] = useStopRunMutation();
+  const [answerApproval] = useAnswerToolApprovalMutation();
   const [updateChat] = useUpdateChatMutation();
   const [forkChat] = useForkChatMutation();
   const [rateMessage] = useRateMessageMutation();
@@ -475,6 +477,7 @@ export function ChatPage() {
               }
               onFollowUp={(q) => handleSend(q)}
               onStop={handleStop}
+              onApproval={(callId, approved) => live && answerApproval({ runId: live.runId, callId, approved }).unwrap()}
               onArtifact={setArtifact}
               readAloud={voice?.readAloud ?? 'none'}
             />

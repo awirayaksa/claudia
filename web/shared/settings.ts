@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DefaultCapsSchema, PermissionsSchema } from './access';
 import { Banner } from './admin';
+import { AzdoServersSetting } from './azdo';
 
 /**
  * Per-user settings: the desktop `settings` slice's appearance and
@@ -86,6 +87,7 @@ export const AppSettingsResponse = z.object({
   tasks: z.object({ generateTitles: z.boolean(), generateFollowUps: z.boolean(), titleModel: z.string().nullable() }),
   'mcp.builtins': z.object({ enabled: z.array(z.string()) }),
   'net.allowlist': z.object({ hosts: z.array(z.string()) }),
+  'azdo.servers': AzdoServersSetting,
   'permissions.default': PermissionsSchema,
   'caps.default': DefaultCapsSchema,
   'ui.banners': z.object({ items: z.array(Banner) }),

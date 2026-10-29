@@ -569,7 +569,7 @@ function migrateToProfiles() {
  */
 export function seedBuiltinServers(): void {
   const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
-  const definitions = getAllBuiltinServerDefinitions();
+  const definitions = getAllBuiltinServerDefinitions('desktop');
   let needsSave = false;
 
   // Migrate: remove legacy office server

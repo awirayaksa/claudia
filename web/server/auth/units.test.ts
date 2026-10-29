@@ -123,6 +123,25 @@ describe('RunHub', () => {
     expect(await hub.submitClientTool(run, 'call-2', { content: 'again' })).toBe(false);
     hub.close();
   });
+
+  it('decides a tool approval once: approved, rejected, expired, or ended with the run', async () => {
+    const hub = new RunHub();
+    const run = await hub.start({ userId: 'u', chatId: 'c', lockKey: 'k', maxConcurrent: 1 });
+    expect(await hub.awaitApproval(run, 'call-1', 10)).toBe('expired');
+    const yes = hub.awaitApproval(run, 'call-2', 5_000);
+    expect(await hub.submitApproval(run, 'call-2', true)).toBe(true);
+    expect(await yes).toBe('approved');
+    expect(await hub.submitApproval(run, 'call-2', false)).toBe(false);
+    const no = hub.awaitApproval(run, 'call-3', 5_000);
+    // A browser tool answer doesn't decide an approval
+    expect(await hub.submitClientTool(run, 'call-3', { content: 'x' })).toBe(false);
+    expect(await hub.submitApproval(run, 'call-3', false)).toBe(true);
+    expect(await no).toBe('rejected');
+    const open = hub.awaitApproval(run, 'call-4', 5_000);
+    hub.finish(run, 'stopped');
+    expect(await open).toBe('rejected');
+    hub.close();
+  });
 });
 
 describe('titles and parts', () => {

@@ -280,9 +280,13 @@
     "title": "Appearance"
   },
   "tool": {
+    "approved": "Approved",
     "arguments": "Arguments:",
+    "awaitingApproval": "Waiting for your approval",
     "error": "Error",
     "errorLabel": "Error:",
+    "expired": "Not approved in time",
+    "rejected": "Declined",
     "result": "Result:",
     "running": "Executing...",
     "success": "Success"

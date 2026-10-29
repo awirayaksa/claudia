@@ -33,7 +33,7 @@ import type { StreamEndReason } from '../../../src/services/api/sse-parser';
 import type { CompletionRequest, CompletionResponse } from '../../shared/chats';
 import type { RunStatus } from '../../shared/run-events';
 import type { ModelRegistry, ResolvedModel } from './model-registry';
-import type { ClientToolResult, Run, RunHub } from './run-hub';
+import type { ApprovalDecision, ClientToolResult, Run, RunHub } from './run-hub';
 import { PartsBuilder } from './parts-builder';
 import { NO_TOOLS, type RunToolset } from './tools';
 import { fallbackTitle, generateFollowUps, generateTitle } from './tasks';
@@ -65,6 +65,12 @@ import type { ToolExecution } from './tools';
 import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
 import { latestCompaction, nodeTurns, summarize } from './compaction';
 
+/** What the model is told about a call the user didn't approve. */
+const DECLINED_MESSAGE: Record<Exclude<ApprovalDecision, 'approved'>, string> = {
+  rejected: "The user declined this action, so it wasn't done. Don't try it again unless they ask.",
+  expired: "The user didn't approve this action in time, so it wasn't done. Ask them before trying again.",
+};
+
 /** Streaming replies are written to the database at most this often. */
 const PERSIST_INTERVAL_MS = 500;
 
@@ -95,6 +101,8 @@ export interface OrchestratorDeps {
   code?: CodeSandbox;
   /** How long a browser tool may take to answer (default 120 s). */
   clientToolTimeoutMs?: number;
+  /** How long a tool call waits for the user's approval (default 10 min). */
+  approvalTimeoutMs?: number;
   /** Image generation (without it, it is off). */
   media?: MediaConfig;
   /** run.completed goes to admin webhooks. */
@@ -723,25 +731,42 @@ export class ChatOrchestrator {
           break;
         }
 
+        const callParts = new Map<string, PartOf<'tool_call'>>();
         for (const call of toolCalls) {
           const where = inBrowser(call.function.name)
             ? { serverId: 'browser', tool: call.function.name }
             : onServer(call.function.name)
               ? { serverId: 'claudia', tool: call.function.name }
               : opts.toolset.locate(call.function.name);
-          const part = {
-            type: 'tool_call' as const,
+          const part: PartOf<'tool_call'> = {
+            type: 'tool_call',
             callId: call.id,
             alias: call.function.name,
             serverId: where?.serverId ?? '',
             tool: where?.tool ?? call.function.name,
             args: call.function.arguments,
           };
+          callParts.set(call.id, part);
           builder.add(part);
           runs.emit(run, { type: 'message.tool_call', messageId: assistantId, part });
         }
         for (const call of toolCalls) {
           if (signal.aborted) break;
+          const local = inBrowser(call.function.name) || onServer(call.function.name);
+          if (!local && opts.toolset.needsApproval?.(call.function.name)) {
+            const decision = await this.approve(run, builder, assistantId, callParts.get(call.id)!, signal);
+            if (decision !== 'approved') {
+              const declined: PartOf<'tool_result'> = {
+                type: 'tool_result',
+                callId: call.id,
+                content: JSON.stringify({ error: DECLINED_MESSAGE[decision] }),
+                isError: true,
+              };
+              builder.add(declined);
+              runs.emit(run, { type: 'tool.result', messageId: assistantId, part: declined });
+              continue;
+            }
+          }
           runs.emit(run, { type: 'tool.started', messageId: assistantId, callId: call.id });
           const exec = await withSpan(
             `execute_tool ${call.function.name}`,
@@ -1121,6 +1146,25 @@ export class ChatOrchestrator {
       if (flushTimer) clearTimeout(flushTimer);
       return fail(err instanceof Error ? err.message : String(err));
     }
+  }
+
+  /**
+   * Hold a tool call until the user approves or rejects it (or the time runs
+   * out, or the run is stopped). The decision is kept on the call's part.
+   */
+  private async approve(run: Run, builder: PartsBuilder, messageId: string, part: PartOf<'tool_call'>, signal: AbortSignal): Promise<ApprovalDecision> {
+    const { runs } = this.deps;
+    // Wait first, so even an instant answer finds the call
+    const waiting = runs.awaitApproval(run, part.callId, this.deps.approvalTimeoutMs);
+    part.approval = 'pending';
+    builder.dirty = true;
+    runs.emit(run, { type: 'tool.approval_request', runId: run.id, messageId, callId: part.callId });
+    const stopped = new Promise<ApprovalDecision>((resolve) => signal.addEventListener('abort', () => resolve('rejected'), { once: true }));
+    const decision = await Promise.race([waiting, stopped]);
+    part.approval = decision;
+    builder.dirty = true;
+    runs.emit(run, { type: 'tool.approval_resolved', messageId, callId: part.callId, decision });
+    return decision;
   }
 
   /**

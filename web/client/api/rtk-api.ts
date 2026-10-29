@@ -10,6 +10,7 @@ import type { NoteDetail, NoteInput, NoteSummary } from '@shared/notes';
 import type { ChannelInput, ChannelMessageView, ChannelView } from '@shared/channels';
 import type { ScheduleInput, ScheduleView } from '@shared/schedules';
 import type { CloudAccountView, CloudListing, CloudProvider, CloudSettingsResponse, CloudSettingsUpdate } from '@shared/cloud';
+import type { AzdoConnectInput, AzdoConnectionView } from '@shared/azdo';
 import type {
   ChatDetail,
   ChatParams,
@@ -160,6 +161,7 @@ export const api = createApi({
     'Schedules',
     'CloudAccounts',
     'CloudSettings',
+    'AzdoConnections',
   ],
   endpoints: (b) => ({
     // ─── Session ────────────────────────────────────────────────────────────
@@ -325,6 +327,9 @@ export const api = createApi({
       query: ({ chatId, ...body }) => ({ url: `/chats/${chatId}/completions`, method: 'POST', body }),
     }),
     stopRun: b.mutation<{ ok: true }, string>({ query: (runId) => ({ url: `/runs/${runId}/stop`, method: 'POST' }) }),
+    answerToolApproval: b.mutation<{ ok: true }, { runId: string; callId: string; approved: boolean }>({
+      query: ({ runId, ...body }) => ({ url: `/runs/${runId}/approvals`, method: 'POST', body }),
+    }),
 
     // ─── Tools, files and own connections ───────────────────────────────────
     mcpServers: b.query<{ servers: McpServerView[] }, void>({ query: () => '/mcp/servers', providesTags: ['McpServers'] }),
@@ -605,6 +610,17 @@ export const api = createApi({
     updateCloudSettings: b.mutation<CloudSettingsResponse, CloudSettingsUpdate>({
       query: (body) => ({ url: '/admin/cloud', method: 'PUT', body }),
       invalidatesTags: ['CloudSettings', 'CloudAccounts', 'Session'],
+    }),
+
+    // Azure DevOps Server: a user's connections
+    azdoConnections: b.query<{ connections: AzdoConnectionView[] }, void>({ query: () => '/azdo/connections', providesTags: ['AzdoConnections'] }),
+    connectAzdo: b.mutation<{ connection: AzdoConnectionView }, AzdoConnectInput & { serverId: string }>({
+      query: ({ serverId, ...body }) => ({ url: `/azdo/connections/${serverId}`, method: 'PUT', body }),
+      invalidatesTags: ['AzdoConnections'],
+    }),
+    disconnectAzdo: b.mutation<{ ok: true }, string>({
+      query: (serverId) => ({ url: `/azdo/connections/${serverId}`, method: 'DELETE' }),
+      invalidatesTags: ['AzdoConnections'],
     }),
 
     // Phase 6: admin operations
@@ -901,6 +917,7 @@ export const {
   useDeleteChatMutation,
   useSendCompletionMutation,
   useStopRunMutation,
+  useAnswerToolApprovalMutation,
   useMcpServersQuery,
   useSetMcpServerEnabledMutation,
   useFilesQuery,
@@ -1057,6 +1074,9 @@ export const {
   useDisconnectCloudMutation,
   useCloudSettingsQuery,
   useUpdateCloudSettingsMutation,
+  useAzdoConnectionsQuery,
+  useConnectAzdoMutation,
+  useDisconnectAzdoMutation,
 } = api;
 
 export interface ToolServerView {

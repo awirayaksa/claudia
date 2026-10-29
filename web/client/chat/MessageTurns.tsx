@@ -15,6 +15,7 @@ import { leafUnder, modelColumns, siblingsOf, type ModelColumn } from './tree';
 import { VersionSwitcher } from './VersionSwitcher';
 import { findArtifacts, type Artifact } from '@/utils/artifacts';
 import { ReadAloudButton } from './voice';
+import { ToolApprovals } from './ToolApprovals';
 
 export interface TurnHandlers {
   /** Show the path through this node (a version switch). */
@@ -36,6 +37,8 @@ export interface TurnHandlers {
   onArenaVote?: (turn: MessageNode, winner: 'a' | 'b' | 'tie') => void;
   /** Undo a memory the model saved, changed or forgot (none: the chip only shows them). */
   onUndoMemory?: (change: MemoryChange) => void;
+  /** Approve or reject a tool call waiting for the user. */
+  onApproval?: (callId: string, approved: boolean) => Promise<unknown> | void;
 }
 
 type MemoryChange = NonNullable<MessageNode['memoryChanges']>[number];
@@ -306,6 +309,7 @@ function AssistantTurn(
       <>
         <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />
         <LiveTools node={node} output={props.toolOutput} />
+        {!readOnly && props.onApproval && <ToolApprovals node={node} onAnswer={props.onApproval} />}
       </>
     );
   }

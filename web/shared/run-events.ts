@@ -3,7 +3,7 @@
  * GET /api/runs/:id/events. Every event has a sequence number, so a client
  * that reconnects (or a second tab) resumes with `?after=<seq>`.
  */
-import type { MessageNode, MessagePart, PartOf } from '../../src/types/turn.types';
+import type { MessageNode, MessagePart, PartOf, ToolApproval } from '../../src/types/turn.types';
 import type { MessageUsage } from '../../src/types/statistics.types';
 import type { CitationSource } from '../../src/types/turn.types';
 import type { MemoryChangeView } from './workspace';
@@ -27,6 +27,13 @@ export type RunEvent =
    * server records an error result after a timeout.
    */
   | { type: 'tool.client_request'; runId: string; messageId: string; callId: string; name: string; args: string }
+  /**
+   * A tool call that changes data elsewhere waits for the user. The client
+   * answers with POST /api/runs/:id/approvals; without an answer the call is
+   * skipped after a timeout.
+   */
+  | { type: 'tool.approval_request'; runId: string; messageId: string; callId: string }
+  | { type: 'tool.approval_resolved'; messageId: string; callId: string; decision: Exclude<ToolApproval, 'pending'> }
   | { type: 'message.usage'; messageId: string; usage: MessageUsage }
   /** A part added to a reply outside text and tools (generated images). */
   | { type: 'message.part'; messageId: string; part: MessagePart }

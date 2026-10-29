@@ -328,7 +328,8 @@
       "builtin-presentation-001": "عروض PowerPoint",
       "builtin-pdf-001": "مستندات PDF",
       "builtin-diagram-001": "المخططات",
-      "builtin-fetch-001": "جلب صفحات الويب"
+      "builtin-fetch-001": "جلب صفحات الويب",
+      "builtin-azdo-001": "Azure DevOps (عناصر العمل)"
     },
     "network": "الشبكة",
     "netAllowlist": "العناوين الخاصة التي يمكن للمستخدمين الوصول إليها",
@@ -1305,5 +1306,35 @@
     "instructions": "التعليمات",
     "instructionsPlaceholder": "كيف تُكتب الردود: النبرة والطول والبنية والكلمات المستخدمة أو المتجنبة…",
     "everyone": "اجعله متاحًا للجميع"
+  },
+  "azdo": {
+    "noServers": "لم يُضِف المسؤول خادم Azure DevOps بعد.",
+    "connectedAs": "متصل باسم {{name}}",
+    "token": "رمز الوصول الشخصي",
+    "tokenHelp": "أنشئه في Azure DevOps من إعدادات المستخدم ← رموز الوصول الشخصية، بالصلاحيات Work Items (قراءة وكتابة) وProject and Team (قراءة). يُخزَّن مشفّرًا.",
+    "defaultProject": "المشروع الافتراضي (اختياري)",
+    "replaceToken": "استبدال الرمز",
+    "disconnect": "قطع الاتصال",
+    "connect": "اتصال",
+    "adminTitle": "Azure DevOps Server",
+    "adminHelp": "مجموعات يمكن للمستخدمين الاتصال بها برمز الوصول الشخصي الخاص بهم، لأدوات Azure DevOps المدمجة (فعّلها من الإعدادات ← الأدوات المدمجة). يمكن لـ Claudia الوصول إلى هذه الخوادم حتى على شبكة خاصة.",
+    "serverName": "الاسم",
+    "collectionUrl": "عنوان المجموعة",
+    "version": "إصدار الخادم",
+    "addServer": "إضافة مجموعة",
+    "httpWarning": "عبر http تنتقل الرموز دون تشفير. استخدم https إن كان الخادم يدعمه."
+  },
+  "approval": {
+    "title": "الموافقة على هذا الإجراء؟",
+    "approve": "موافقة",
+    "reject": "رفض",
+    "help": "تنتظر Claudia ردّك قبل المتابعة.",
+    "tools": {
+      "azdo_create_work_item": "إنشاء عنصر عمل",
+      "azdo_update_work_item": "تعديل عنصر عمل",
+      "azdo_resolve_work_item": "حلّ عنصر عمل",
+      "azdo_add_comment": "التعليق على عنصر عمل",
+      "azdo_link_work_items": "ربط عناصر العمل"
+    }
   }
 }

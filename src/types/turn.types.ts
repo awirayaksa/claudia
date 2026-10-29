@@ -23,6 +23,9 @@ export interface CitationSource {
   section?: string;
 }
 
+/** A tool call that needed the user's approval: waiting, or how it was decided. */
+export type ToolApproval = 'pending' | 'approved' | 'rejected' | 'expired';
+
 export type MessagePart =
   | { type: 'text'; text: string }
   | { type: 'reasoning'; text: string }
@@ -31,8 +34,10 @@ export type MessagePart =
   /**
    * `alias` is the name the model saw and called; `serverId` + `tool` is where
    * it ran. Stored so history replays and UI actions resolve the same way.
+   * `approval` is set when the call waited for the user (web: tools that
+   * change data elsewhere).
    */
-  | { type: 'tool_call'; callId: string; alias: string; serverId: string; tool: string; args: string }
+  | { type: 'tool_call'; callId: string; alias: string; serverId: string; tool: string; args: string; approval?: ToolApproval }
   /** `content` is what the model sees; `uiResource` is rendered for the user. */
   | { type: 'tool_result'; callId: string; content: string; isError?: boolean; uiResource?: UIResourceContent }
   | { type: 'citation'; index: number; source: CitationSource }

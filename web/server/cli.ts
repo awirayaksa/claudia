@@ -11,13 +11,13 @@
  */
 import path from 'node:path';
 import { parseArgs } from 'node:util';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { loadConfig } from './config';
 import { openDatabase } from './db/client';
 import { defaultMigrationsDir } from './paths';
 import { createKeyring, resolveRootSecret } from './crypto/keys';
 import { SecretBox } from './crypto/secrets';
-import { appConfig, mcpServers, providerConnections, users } from './db/schema';
+import { appConfig, azdoConnections, mcpServers, providerConnections, users } from './db/schema';
 import { hashPassword } from './auth/passwords';
 import { createLocalUser, findUserByEmail } from './modules/users/service';
 import type { ServerContext } from './context';
@@ -97,6 +97,14 @@ async function main() {
           .update(mcpServers)
           .set({ configCipher: secrets.encrypt(secrets.decrypt(row.configCipher)) })
           .where(eq(mcpServers.id, row.id));
+        changed++;
+      }
+      for (const row of await db.db.select().from(azdoConnections)) {
+        if (!stale(row.patCipher)) continue;
+        await db.db
+          .update(azdoConnections)
+          .set({ patCipher: secrets.encrypt(secrets.decrypt(row.patCipher)) })
+          .where(and(eq(azdoConnections.userId, row.userId), eq(azdoConnections.serverId, row.serverId)));
         changed++;
       }
       const [ldap] = await db.db.select().from(appConfig).where(eq(appConfig.key, 'auth.ldap'));

@@ -22,6 +22,8 @@ export interface RunToolset {
   firstTurnOnly: boolean;
   /** Where an alias lives, without running it. */
   locate(alias: string): { serverId: string; tool: string } | null;
+  /** The user approves this call before it runs (default: never). */
+  needsApproval?(alias: string): boolean;
   execute(call: ToolCall, signal: AbortSignal): Promise<ToolExecution>;
 }
 

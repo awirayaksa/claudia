@@ -3,8 +3,9 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import type { CloudSettings } from '@shared/cloud';
 import { errorMessage, useCloudSettingsQuery, useUpdateCloudSettingsMutation } from '../../api/rtk-api';
+import { AzureDevOpsServers } from './AzureDevOpsServers';
 
-/** Admin → Integrations: the OAuth clients users connect Google Drive and OneDrive with. */
+/** Admin → Integrations: the OAuth clients users connect Google Drive and OneDrive with, and Azure DevOps Server. */
 export function IntegrationsPage() {
   const { t } = useTranslation();
   const { data } = useCloudSettingsQuery();
@@ -71,6 +72,7 @@ export function IntegrationsPage() {
         {state.isSuccess && <span className="text-sm text-success">{t('app.saved')}</span>}
         {state.error && <span className="text-sm text-error">{errorMessage(state.error)}</span>}
       </div>
+      <AzureDevOpsServers />
     </div>
   );
 }
