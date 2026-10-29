@@ -41,6 +41,8 @@ const WRITING_BUILTINS = new Set([
   'builtin-diagram-001',
 ]);
 const READ_ONLY_TOOL = /^(read|get|list|search)_/;
+/** Built-ins whose tools wait for the user's approval, unless marked read-only. */
+const APPROVAL_BUILTINS = new Set(['builtin-azdo-001']);
 
 /** What is stored (encrypted) for a configured server. */
 export interface StoredMcpConfig {
@@ -394,6 +396,12 @@ export class McpPools {
       locate: (alias) => {
         const a = resolveToolAlias(alias, aliases);
         return a ? { serverId: a.serverId, tool: a.tool } : null;
+      },
+      needsApproval: (alias) => {
+        const a = resolveToolAlias(alias, aliases);
+        if (!a || !APPROVAL_BUILTINS.has(a.serverId)) return false;
+        const tool = ready.find((s) => s.id === a.serverId)?.tools.find((t) => t.name === a.tool);
+        return tool?.annotations?.readOnlyHint !== true;
       },
       execute: async (call, signal): Promise<ToolExecution> => {
         const a = resolveToolAlias(call.function.name, aliases);

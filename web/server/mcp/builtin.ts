@@ -5,6 +5,7 @@
  *   LibreOffice converts to PDF only when LIBREOFFICE_PATH is set (an image
  *   built with LibreOffice sets it);
  * - fetch goes through the SSRF guard;
+ * - azure devops reaches the admin's collections, signed in with the user's token;
  * - documents are parsed, and diagrams and PDFs rendered, in the worker pool.
  */
 import fs from 'node:fs';
@@ -12,8 +13,10 @@ import path from 'node:path';
 import { getAllBuiltinServerDefinitions } from '../../../electron/services/builtin-mcp/registry';
 import type { HttpGet } from '../../../electron/services/builtin-mcp/fetch.server';
 import type { PdfOptions } from '../../../electron/services/builtin-mcp/pdf-render';
+import type { AzdoClient, AzdoRequest } from '../../../electron/services/builtin-mcp/azure-devops.server';
 import type { MCPServerConfig } from '../../../src/types/mcp.types';
 import type { ExtractPool } from '../extract/pool';
+import type { AzdoService } from '../azdo/azdo-service';
 import { readBodyLimited, safeFetch, type SafeFetchPolicy } from '../net/safe-fetch';
 
 export interface BuiltinInfo {
@@ -29,10 +32,12 @@ const WEB_DESCRIPTIONS: Record<string, string> = {
   'builtin-spreadsheet-001': 'Create and edit Excel workbooks (formulas, formats, charts) in your private workspace.',
   'builtin-presentation-001': 'Create PowerPoint decks (layouts, themes, charts, speaker notes) in your private workspace.',
   'builtin-pdf-001': 'Create PDFs from Markdown or HTML, and convert Office files to PDF, in your private workspace.',
+  'builtin-azdo-001':
+    'Find, read, create and update work items on your Azure DevOps Server: tasks, bugs, comments and links. Changes wait for your approval.',
 };
 
 export function builtinServers(): BuiltinInfo[] {
-  return getAllBuiltinServerDefinitions().map((d) => ({
+  return getAllBuiltinServerDefinitions('web').map((d) => ({
     id: d.id,
     name: d.name,
     description: WEB_DESCRIPTIONS[d.id] ?? d.description,
@@ -102,6 +107,7 @@ export interface BuiltinDeps {
   dataDir: string;
   extract: ExtractPool;
   netPolicy: () => SafeFetchPolicy;
+  azdo: AzdoService;
 }
 
 /** Config for one built-in server instance belonging to one user. */
@@ -130,6 +136,12 @@ export function builtinConfigFor(userId: string, builtinId: string, deps: Builti
     'builtin-fetch-001': {
       httpGet: safeHttpGet(deps.netPolicy),
       htmlToMarkdown: (html: string, url: string) => deps.extract.htmlToMarkdown(html, url),
+    },
+    'builtin-azdo-001': {
+      azdo: {
+        connections: () => deps.azdo.toolConnections(userId),
+        request: (serverId: string, req: AzdoRequest) => deps.azdo.request(userId, serverId, req),
+      } satisfies AzdoClient,
     },
   };
 

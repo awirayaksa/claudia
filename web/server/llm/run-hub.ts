@@ -21,6 +21,8 @@ import type { RunEvent, RunEventEnvelope, RunStatus } from '../../shared/run-eve
 const KEEP_FINISHED_MS = 5 * 60_000;
 /** A browser tool must answer within this time, or the call fails. */
 export const CLIENT_TOOL_TIMEOUT_MS = 120_000;
+/** The user must approve a tool call within this time, or it is skipped. */
+export const APPROVAL_TIMEOUT_MS = 10 * 60_000;
 /** Redis keys of a running run live this long past the owner's last heartbeat. */
 const LIVE_TTL_MS = 60_000;
 const HEARTBEAT_MS = 20_000;
@@ -43,6 +45,8 @@ export interface Run {
   startedAt: number;
   finishedAt: number | null;
   pendingClientTools: Map<string, (result: ClientToolResult) => void>;
+  /** Tool calls waiting for the user's approval. */
+  pendingApprovals: Map<string, (approved: boolean | null) => void>;
 }
 
 /** A run as any instance sees it. */
@@ -55,6 +59,9 @@ export interface RunInfo {
   lastSeq: number;
 }
 
+/** How a tool call that needed approval was decided. */
+export type ApprovalDecision = 'approved' | 'rejected' | 'expired';
+
 export interface ClientToolResult {
   content: string;
   isError?: boolean;
@@ -64,7 +71,8 @@ export interface ClientToolResult {
 
 type Control =
   | { op: 'stop'; runId: string }
-  | { op: 'tool'; runId: string; callId: string; result: ClientToolResult };
+  | { op: 'tool'; runId: string; callId: string; result: ClientToolResult }
+  | { op: 'approval'; runId: string; callId: string; approved: boolean };
 
 // Refuse a second run on the branch point or one over the user's limit, else take the lock
 // KEYS: lock, user's runs, chat's runs. ARGV: run id, now, ttl, max. Returns {code, running}.
@@ -176,6 +184,7 @@ export class RunHub {
       startedAt: Date.now(),
       finishedAt: null,
       pendingClientTools: new Map(),
+      pendingApprovals: new Map(),
     };
     this.runs.set(run.id, run);
     this.locks.set(opts.lockKey, run.id);
@@ -220,6 +229,8 @@ export class RunHub {
       resolve({ content: JSON.stringify({ error: 'The run ended before the browser answered.' }), isError: true });
     }
     run.pendingClientTools.clear();
+    for (const resolve of run.pendingApprovals.values()) resolve(false);
+    run.pendingApprovals.clear();
     run.listeners.clear();
     const redis = this.redis;
     if (redis) {
@@ -348,6 +359,30 @@ export class RunHub {
 
   /** Ask the browser to run a tool and wait for its answer (or time out). */
   awaitClientTool(run: Run, callId: string, timeoutMs = CLIENT_TOOL_TIMEOUT_MS): Promise<ClientToolResult> {
+    return this.awaitAnswer(run, run.pendingClientTools, callId, timeoutMs, {
+      content: JSON.stringify({ error: 'No browser answered this tool call in time.' }),
+      isError: true,
+    });
+  }
+
+  /** The browser's answer to tool.client_request. False when nothing was waiting (or another answer won). */
+  async submitClientTool(ref: { id: string }, callId: string, result: ClientToolResult): Promise<boolean> {
+    return this.submitAnswer(ref, { op: 'tool', runId: ref.id, callId, result });
+  }
+
+  /** Wait for the user to approve or reject a tool call (or the time to run out). */
+  async awaitApproval(run: Run, callId: string, timeoutMs = APPROVAL_TIMEOUT_MS): Promise<ApprovalDecision> {
+    const answer = await this.awaitAnswer<boolean | null>(run, run.pendingApprovals, callId, timeoutMs, null);
+    return answer === null ? 'expired' : answer ? 'approved' : 'rejected';
+  }
+
+  /** The user's answer to tool.approval_request. False when nothing was waiting (or another answer won). */
+  async submitApproval(ref: { id: string }, callId: string, approved: boolean): Promise<boolean> {
+    return this.submitAnswer(ref, { op: 'approval', runId: ref.id, callId, approved });
+  }
+
+  /** Wait for an answer to `callId`, given on any instance; `onTimeout` when none comes. */
+  private awaitAnswer<T>(run: Run, pending: Map<string, (answer: T) => void>, callId: string, timeoutMs: number, onTimeout: T): Promise<T> {
     const redis = this.redis;
     const pendingKey = redis ? this.keys(run).pending : '';
     if (redis) {
@@ -356,36 +391,46 @@ export class RunHub {
         .sadd(pendingKey, callId)
         .pexpire(pendingKey, LIVE_TTL_MS)
         .exec()
-        .catch((err) => this.warn(err, 'recording a browser tool call in Redis failed'));
+        .catch((err) => this.warn(err, 'recording a pending tool call in Redis failed'));
     }
     return new Promise((resolve) => {
-      const done = (result: ClientToolResult) => {
+      const done = (answer: T) => {
         clearTimeout(timer);
-        run.pendingClientTools.delete(callId);
+        pending.delete(callId);
         if (redis) void redis.srem(pendingKey, callId).catch(() => {});
-        resolve(result);
+        resolve(answer);
       };
-      const timer = setTimeout(() => done({ content: JSON.stringify({ error: 'No browser answered this tool call in time.' }), isError: true }), timeoutMs);
+      const timer = setTimeout(() => done(onTimeout), timeoutMs);
       timer.unref?.();
-      run.pendingClientTools.set(callId, done);
+      pending.set(callId, done);
     });
   }
 
-  /** The browser's answer to tool.client_request. False when nothing was waiting (or another answer won). */
-  async submitClientTool(ref: { id: string }, callId: string, result: ClientToolResult): Promise<boolean> {
+  /** Deliver an answer: here when the run is ours, else to its owner. */
+  private async submitAnswer(ref: { id: string }, control: Extract<Control, { callId: string }>): Promise<boolean> {
     const redis = this.redis;
     // The first answer, on whichever instance, takes the call
-    if (redis && (await redis.srem(this.key('run', ref.id, 'pending'), callId)) === 0) return false;
+    if (redis && (await redis.srem(this.key('run', ref.id, 'pending'), control.callId)) === 0) return false;
     const run = this.runs.get(ref.id);
-    if (run) {
-      const resolve = run.pendingClientTools.get(callId);
-      if (!resolve) return false;
-      resolve(result);
-      return true;
-    }
+    if (run) return this.deliver(run, control);
     if (!redis) return false;
-    await this.sendControl({ op: 'tool', runId: ref.id, callId, result });
+    await this.sendControl(control);
     return true;
+  }
+
+  /** Resolve a waiting call of this instance's run. */
+  private deliver(run: Run, msg: Control): boolean {
+    if (msg.op === 'tool') {
+      const resolve = run.pendingClientTools.get(msg.callId);
+      resolve?.(msg.result);
+      return !!resolve;
+    }
+    if (msg.op === 'approval') {
+      const resolve = run.pendingApprovals.get(msg.callId);
+      resolve?.(msg.approved);
+      return !!resolve;
+    }
+    return false;
   }
 
   private async sendControl(message: Control): Promise<void> {
@@ -404,7 +449,7 @@ export class RunHub {
     const run = this.runs.get(msg.runId);
     if (!run || run.done) return;
     if (msg.op === 'stop') run.controller.abort();
-    else if (msg.op === 'tool') run.pendingClientTools.get(msg.callId)?.(msg.result);
+    else this.deliver(run, msg);
   }
 
   /** Keep this instance's running runs alive in Redis. */

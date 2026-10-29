@@ -15,6 +15,7 @@ import { leafUnder, modelColumns, siblingsOf, type ModelColumn } from './tree';
 import { VersionSwitcher } from './VersionSwitcher';
 import { findArtifacts, type Artifact } from '@/utils/artifacts';
 import { ReadAloudButton } from './voice';
+import { ToolApprovals } from './ToolApprovals';
 
 export interface TurnHandlers {
   /** Show the path through this node (a version switch). */
@@ -32,6 +33,8 @@ export interface TurnHandlers {
   readAloud?: 'none' | 'browser' | 'server';
   /** A blind comparison's vote. */
   onArenaVote?: (turn: MessageNode, winner: 'a' | 'b' | 'tie') => void;
+  /** Approve or reject a tool call waiting for the user. */
+  onApproval?: (callId: string, approved: boolean) => Promise<unknown> | void;
 }
 
 interface Props extends TurnHandlers {
@@ -177,7 +180,12 @@ function AssistantTurn(
   const { node, nodes, running, readOnly } = props;
   const navigate = useNavigate();
   if (node.status === 'streaming') {
-    return <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />;
+    return (
+      <>
+        <StreamingMessage content={nodeText(node)} reasoning={nodeText(node, 'reasoning', '')} onAbort={props.onStop} />
+        {!readOnly && props.onApproval && <ToolApprovals node={node} onAnswer={props.onApproval} />}
+      </>
+    );
   }
   const versions = props.versions ?? siblingsOf(nodes, node);
   const index = versions.findIndex((v) => v.id === node.id);

@@ -11,6 +11,7 @@ import { appConfig } from '../../db/schema';
 import { DEFAULT_PERMISSIONS, DefaultCapsSchema, PermissionsSchema } from '../../../shared/access';
 import { Banner } from '../../../shared/admin';
 import { UserDefaultsSchema } from '../../../shared/settings';
+import { AzdoServersSetting } from '../../../shared/azdo';
 
 export const AppSettingsSchema = {
   'auth.signup': z.object({
@@ -45,6 +46,8 @@ export const AppSettingsSchema = {
    * reach although they are private (e.g. an internal wiki for the fetch tool).
    */
   'net.allowlist': z.object({ hosts: z.array(z.string().trim().min(1).max(253)) }),
+  /** Azure DevOps Server / TFS collections users may connect to (their hosts are reachable although private). */
+  'azdo.servers': AzdoServersSetting,
   /** What every approved user may do; groups add to it, admins have everything. */
   'permissions.default': PermissionsSchema,
   /** Token and cost caps for everyone (null = no limit); groups can raise them. */
@@ -81,6 +84,7 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
     ],
   },
   'net.allowlist': { hosts: [] },
+  'azdo.servers': { servers: [] },
   'permissions.default': DEFAULT_PERMISSIONS,
   'caps.default': { tokensPerDay: null, tokensPerMonth: null, costPerDay: null, costPerMonth: null },
   'ui.banners': { items: [] },

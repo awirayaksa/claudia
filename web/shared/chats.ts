@@ -211,6 +211,7 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
     serverId: z.string().max(200),
     tool: z.string().max(200),
     args: LONG_TEXT,
+    approval: z.enum(['pending', 'approved', 'rejected', 'expired']).optional(),
   }),
   z.object({
     type: z.literal('tool_result'),

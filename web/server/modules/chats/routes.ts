@@ -375,6 +375,15 @@ export async function runRoutes(app: FastifyInstance, ctx: ServerContext): Promi
     }
     return { ok: true };
   });
+
+  // Answer to tool.approval_request (tools that change data elsewhere)
+  app.post('/:id/approvals', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const body = z.object({ callId: z.string().min(1).max(200), approved: z.boolean() }).parse(req.body);
+    const run = await ctx.runs.find(id, currentUser(req).id);
+    if (!(await ctx.runs.submitApproval(run, body.callId, body.approved))) throw notFound('Pending tool call');
+    return { ok: true };
+  });
 }
 
 /** /api/llm — one-off completions for UI features (suggested prompts, Explain/Ask). */

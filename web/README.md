@@ -404,6 +404,33 @@ Each user connects their own account in a pop-up; tokens are stored
 encrypted and refreshed as needed. Picked files are copied into Claudia
 (Google Docs, Sheets and Slides as Word, Excel and PowerPoint).
 
+## Azure DevOps Server / TFS
+
+The Azure DevOps built-in tools find, read, create and update work items on an
+on-premises Azure DevOps Server or TFS 2018 and later: queries (filters or
+WIQL), details with links and comments, new tasks and bugs, state changes,
+resolving, comments and links.
+
+1. Under Admin → Integrations, add each collection by its URL
+   (`https://tfs.example.com/tfs/DefaultCollection`) and the server version,
+   which sets the REST API version. Claudia may reach these hosts even when
+   they are private, but only these: the tools name paths under a
+   collection, never URLs, and redirects are refused.
+2. Under Admin → Settings → Built-in tools, offer **Azure DevOps**.
+3. Each user switches the tool on under Settings → Tools and connects with a
+   personal access token (scopes: *Work Items* read & write, *Project and
+   Team* read), optionally with a default project. The token is checked,
+   stored encrypted (re-encrypted by `rotate-keys`) and never shown again.
+
+Tools that change work items wait for the user: the reply shows what the
+tool will do, with Approve and Reject. Without an answer within 10 minutes
+the change is skipped, and the model is told it wasn't made. Reads run at
+once.
+
+Use https: over http the token travels unencrypted. For a server with a
+certificate from a corporate CA, point `NODE_EXTRA_CA_CERTS` at the CA's PEM
+file.
+
 ## Translating
 
 The web app's own text is in `client/i18n/locales/en.json`; the text of the

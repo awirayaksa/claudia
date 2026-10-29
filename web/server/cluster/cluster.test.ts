@@ -192,6 +192,28 @@ describe.skipIf(!REDIS)('two instances sharing Redis and the database', () => {
     expect(limited.json().error.code).not.toBe('login_locked');
   });
 
+  it("a tool approval answered on the other instance reaches the run, once", async () => {
+    const prefix = `claudia-test-${randomUUID().slice(0, 8)}:`;
+    const owner = await Cluster.open({ redisUrl: REDIS, prefix, log: silent });
+    const follower = await Cluster.open({ redisUrl: REDIS, prefix, log: silent });
+    const hubA = new RunHub({ cluster: owner });
+    const hubB = new RunHub({ cluster: follower });
+    try {
+      const run = await hubA.start({ userId: 'u', chatId: 'c', lockKey: 'c:approval', maxConcurrent: 3 });
+      const decision = hubA.awaitApproval(run, 'call_a', 5_000);
+      await vi.waitFor(async () => expect((await hubB.find(run.id, 'u')).id).toBe(run.id), { timeout: 2000 });
+      await vi.waitFor(async () => expect(await owner.redis!.sismember(owner.key('run', run.id, 'pending'), 'call_a')).toBe(1), { timeout: 2000 });
+      expect(await hubB.submitApproval({ id: run.id }, 'call_a', true)).toBe(true);
+      expect(await hubA.submitApproval(run, 'call_a', false)).toBe(false);
+      expect(await decision).toBe('approved');
+    } finally {
+      hubA.close();
+      hubB.close();
+      await owner.close();
+      await follower.close();
+    }
+  });
+
   it('a run whose instance died is reported failed to its followers', async () => {
     // A hub that starts a run and then goes silent, like a crashed process
     const prefix = `claudia-test-${randomUUID().slice(0, 8)}:`;

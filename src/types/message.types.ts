@@ -29,6 +29,8 @@ export interface ToolCall {
     name: string;
     arguments: string; // JSON string
   };
+  /** Web: the call waited for the user's approval, and how it was decided. */
+  approval?: 'pending' | 'approved' | 'rejected' | 'expired';
 }
 
 /** A file a built-in tool wrote on this computer (desktop), shown as a card under the reply. */

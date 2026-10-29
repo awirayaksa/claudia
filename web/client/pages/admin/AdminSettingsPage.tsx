@@ -15,6 +15,7 @@ const BUILTIN_IDS = [
   'builtin-pdf-001',
   'builtin-diagram-001',
   'builtin-fetch-001',
+  'builtin-azdo-001',
 ] as const;
 
 export function AdminSettingsPage() {

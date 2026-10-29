@@ -72,6 +72,13 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
     },
   }[status];
 
+  const approvalLabel = {
+    pending: t('tool.awaitingApproval', 'Waiting for your approval'),
+    approved: t('tool.approved', 'Approved'),
+    rejected: t('tool.rejected', 'Declined'),
+    expired: t('tool.expired', 'Not approved in time'),
+  };
+
   return (
     <div
       className={`my-2 rounded-lg border ${
@@ -96,6 +103,11 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
             )}
             <span>{statusConfig.label}</span>
           </span>
+          {toolCall.approval && (
+            <span className="rounded-full border border-border px-1.5 text-xs text-text-secondary" data-testid="tool-approval-state">
+              {approvalLabel[toolCall.approval]}
+            </span>
+          )}
         </div>
         <span className="ms-4 text-text-secondary">
           {isExpanded ? '▼' : '▶'}

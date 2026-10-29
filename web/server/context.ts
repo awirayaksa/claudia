@@ -27,6 +27,7 @@ import type { AuditLog } from './admin/audit';
 import type { Webhooks } from './admin/webhooks';
 import type { OidcService } from './auth/providers/oidc';
 import type { CloudFiles } from './cloud/cloud-files';
+import type { AzdoService } from './azdo/azdo-service';
 import type { ScheduleRunner } from './modules/schedules/service';
 
 /** Everything a route or service needs, built once at startup. */
@@ -63,6 +64,7 @@ export interface ServerContext {
   sso: OidcService;
   /** Google Drive / OneDrive. */
   cloud: CloudFiles;
+  azdo: AzdoService;
   /** Scheduled prompts (runs due ones every 30 s). */
   schedules: ScheduleRunner;
   log: FastifyBaseLogger;

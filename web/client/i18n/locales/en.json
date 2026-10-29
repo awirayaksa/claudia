@@ -293,7 +293,8 @@
       "builtin-presentation-001": "PowerPoint presentations",
       "builtin-pdf-001": "PDF documents",
       "builtin-diagram-001": "Diagrams",
-      "builtin-fetch-001": "Web fetch"
+      "builtin-fetch-001": "Web fetch",
+      "builtin-azdo-001": "Azure DevOps (work items)"
     },
     "network": "Network",
     "netAllowlist": "Private addresses users may reach",
@@ -1076,5 +1077,35 @@
     "deleteTitle": "Delete \"{{name}}\"?",
     "deleteFileBody": "The file is deleted from your workspace. Replies that link to it can no longer download it.",
     "deleteFolderBody": "The folder and everything in it are deleted from your workspace."
+  },
+  "azdo": {
+    "noServers": "The administrator hasn't added an Azure DevOps server yet.",
+    "connectedAs": "Connected as {{name}}",
+    "token": "Personal access token",
+    "tokenHelp": "Create one in Azure DevOps under User settings → Personal access tokens, with the scopes Work Items (Read & write) and Project and Team (Read). It is stored encrypted.",
+    "defaultProject": "Default project (optional)",
+    "replaceToken": "Replace token",
+    "disconnect": "Disconnect",
+    "connect": "Connect",
+    "adminTitle": "Azure DevOps Server",
+    "adminHelp": "Collections people can connect to with their own personal access token, for the Azure DevOps built-in tools (offer them under Settings → Built-in tools). Claudia may reach these hosts even on a private network.",
+    "serverName": "Name",
+    "collectionUrl": "Collection URL",
+    "version": "Server version",
+    "addServer": "Add a collection",
+    "httpWarning": "Over http, tokens travel unencrypted. Use https if the server supports it."
+  },
+  "approval": {
+    "title": "Approve this action?",
+    "approve": "Approve",
+    "reject": "Reject",
+    "help": "Claudia waits for your answer before going on.",
+    "tools": {
+      "azdo_create_work_item": "Create a work item",
+      "azdo_update_work_item": "Change a work item",
+      "azdo_resolve_work_item": "Resolve a work item",
+      "azdo_add_comment": "Comment on a work item",
+      "azdo_link_work_items": "Link work items"
+    }
   }
 }

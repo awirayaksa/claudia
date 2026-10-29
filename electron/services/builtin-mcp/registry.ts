@@ -1,4 +1,5 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { createAzureDevOpsServer } from './azure-devops.server';
 import { createDiagramServer } from './diagram.server';
 import { createFetchServer } from './fetch.server';
 import { createFilesystemServer } from './filesystem.server';
@@ -16,6 +17,8 @@ export interface BuiltinServerDefinition {
   name: string;
   description: string;
   createServer: (config?: Record<string, unknown>) => McpServer;
+  /** Where the server is offered (default: everywhere). */
+  platforms?: Array<'desktop' | 'web'>;
 }
 
 const BUILTIN_SERVERS: BuiltinServerDefinition[] = [
@@ -61,6 +64,14 @@ const BUILTIN_SERVERS: BuiltinServerDefinition[] = [
     description: 'Fetch a URL and return its content as markdown (or raw). Useful for reading documentation, articles, and APIs.',
     createServer: (config) => createFetchServer(config),
   },
+  {
+    id: 'builtin-azdo-001',
+    name: 'Azure DevOps',
+    description: 'Find, read, create and update work items on Azure DevOps Server / TFS: tasks, bugs, user stories, comments and links.',
+    createServer: (config) => createAzureDevOpsServer(config),
+    // Needs the web server's per-user connections
+    platforms: ['web'],
+  },
 ];
 
 // ============================================================================
@@ -75,6 +86,7 @@ export function getBuiltinServerDefinition(builtinId: string): BuiltinServerDefi
   return BUILTIN_SERVERS.find((s) => s.id === builtinId);
 }
 
-export function getAllBuiltinServerDefinitions(): BuiltinServerDefinition[] {
-  return [...BUILTIN_SERVERS];
+/** The definitions offered on a platform (all of them without one). */
+export function getAllBuiltinServerDefinitions(platform?: 'desktop' | 'web'): BuiltinServerDefinition[] {
+  return BUILTIN_SERVERS.filter((s) => !platform || !s.platforms || s.platforms.includes(platform));
 }

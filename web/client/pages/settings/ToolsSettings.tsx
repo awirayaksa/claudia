@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useSettingsSection } from '@/components/settings/SettingsDraft';
 import { errorMessage, useMcpServersQuery, useSetMcpServerEnabledMutation } from '../../api/rtk-api';
 import { OwnToolServers } from './OwnToolServers';
+import { AzureDevOpsSettings } from './AzureDevOpsSettings';
 
 /** Switch tool servers on or off for yourself. The model can use those that are on. */
 export function ToolsSettings() {
@@ -49,6 +50,7 @@ export function ToolsSettings() {
               </div>
               {s.description && <p className="text-xs text-text-secondary">{s.description}</p>}
               {s.enabled && s.error && <p className="text-xs text-error">{s.error}</p>}
+              {s.id === 'builtin-azdo-001' && <AzureDevOpsSettings />}
             </div>
           </li>
         ))}

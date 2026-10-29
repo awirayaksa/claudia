@@ -72,6 +72,12 @@ const runSlice = createSlice({
         case 'tool.client_request':
           live.clientRequests.push({ callId: e.callId, name: e.name, args: e.args, messageId: e.messageId });
           break;
+        case 'tool.approval_request':
+        case 'tool.approval_resolved': {
+          const call = live.nodes[e.messageId]?.parts.find((p) => p.type === 'tool_call' && p.callId === e.callId);
+          if (call?.type === 'tool_call') call.approval = e.type === 'tool.approval_request' ? 'pending' : e.decision;
+          break;
+        }
         case 'message.part': {
           const n = live.nodes[e.messageId];
           if (n) n.parts.push(e.part);

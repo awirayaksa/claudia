@@ -26,6 +26,8 @@ import { adminSsoRoutes, oidcRoutes } from './auth/oidc-routes';
 import { adminScimRoutes, scimRoutes } from './auth/scim';
 import { CloudFiles, type CloudEndpoints } from './cloud/cloud-files';
 import { adminCloudRoutes, cloudRoutes } from './cloud/routes';
+import { AzdoService } from './azdo/azdo-service';
+import { azdoRoutes } from './azdo/routes';
 import { noteRoutes } from './modules/notes/routes';
 import { channelRoutes } from './modules/channels/routes';
 import { scheduleRoutes } from './modules/schedules/routes';
@@ -208,6 +210,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     web: { extract, policy: netPolicy, ...(deps.youtubeOrigin ? { youtubeOrigin: deps.youtubeOrigin } : {}) },
     log: app.log,
   });
+  const azdo = new AzdoService({ db: deps.db.db, secrets, settings, netPolicy });
   const mcp = new McpPools({
     db: deps.db.db,
     secrets,
@@ -218,6 +221,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     extract,
     netPolicy,
     access,
+    azdo,
   });
   const ctx: ServerContext = {
     config: deps.config,
@@ -267,6 +271,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     webhooks,
     sso: new OidcService({ db: deps.db.db, secrets, log: app.log }),
     cloud: new CloudFiles({ db: deps.db.db, secrets, log: app.log, endpoints: deps.cloudEndpoints }),
+    azdo,
     schedules: null as unknown as ScheduleRunner,
     log: app.log,
   };
@@ -363,6 +368,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => authRoutes(a, ctx), { prefix: '/auth' });
       await api.register((a) => oidcRoutes(a, ctx), { prefix: '/auth/oidc' });
       await api.register((a) => cloudRoutes(a, ctx), { prefix: '/cloud' });
+      await api.register((a) => azdoRoutes(a, ctx), { prefix: '/azdo' });
       await api.register((a) => noteRoutes(a, ctx), { prefix: '/notes' });
       await api.register((a) => channelRoutes(a, ctx), { prefix: '/channels' });
       await api.register((a) => scheduleRoutes(a, ctx), { prefix: '/schedules' });
