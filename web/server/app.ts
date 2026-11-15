@@ -33,6 +33,7 @@ import { noteRoutes } from './modules/notes/routes';
 import { channelRoutes } from './modules/channels/routes';
 import { scheduleRoutes } from './modules/schedules/routes';
 import { ScheduleRunner } from './modules/schedules/service';
+import { StaleReplySweep } from './llm/stale-sweep';
 import { registerAuthHooks } from './auth/rbac';
 import { authRoutes } from './auth/routes';
 import { bootstrapAdmin } from './auth/bootstrap';
@@ -284,6 +285,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       folders: folderService,
       code,
       memoryIdleMs: deps.config.CLAUDIA_MEMORY_IDLE_SECONDS * 1000,
+      dataDir: deps.config.dataDir,
       ...deps.orchestrator,
     }),
     storage,
@@ -317,6 +319,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     log: app.log,
   };
   ctx.schedules = new ScheduleRunner(ctx, app.log);
+  const staleReplies = new StaleReplySweep({ db: deps.db.db, runs, log: app.log });
   app.decorate('ctx', ctx);
   cluster.on('mcp.global', ({ id }) => mcp.reloadGlobal(String(id)));
   cluster.on('cloud', () => ctx.cloud.reset());
@@ -337,6 +340,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     audit.close();
     conversations.close();
     ctx.schedules.stop();
+    staleReplies.stop();
     await mcp.close();
     await extract.close();
     await cluster.close();
@@ -493,6 +497,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   if (deps.startJobs !== false) {
     jobQueue.start();
     ctx.schedules.start();
+    staleReplies.start();
   }
   if (deps.startMcp !== false) void mcp.startAll().catch((err) => app.log.warn({ err: String(err) }, 'starting MCP servers failed'));
   return app;

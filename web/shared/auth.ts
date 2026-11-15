@@ -37,6 +37,8 @@ export interface SessionResponse {
     readAloud: 'none' | 'browser' | 'server';
     /** Blind comparisons are on (Admin → Evaluations). */
     arena: boolean;
+    /** Agent tasks are switched on (Admin → Settings → Agent tasks). */
+    agent: boolean;
     /** Google Drive / OneDrive can be connected. */
     cloudFiles: { google: boolean; microsoft: boolean };
   };

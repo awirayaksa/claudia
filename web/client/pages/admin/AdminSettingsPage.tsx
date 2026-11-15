@@ -250,6 +250,38 @@ export function AdminSettingsPage() {
         </label>
       </Card>
 
+      <Card title={t('admin.agent')}>
+        <p className="mb-2 text-sm text-text-secondary">{t('admin.agentHelp')}</p>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={draft.agent.enabled} onChange={(e) => set('agent', { ...draft.agent, enabled: e.target.checked })} />
+          {t('admin.agentEnabled')}
+        </label>
+        {draft.agent.enabled && (
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            {(
+              [
+                ['maxSteps', 1, 500],
+                ['maxMinutes', 1, 240],
+                ['maxTokens', 10_000, 100_000_000],
+              ] as const
+            ).map(([key, min, max]) => (
+              <label key={key} className="block text-sm">
+                <span className="mb-1 block">{t(`admin.agent_${key}`)}</span>
+                <input
+                  type="number"
+                  min={min}
+                  max={max}
+                  className="w-full rounded border border-border bg-background px-2 py-1"
+                  value={draft.agent[key]}
+                  onChange={(e) => set('agent', { ...draft.agent, [key]: Math.min(max, Math.max(min, Math.round(Number(e.target.value)) || min)) })}
+                  data-testid={`agent-${key}`}
+                />
+              </label>
+            ))}
+          </div>
+        )}
+      </Card>
+
       <Card title={t('admin.code')}>
         <CodeSettings value={draft.code} onChange={(code) => set('code', code)} />
       </Card>

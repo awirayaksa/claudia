@@ -61,6 +61,19 @@ plus feature-parity work with Claude (issue #15):
   admins can make styles for everyone. The chat keeps the last one used.
 - **Export a chat as Markdown or PDF** (the chat menu), besides Claudia JSON:
   the branch that is shown, tool calls folded, images embedded in the PDF.
+- **Agent tasks** (the Task button above the message box; Admin → Settings →
+  Agent tasks, off by default, permission "Run agent tasks"): a message sent
+  as a task is planned as a checklist the user watches fill in, then worked
+  on until it is done, in a folder of the user's workspace (a new
+  `tasks/<date>-<words>` folder, one the user picks, or the chat's from an
+  earlier task). The task always has the Filesystem and Office tools; when
+  code runs on the server, `run_code` sees the task folder as `/workspace`
+  and what it writes is saved back there. Instead of the tool-round limit,
+  tasks have budgets in steps, minutes and tokens. Every file the task made
+  or changed in its folder is listed under the reply, the task keeps going
+  when the tab is closed, and a browser notification says when it is done.
+  The file tools can reach the whole workspace: the instructions keep the
+  task in its folder, but nothing enforces it.
 - **Past chats** (the clock button above the message box; Settings → Memory
   to have it on by default): the model can search your earlier chats and
   list recent ones, and cites the ones it used. Only your own, never

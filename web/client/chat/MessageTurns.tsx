@@ -16,6 +16,7 @@ import { VersionSwitcher } from './VersionSwitcher';
 import { findArtifacts, type Artifact } from '@/utils/artifacts';
 import { ReadAloudButton } from './voice';
 import { ToolApprovals } from './ToolApprovals';
+import { TaskChip, TodoChecklist, todoOf } from './TodoChecklist';
 
 export interface TurnHandlers {
   /** Show the path through this node (a version switch). */
@@ -100,8 +101,10 @@ export function MessageTurns(props: Props) {
     ) : (
       <AssistantTurn key={node.id} {...props} node={node} onFeedback={setFeedbackFor} />
     );
+    const todo = todoOf(node);
     return (
       <div key={node.id}>
+        {todo && <TodoChecklist items={todo} running={node.status === 'streaming'} />}
         {reply}
         {!readOnly && node.memoryChanges?.length ? <MemoryChip changes={node.memoryChanges} onUndo={props.onUndoMemory} /> : null}
         {props.onArtifact && node.status !== 'streaming' && <ArtifactChips node={node} onOpen={props.onArtifact} />}
@@ -283,7 +286,7 @@ function UserTurn({
 /** What a message referenced (#kb, #url, #chat) and whether it searched the web. */
 function RefChips({ node }: { node: MessageNode }) {
   const { t } = useTranslation();
-  if (!node.refs?.length && !node.webSearch) return null;
+  if (!node.refs?.length && !node.webSearch && !node.task) return null;
   const label = (r: NonNullable<MessageNode['refs']>[number]) =>
     r.type === 'url' ? (r.url ?? '').replace(/^https?:\/\//, '') : (r.name ?? t(`refs.${r.type}`));
   return (
@@ -295,6 +298,7 @@ function RefChips({ node }: { node: MessageNode }) {
         </span>
       ))}
       {node.webSearch && <span className="rounded-full border border-border px-2 py-0.5 text-text-secondary">{t('refs.webSearched')}</span>}
+      {node.task && <TaskChip folder={node.task.folder} />}
     </div>
   );
 }

@@ -23,6 +23,14 @@ export class PartsBuilder {
     this.dirty = true;
   }
 
+  /** An agent task's plan: one todo part per reply, replaced in place (added first, so it shows above the work). */
+  setTodo(items: PartOf<'todo'>['items']): void {
+    const i = this.parts.findIndex((p) => p.type === 'todo');
+    if (i >= 0) this.parts[i] = { type: 'todo', items };
+    else this.parts.unshift({ type: 'todo', items });
+    this.dirty = true;
+  }
+
   /** The prose of the reply (text parts only). */
   text(): string {
     return this.parts

@@ -77,6 +77,7 @@ export async function authRoutes(app: FastifyInstance, ctx: ServerContext): Prom
         voiceInput: mode(media.stt.engine),
         readAloud: mode(media.tts.engine),
         arena: arena.enabled && arena.models.length >= 2,
+        agent: (await ctx.settings.get('agent')).enabled,
         cloudFiles: await ctx.cloud.available(),
       },
       mfa,

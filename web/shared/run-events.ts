@@ -3,7 +3,7 @@
  * GET /api/runs/:id/events. Every event has a sequence number, so a client
  * that reconnects (or a second tab) resumes with `?after=<seq>`.
  */
-import type { MessageNode, MessagePart, PartOf, ToolApproval } from '../../src/types/turn.types';
+import type { MessageNode, MessagePart, PartOf, TodoItem, ToolApproval } from '../../src/types/turn.types';
 import type { MessageUsage } from '../../src/types/statistics.types';
 import type { CitationSource } from '../../src/types/turn.types';
 import type { MemoryChangeView } from './workspace';
@@ -40,6 +40,8 @@ export type RunEvent =
   | { type: 'message.citations'; messageId: string; citations: Array<{ index: number; source: CitationSource }> }
   /** The model saved, changed or forgot a memory (undoable from the reply). */
   | { type: 'message.memory'; messageId: string; change: MemoryChangeView }
+  /** An agent task's plan changed: the reply's todo part is replaced. */
+  | { type: 'message.todo'; messageId: string; items: TodoItem[] }
   /** Suggested next questions, after the reply is complete. */
   | { type: 'message.followups'; messageId: string; followUps: string[] }
   | {

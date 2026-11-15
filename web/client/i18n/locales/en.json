@@ -388,7 +388,13 @@
     "codeNetworkHelp": "Off by default. On, code can download packages but also reach anything this server’s network can.",
     "codeTest": "Test the sandbox",
     "codeTesting": "Testing… (images may be downloading)",
-    "codeTestOk": "Works (Docker {{version}})."
+    "codeTestOk": "Works (Docker {{version}}).",
+    "agent": "Agent tasks",
+    "agentHelp": "Users can send a message as a task: the model plans it as a checklist and keeps working in a folder of their workspace until it is done, with the file tools and (when code runs on the server) the code interpreter. Tasks have these budgets instead of the tool-round limit.",
+    "agentEnabled": "Allow agent tasks",
+    "agent_maxSteps": "Steps per task",
+    "agent_maxMinutes": "Minutes per task",
+    "agent_maxTokens": "Tokens per task"
   },
   "notFound": {
     "title": "Page not found",
@@ -491,7 +497,8 @@
       "features.image_gen": "Generate images",
       "features.voice": "Use voice input and read-aloud",
       "features.notes": "Notes",
-      "features.schedules": "Scheduled prompts"
+      "features.schedules": "Scheduled prompts",
+      "features.agent": "Run agent tasks"
     },
     "caps": {
       "tokensPerDay": "Tokens per day",
@@ -1297,5 +1304,21 @@
       "azdo_add_comment": "Comment on a work item",
       "azdo_link_work_items": "Link work items"
     }
+  },
+  "task": {
+    "toggle": "Task",
+    "toggleHelp": "Work on this as a task: plan it, then keep going in a workspace folder until it is done",
+    "folder": "Work in",
+    "folderNew": "A new folder (tasks/…)",
+    "folderSame": "This chat’s folder ({{folder}})",
+    "plan": "Plan",
+    "progress": "{{done}} of {{total}} done",
+    "status": {
+      "pending": "To do",
+      "in_progress": "In progress",
+      "completed": "Done"
+    },
+    "chip": "Task · {{folder}}",
+    "openFolder": "Open the folder in your workspace"
   }
 }

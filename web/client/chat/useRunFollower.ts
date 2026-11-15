@@ -3,6 +3,8 @@ import { api } from '../api/rtk-api';
 import { useWebDispatch } from '../hooks';
 import { followRun } from './run-stream';
 import { runCleared, runEvent, runFollowed } from './run-slice';
+import { notifyTaskDone } from './task-notify';
+import type { WebRootState } from '../store';
 
 /** One SSE follower per run, shared by every page that shows the chat. */
 const following = new Map<string, () => void>();
@@ -26,6 +28,8 @@ export function useRunFollower() {
       (envelope) => d(runEvent({ chatId, envelope })),
       async () => {
         following.delete(runId);
+        // An agent task that finished while the tab was in the background
+        d((_dispatch: unknown, getState: () => WebRootState) => notifyTaskDone(chatId, getState().runs[chatId]));
         // Bring the stored chat up to date, then drop the live copy
         await d(api.endpoints.chat.initiate(chatId, { forceRefetch: true, subscribe: false }));
         d(api.util.invalidateTags(['Chats']));

@@ -10,10 +10,10 @@ import { FolderIcon } from '../../components/icons';
 import { formatSize } from './FilesSettings';
 
 /** The workspace the built-in Files, Word and Diagrams tools work in: browse, download, upload, add folders, delete. */
-export function WorkspaceFiles() {
+export function WorkspaceFiles({ initialDir = '' }: { initialDir?: string }) {
   const { t } = useTranslation();
   const dispatch = useWebDispatch();
-  const [dir, setDir] = useState('');
+  const [dir, setDir] = useState(initialDir);
   const { data, error, isFetching } = useWorkspaceFilesQuery(dir, { refetchOnMountOrArgChange: true });
   const [createFolder] = useCreateWorkspaceFolderMutation();
   const [remove, removeState] = useDeleteWorkspaceEntryMutation();

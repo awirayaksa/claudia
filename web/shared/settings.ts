@@ -98,6 +98,7 @@ export const AppSettingsResponse = z.object({
   arena: z.object({ enabled: z.boolean(), models: z.array(z.string()) }),
   compaction: z.object({ enabled: z.boolean(), threshold: z.number(), keepRecentTurns: z.number(), model: z.string().nullable() }),
   memory: z.object({ tools: z.boolean(), extraction: z.boolean(), model: z.string().nullable() }),
+  agent: z.object({ enabled: z.boolean(), maxSteps: z.number(), maxMinutes: z.number(), maxTokens: z.number() }),
   code: z.object({
     engine: z.enum(['browser', 'server', 'off']),
     pythonImage: z.string(),

@@ -95,6 +95,16 @@ export const AppSettingsSchema = {
     /** Model for learning and for sorting imports; null = the task model, else the chat's model. */
     model: z.string().nullable(),
   }),
+  /** Agent tasks: long-running work in a folder of the user's workspace, with budgets instead of the tool-round cap. */
+  agent: z.object({
+    enabled: z.boolean(),
+    /** Model requests (tool rounds) per task reply. */
+    maxSteps: z.number().int().min(1).max(500),
+    /** Wall-clock minutes per task reply. */
+    maxMinutes: z.number().int().min(1).max(240),
+    /** Prompt + completion tokens per task reply. */
+    maxTokens: z.number().int().min(10_000).max(100_000_000),
+  }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -140,6 +150,7 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   },
   // Tools are off by default: not every model takes tools, and a tool the provider refuses fails the reply
   memory: { tools: false, extraction: true, model: null },
+  agent: { enabled: false, maxSteps: 60, maxMinutes: 30, maxTokens: 2_000_000 },
 };
 
 export class AppSettings {

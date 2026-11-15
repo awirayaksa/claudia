@@ -46,7 +46,9 @@ import { useResumeActiveRuns, useRunFollower } from '../chat/useRunFollower';
 import { enabledServerIds } from '../chat/useMcpSync';
 import { MessageTurns } from '../chat/MessageTurns';
 import { ChatHeader } from '../chat/ChatHeader';
-import { CloseIcon, CodeIcon, FolderIcon, GlobeIcon, ImageIcon, PlusIcon, HistoryIcon } from '../components/icons';
+import { CloseIcon, CodeIcon, FolderIcon, GlobeIcon, ImageIcon, PlusIcon, HistoryIcon, TaskIcon } from '../components/icons';
+import { TaskFolderPicker } from '../chat/TaskFolderPicker';
+import { askToNotify } from '../chat/task-notify';
 import { PromptVariablesForm } from '../workspace/PromptForm';
 import { StylePicker } from '../chat/StylePicker';
 import { ContextBar, hashMenuItems, refFromItem, sameRef, UrlDialog, urlRefsIn, type FeatureToggle } from '../chat/ContextBar';
@@ -75,8 +77,10 @@ interface Outgoing {
   raw: string;
   attachments: Attachment[];
   refs?: MessageRef[];
-  /** webSearch, code, imageGen */
+  /** webSearch, code, imageGen, agent */
   features?: Record<string, boolean>;
+  /** An agent task's folder ('' or unset: the chat's, or a new one). */
+  taskFolder?: string;
 }
 
 export function ChatPage() {
@@ -137,7 +141,12 @@ export function ChatPage() {
     ...(session?.features?.imageGen && permissions?.['features.image_gen']
       ? [{ id: 'image', label: t('tools.image'), help: t('tools.imageHelp'), on: !!features.imageGen, icon: <ImageIcon />, onChange: toggle('imageGen') }]
       : []),
+    ...(session?.features?.agent && permissions?.['features.agent']
+      ? [{ id: 'task', label: t('task.toggle'), help: t('task.toggleHelp'), on: !!features.agent, icon: <TaskIcon />, onChange: toggle('agent') }]
+      : []),
   ];
+  /** The folder the next task works in ('': the chat's, or a new one). */
+  const [taskFolder, setTaskFolder] = useState('');
   const voice = permissions?.['features.voice'] ? session?.features : undefined;
   useBrowserTools(chatId);
   const addRef = (r: MessageRef) => setRefs((list) => (list.some((x) => sameRef(x, r)) ? list : [...list, r].slice(0, 10)));
@@ -279,8 +288,10 @@ export function ChatPage() {
         ...(skill ? { skill } : {}),
         ...(out.refs?.length ? { refs: out.refs } : {}),
         ...(out.features && Object.values(out.features).some(Boolean) ? { features: out.features } : {}),
+        ...(out.features?.agent && out.taskFolder ? { task: { folder: out.taskFolder } } : {}),
         ...(style ? { styleId: style } : {}),
       }).unwrap();
+      if (out.features?.agent) askToNotify();
       follow(id, res.runId);
       if (!chatId) navigate(`/c/${id}`);
     } catch (err) {
@@ -345,8 +356,11 @@ export function ChatPage() {
       attachments,
       refs: [...refs, ...typed.refs.filter((r) => !refs.some((x) => sameRef(x, r)))].slice(0, 10),
       features: Object.fromEntries(Object.entries(features).filter(([, on]) => on)),
+      ...(features.agent && taskFolder ? { taskFolder } : {}),
     };
     setRefs([]);
+    // The folder picked is used once; later tasks in the chat stay in it
+    if (features.agent) setTaskFolder('');
     if (live || sending.current) {
       // A reply is still being written: send this one after it
       setQueue((q) => [...q, { id: Date.now() + Math.random(), ...out }]);
@@ -411,9 +425,15 @@ export function ChatPage() {
     const attachments = node.parts.flatMap((p) =>
       p.type === 'file' && p.fileId ? [{ id: p.fileId, type: 'file' as const, name: p.name, size: p.size ?? 0, mimeType: p.mime }] : []
     );
-    // An edit keeps the turn's references and web search
+    // An edit keeps the turn's references and web search, and stays a task (in the same folder)
     void send(
-      { raw: text, attachments, refs: (node.refs ?? []) as MessageRef[], features: { ...(node.webSearch ? { webSearch: true } : {}) } },
+      {
+        raw: text,
+        attachments,
+        refs: (node.refs ?? []) as MessageRef[],
+        features: { ...(node.webSearch ? { webSearch: true } : {}), ...(node.task ? { agent: true } : {}) },
+        ...(node.task ? { taskFolder: node.task.folder } : {}),
+      },
       node.parentId
     );
   };
@@ -551,6 +571,7 @@ export function ChatPage() {
           />
         )}
         <ContextBar refs={refs} onRemove={(r) => setRefs((list) => list.filter((x) => !sameRef(x, r)))} toggles={toggles} />
+        {features.agent && <TaskFolderPicker value={taskFolder} chatFolder={chat?.params.taskFolder} onChange={setTaskFolder} />}
         <ChatInput
           ref={inputRef}
           onSend={handleSend}
