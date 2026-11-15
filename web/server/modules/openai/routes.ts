@@ -95,6 +95,27 @@ const usageOf = (u: MessageUsage | undefined) =>
       }
     : undefined;
 
+/** A message's text: a string, or the text parts of an array (other parts named). */
+function messageText(content: unknown): string {
+  if (typeof content === 'string') return content;
+  if (!Array.isArray(content)) return '';
+  return content
+    .map((p: any) => (p?.type === 'text' && typeof p.text === 'string' ? p.text : p?.type ? `[${p.type}]` : ''))
+    .filter(Boolean)
+    .join('\n');
+}
+
+/** What the caller added this turn: the messages after the last assistant one (tool results are marked). */
+export function newInput(messages: ChatRequest['messages']): string {
+  let start = messages.length;
+  while (start > 0 && messages[start - 1].role !== 'assistant') start--;
+  return messages
+    .slice(start)
+    .filter((m) => m.role === 'user' || m.role === 'tool')
+    .map((m) => (m.role === 'tool' ? `[tool result${m.tool_call_id ? ` ${m.tool_call_id}` : ''}]\n${messageText(m.content)}` : messageText(m.content)))
+    .join('\n\n');
+}
+
 const toolCallsOut = (calls: ToolCall[]) =>
   calls.map((c, index) => ({ index, id: c.id, type: 'function' as const, function: { name: c.function.name, arguments: c.function.arguments } }));
 
@@ -154,6 +175,23 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
       const started = Date.now();
       const controller = new AbortController();
       let usage: MessageUsage | undefined;
+      // The conversation log (when on): the new input and the whole answer
+      const logTurn = (reply: string, calls: ToolCall[], status: string, error?: string) =>
+        void ctx.conversations.record({
+          source: 'api',
+          user: { id: me.id, email: me.email },
+          modelId: target.model.id,
+          prompt: newInput(body.messages),
+          reply,
+          status,
+          error: error ?? null,
+          usage: usage ?? null,
+          details: {
+            toolCalls: calls.map((c) => ({ name: c.function.name, args: c.function.arguments.slice(0, 2000) })),
+            ...(body.stream ? { stream: true } : {}),
+          },
+          ip: req.ip,
+        });
       const record = () => {
         if (!usage) return;
         void ctx.db
@@ -198,6 +236,7 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
             .catch(reject);
         }).catch((err: Error) => err);
         record();
+        logTurn(content, calls, reason instanceof Error ? 'error' : reason === 'aborted' ? 'stopped' : 'completed', reason instanceof Error ? reason.message : undefined);
         if (reason instanceof Error) return openaiError(reply, 502, reason.message, 'upstream_error');
         return {
           id,
@@ -240,6 +279,8 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
 
       chunk({ role: 'assistant', content: '' });
       let calls: ToolCall[] = [];
+      let streamed = '';
+      let outcome: { status: string; error?: string } = { status: 'completed' };
       const end = (reason: string) => {
         if (calls.length) chunk({ tool_calls: toolCallsOut(calls) });
         chunk({}, calls.length ? 'tool_calls' : reason);
@@ -253,15 +294,20 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
           .streamChatCompletion(
             request,
             {
-              onChunk: (t) => chunk({ content: t }),
+              onChunk: (t) => {
+                streamed += t;
+                chunk({ content: t });
+              },
               onReasoning: (t) => chunk({ reasoning_content: t }),
               onToolCalls: (c) => (calls = c),
               onUsage: (u) => (usage = u),
               onComplete: (r) => {
+                if (r === 'aborted') outcome = { status: 'stopped' };
                 end(r === 'aborted' || !r ? 'stop' : r);
                 resolve();
               },
               onError: (err) => {
+                outcome = { status: 'error', error: err.message };
                 send({ error: { message: err.message, type: 'upstream_error' } });
                 if (!closed) res.end('data: [DONE]\n\n');
                 resolve();
@@ -272,12 +318,14 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
             options
           )
           .catch((err: Error) => {
+            outcome = { status: 'error', error: err.message };
             send({ error: { message: err.message, type: 'upstream_error' } });
             if (!closed) res.end('data: [DONE]\n\n');
             resolve();
           });
       });
       record();
+      logTurn(streamed, calls, outcome.status, outcome.error);
     }
   );
 }

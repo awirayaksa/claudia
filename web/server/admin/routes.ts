@@ -25,7 +25,7 @@ function csvField(value: unknown): string {
 export const toCsv = (header: string[], rows: unknown[][]) =>
   [header, ...rows].map((r) => r.map(csvField).join(',')).join('\r\n') + '\r\n';
 
-/** /api/admin/audit, /api/admin/analytics, /api/admin/webhooks */
+/** /api/admin/audit, /api/admin/conversations, /api/admin/analytics, /api/admin/webhooks */
 export async function adminOpsRoutes(app: FastifyInstance, ctx: ServerContext): Promise<void> {
   app.addHook('preHandler', requireAdmin);
 
@@ -47,6 +47,53 @@ export async function adminOpsRoutes(app: FastifyInstance, ctx: ServerContext): 
       ['time', 'actor', 'action', 'route', 'target_type', 'target_id', 'status', 'ip', 'details'],
       rows.map((e) => [e.createdAt, e.actorEmail, e.action, e.route, e.targetType, e.targetId, e.status, e.ip, e.details])
     );
+  });
+
+  // ─── Conversation log ──────────────────────────────────────────────────────
+  // Reading a turn in full or exporting goes in the audit log: who looked at what
+  app.get('/conversations', async (req) => ctx.conversations.list(req.query));
+
+  app.get('/conversations/export.csv', async (req, reply) => {
+    const turns = await ctx.conversations.listFull(req.query);
+    await ctx.audit.fromRequest(req, 'conversations.exported', {
+      route: 'GET /api/admin/conversations/export.csv',
+      targetType: 'conversations',
+      details: { filters: req.query as Record<string, unknown>, turns: turns.length },
+    });
+    reply
+      .header('Content-Type', 'text/csv; charset=utf-8')
+      .header('Content-Disposition', 'attachment; filename="claudia-conversations.csv"');
+    return toCsv(
+      ['time', 'user', 'source', 'model', 'chat_id', 'chat_title', 'status', 'prompt_tokens', 'completion_tokens', 'prompt', 'reply', 'error', 'details'],
+      turns.map((c) => [
+        c.createdAt,
+        c.userEmail,
+        c.source,
+        c.modelId,
+        c.chatId,
+        c.chatTitle,
+        c.status,
+        c.promptTokens,
+        c.completionTokens,
+        c.prompt,
+        c.reply,
+        c.error,
+        c.details,
+      ])
+    );
+  });
+
+  app.get('/conversations/:id', async (req) => {
+    const { id } = IdParams.parse(req.params);
+    const turn = await ctx.conversations.get(id);
+    if (!turn) throw notFound('Conversation turn');
+    await ctx.audit.fromRequest(req, 'conversations.viewed', {
+      route: 'GET /api/admin/conversations/:id',
+      targetType: 'conversations',
+      targetId: id,
+      details: { userEmail: turn.userEmail, chatId: turn.chatId },
+    });
+    return { turn };
   });
 
   // ─── Analytics ─────────────────────────────────────────────────────────────

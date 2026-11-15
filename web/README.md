@@ -105,6 +105,14 @@ Phase 6 (admin and operations):
 - **Audit log** (Admin → Audit log): sign-ins (and failures), sign-outs,
   sign-ups, API keys and every change made through the admin pages, with
   secrets removed; kept for a set number of days, exportable as CSV.
+- **Conversation log** (Admin → Conversation log; off by default): when
+  switched on, a copy of every message users send to a model and its reply,
+  from chats (temporary ones too), the `/api/v1` API and channel mentions,
+  each switchable. The copy is separate from the chats, so it stays when a
+  user edits or deletes one, and only admins can see it. Search by user,
+  text and source; open a turn for the whole prompt, reply, attachments
+  (names only) and tool calls; export as CSV. Opening or exporting is
+  written to the audit log. Kept for a set number of days (default 90).
 - **Banners** and **defaults for users** (Admin → Settings): notices at the
   top of every page (optionally dismissible, optionally timed), and the
   theme, text size, display options and system prompt users have until they

@@ -38,6 +38,9 @@ import type {
   AuditPage,
   AuditQuery,
   Banner,
+  ConversationPage,
+  ConversationQuery,
+  ConversationTurn,
   WebhookInput,
   WebhookTestResult,
   WebhookView,
@@ -150,6 +153,7 @@ export const api = createApi({
     'Plugins',
     'Webhooks',
     'Audit',
+    'Conversations',
     'Banners',
     'Mfa',
     'Sso',
@@ -629,6 +633,18 @@ export const api = createApi({
       query: (q) => `/admin/audit?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`,
       providesTags: ['Audit'],
     }),
+    conversationLog: b.query<ConversationPage, ConversationQuery>({
+      query: (q) => `/admin/conversations?${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined && v !== '').map(([k, v]) => [k, String(v)]))}`,
+      providesTags: ['Conversations'],
+    }),
+    // Opening a turn is recorded in the audit log
+    conversationTurn: b.query<{ turn: ConversationTurn }, string>({
+      query: (id) => `/admin/conversations/${id}`,
+      onQueryStarted: async (_id, { dispatch, queryFulfilled }) => {
+        await queryFulfilled.catch(() => {});
+        dispatch(api.util.invalidateTags(['Audit']));
+      },
+    }),
     webhooks: b.query<{ webhooks: WebhookView[] }, void>({ query: () => '/admin/webhooks', providesTags: ['Webhooks'] }),
     createWebhook: b.mutation<WebhookWithSecret, WebhookInput>({
       query: (body) => ({ url: '/admin/webhooks', method: 'POST', body }),
@@ -1026,6 +1042,8 @@ export const {
   useDeletePluginMutation,
   useAnalyticsQuery,
   useAuditLogQuery,
+  useConversationLogQuery,
+  useConversationTurnQuery,
   useWebhooksQuery,
   useCreateWebhookMutation,
   useUpdateWebhookMutation,

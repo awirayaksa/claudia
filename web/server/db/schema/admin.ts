@@ -33,6 +33,44 @@ export const auditLog = pgTable(
 );
 
 /**
+ * What users sent to models and what the models answered, kept for audit
+ * when "audit.conversations" is on. A copy, independent of the chat: it
+ * stays when the user edits or deletes the chat, and only admins read it.
+ * Kept for `audit.conversations.retentionDays`.
+ */
+export const conversationLog = pgTable(
+  'conversation_log',
+  {
+    id: uuid('id').primaryKey(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
+    userEmail: text('user_email'),
+    /** "chat", "api" or "channel". */
+    source: text('source').notNull(),
+    /** The chat or channel (not a foreign key: the record outlives it). */
+    chatId: uuid('chat_id'),
+    chatTitle: text('chat_title'),
+    /** The assistant message (chats) or channel message. */
+    messageId: uuid('message_id'),
+    modelId: text('model_id').notNull(),
+    prompt: text('prompt').notNull(),
+    reply: text('reply').notNull(),
+    status: text('status').notNull(),
+    error: text('error'),
+    promptTokens: integer('prompt_tokens'),
+    completionTokens: integer('completion_tokens'),
+    /** Attachment names, tool calls and the like (never file contents). */
+    details: jsonb('details').$type<Record<string, unknown>>().notNull().default({}),
+    ip: text('ip'),
+  },
+  (t) => [
+    index('conversation_log_created_idx').on(t.createdAt),
+    index('conversation_log_user_created_idx').on(t.userId, t.createdAt),
+    index('conversation_log_chat_idx').on(t.chatId),
+  ]
+);
+
+/**
  * Admin webhooks: events are POSTed as JSON, signed with HMAC-SHA256 of
  * "<timestamp>.<body>" under the webhook's secret (kept encrypted; shown once).
  */

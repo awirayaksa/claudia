@@ -18,6 +18,7 @@ type Section =
   | 'evaluations'
   | 'directory'
   | 'audit'
+  | 'conversations'
   | 'settings';
 
 export function AdminLayout() {
@@ -48,6 +49,7 @@ export function AdminLayout() {
           { id: 'evaluations', label: t('arena.title') },
           { id: 'directory', label: t('admin.directory') },
           { id: 'audit', label: t('audit.title') },
+          { id: 'conversations', label: t('conversations.title') },
           { id: 'settings', label: t('admin.settings') },
         ]}
       />

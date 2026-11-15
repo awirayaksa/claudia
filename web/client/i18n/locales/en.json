@@ -910,7 +910,9 @@
       "admin_request": "Admin change",
       "mfa_enabled": "Turned on two-factor sign-in",
       "mfa_disabled": "Turned off two-factor sign-in",
-      "scim_request": "Identity provider change (SCIM)"
+      "scim_request": "Identity provider change (SCIM)",
+      "conversations_viewed": "Opened a recorded conversation",
+      "conversations_exported": "Exported recorded conversations"
     },
     "actor": "Who",
     "actorPlaceholder": "Email contains…",
@@ -919,6 +921,38 @@
     "empty": "Nothing recorded yet.",
     "older": "Show older entries",
     "anonymous": "Not signed in"
+  },
+  "conversations": {
+    "title": "Conversation log",
+    "enabled": "Record what users send to models and the replies",
+    "help": "A copy of each message and reply is kept here for audit, apart from the chats: it stays when a user edits or deletes a chat (temporary chats included). Only admins can see it, and opening or exporting it is written to the audit log.",
+    "record": "Record",
+    "retentionDays": "Keep for (days)",
+    "privacyNote": "Recorded conversations can hold personal or confidential information. Tell your users they are recorded (a banner under Admin → Settings works), and keep only as long as you need.",
+    "user": "User",
+    "search": "Text",
+    "searchPlaceholder": "Message or reply contains…",
+    "source": "Where",
+    "allSources": "Everywhere",
+    "sources": {
+      "chat": "Chats",
+      "api": "API (/api/v1)",
+      "channel": "Channel mentions"
+    },
+    "model": "Model",
+    "message": "Message",
+    "prompt": "Sent by the user",
+    "reply": "Reply",
+    "attachments": "Attachments",
+    "toolCalls": "Tool calls",
+    "tokens": "{{prompt}} prompt + {{completion}} reply tokens",
+    "chatId": "Chat",
+    "status": {
+      "stopped": "Stopped",
+      "error": "Failed"
+    },
+    "deletedUser": "Deleted account",
+    "empty": "Nothing recorded yet."
   },
   "analytics": {
     "title": "Analytics",

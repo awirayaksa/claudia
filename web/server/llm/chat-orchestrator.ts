@@ -58,6 +58,7 @@ import { isBuiltinStyle } from '../../shared/styles';
 import { generateImage, IMAGE_TOOL, IMAGE_TOOL_NAME } from '../media/images';
 import type { MediaConfig } from '../media/config';
 import type { Webhooks } from '../admin/webhooks';
+import { partsForLog, type ConversationLog } from '../admin/conversation-log';
 import { SpanStatusCode, trace } from '@opentelemetry/api';
 import { withSpan } from '../telemetry';
 import { ARENA_LABELS, ARENA_MODEL_ID } from '../../shared/arena';
@@ -107,6 +108,8 @@ export interface OrchestratorDeps {
   media?: MediaConfig;
   /** run.completed goes to admin webhooks. */
   webhooks?: Webhooks;
+  /** Copies of each turn for admins (when switched on). */
+  conversations?: ConversationLog;
   /** Folders shared with the user (without it, only their own folders apply). */
   folders?: FolderService;
   /** Memories (without them, none are sent or learned). */
@@ -823,6 +826,8 @@ export class ChatOrchestrator {
       parts: builder.parts,
     });
 
+    await this.logTurn(plan, assistantId, target, { parts: builder.parts, status, error, usage: runUsage, continued: !!continued });
+
     if (runUsage) {
       await db
         .insert(usageEvents)
@@ -1337,6 +1342,38 @@ export class ChatOrchestrator {
   }
 
   /** The model (task model, else the reply's) for a background task. */
+  /** Keep a copy of the user's message and this reply for the conversation log. */
+  private async logTurn(
+    plan: RunPlan,
+    assistantId: string,
+    target: ResolvedModel,
+    reply: { parts: MessagePart[]; status: RunStatus; error?: string; usage?: MessageUsage; continued: boolean }
+  ): Promise<void> {
+    const { conversations } = this.deps;
+    if (!conversations) return;
+    const asked = partsForLog(plan.userNode.parts);
+    const answered = partsForLog(reply.parts);
+    await conversations.record({
+      source: 'chat',
+      user: { id: plan.user.id, email: plan.user.email },
+      modelId: target.model.id,
+      prompt: asked.text,
+      reply: answered.text,
+      status: reply.status,
+      error: reply.error ?? null,
+      chatId: plan.chat.id,
+      chatTitle: plan.chat.title,
+      messageId: assistantId,
+      usage: reply.usage ?? null,
+      details: {
+        attachments: asked.attachments,
+        toolCalls: answered.toolCalls,
+        ...(reply.continued ? { continued: true } : {}),
+        ...(plan.chat.temporary ? { temporary: true } : {}),
+      },
+    });
+  }
+
   private async taskModel(fallback: ResolvedModel): Promise<ResolvedModel> {
     const tasks = await this.deps.settings.get('tasks');
     // The task model is the admin's choice, so the user's allowlist doesn't apply

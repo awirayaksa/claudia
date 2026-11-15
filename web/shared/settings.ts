@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { DefaultCapsSchema, PermissionsSchema } from './access';
-import { Banner } from './admin';
+import { Banner, ConversationLogSetting } from './admin';
 import { AzdoServersSetting } from './azdo';
 
 /**
@@ -93,6 +93,7 @@ export const AppSettingsResponse = z.object({
   'ui.banners': z.object({ items: z.array(Banner) }),
   'users.defaults': UserDefaultsSchema,
   audit: z.object({ retentionDays: z.number() }),
+  'audit.conversations': ConversationLogSetting,
   'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
   arena: z.object({ enabled: z.boolean(), models: z.array(z.string()) }),
   compaction: z.object({ enabled: z.boolean(), threshold: z.number(), keepRecentTurns: z.number(), model: z.string().nullable() }),

@@ -18,6 +18,7 @@ import { MemoryLoginGuard, RedisLoginGuard } from './auth/login-guard';
 import { Cluster } from './cluster/cluster';
 import { S3Storage } from './storage/s3';
 import { AuditLog, registerAdminAudit } from './admin/audit';
+import { ConversationLog } from './admin/conversation-log';
 import { Webhooks } from './admin/webhooks';
 import { adminOpsRoutes, bannerRoutes } from './admin/routes';
 import { registerRequestTracing } from './telemetry';
@@ -199,6 +200,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
   await events.listen();
   const webhooks = new Webhooks({ db: deps.db.db, secrets, jobs: jobQueue, log: app.log });
   const audit = new AuditLog({ db: deps.db.db, settings, log: app.log, webhooks });
+  const conversations = new ConversationLog({ db: deps.db.db, settings, log: app.log });
   const knowledge = new KnowledgeService({
     db: deps.db.db,
     storage,
@@ -276,6 +278,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       sandboxOrigin: sandboxOriginFor(deps.config),
       media,
       webhooks,
+      conversations,
       memories,
       memoryLearner,
       folders: folderService,
@@ -305,6 +308,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     media,
     cluster,
     audit,
+    conversations,
     webhooks,
     sso: new OidcService({ db: deps.db.db, secrets, log: app.log }),
     cloud: new CloudFiles({ db: deps.db.db, secrets, log: app.log, endpoints: deps.cloudEndpoints }),
@@ -331,6 +335,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     runs.close();
     events.close();
     audit.close();
+    conversations.close();
     ctx.schedules.stop();
     await mcp.close();
     await extract.close();
