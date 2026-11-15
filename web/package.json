@@ -1,6 +1,6 @@
 {
   "name": "claudia-web",
-  "version": "0.11.4",
+  "version": "0.11.5",
   "private": true,
   "description": "Multi-user, self-hostable web version of Claudia",
   "license": "MIT",
