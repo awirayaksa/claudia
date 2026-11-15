@@ -58,6 +58,11 @@ export interface OpencodeGoConfig {
   selectedModel: string;
   apiCompatibility: 'openai' | 'anthropic';
   http?: ProviderHttp;
+  /**
+   * Sent as User-Agent so the service can tell which client is calling. Only
+   * where requests can set it (the server); the desktop sets it in its main process.
+   */
+  userAgent?: string;
 }
 
 // Union type for all provider configs
@@ -141,6 +146,15 @@ export interface ChatCompletionRequest {
   reasoning_effort?: ReasoningEffort;
   /** Open WebUI only: uploaded files the server should use for this request. */
   files?: Array<{ type: 'file'; id: string }>;
+}
+
+/** Per-request context that travels outside the JSON body. */
+export interface RequestOptions {
+  /**
+   * Stable id of the conversation the request belongs to. Providers that route
+   * by conversation send it as a header (opencode Go: x-opencode-session).
+   */
+  sessionId?: string;
 }
 
 export interface ChatCompletionResponse {

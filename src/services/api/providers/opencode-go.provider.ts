@@ -1,4 +1,4 @@
-import axios, { AxiosInstance, AxiosError } from 'axios';
+import { v4 as uuidv4 } from 'uuid';
 import { createParser, ParsedEvent, ReconnectInterval } from 'eventsource-parser';
 import { isAbortError, onceTerminal, readErrorMessage, streamOpenAICompatible } from '../sse-parser';
 import {
@@ -8,46 +8,67 @@ import {
   ProviderType,
   ProviderCapabilities,
   OpencodeGoConfig,
-  APIError,
+  RequestOptions,
 } from '../../../types/api.types';
 import { MessageUsage } from '../../../types/statistics.types';
 import { IAPIProvider } from '../provider.interface';
 import type { StreamCallbacks } from '../sse-parser';
 import { toAnthropicEffort } from '../../../utils/effort-utils';
 
-const OPENCODE_GO_MODELS: Model[] = [
-  // OpenAI-compatible models
-  { id: 'glm-5.1', name: 'GLM-5.1', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'glm-5', name: 'GLM-5', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'kimi-k2.5', name: 'Kimi K2.5', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'kimi-k2.6', name: 'Kimi K2.6', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'mimo-v2-pro', name: 'MiMo-V2-Pro', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'mimo-v2-omni', name: 'MiMo-V2-Omni', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'mimo-v2.5-pro', name: 'MiMo-V2.5-Pro', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'mimo-v2.5', name: 'MiMo-V2.5', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'qwen3.6-plus', name: 'Qwen3.6 Plus', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'qwen3.5-plus', name: 'Qwen3.5 Plus', object: 'model', created: 0, owned_by: 'opencode-go' },
-  // Anthropic-compatible models
-  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'deepseek-v4-flash', name: 'DeepSeek V4 Flash', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'minimax-m2.7', name: 'MiniMax M2.7', object: 'model', created: 0, owned_by: 'opencode-go' },
-  { id: 'minimax-m2.5', name: 'MiniMax M2.5', object: 'model', created: 0, owned_by: 'opencode-go' },
-];
+/**
+ * OpenCode Go routes and caches by conversation: every chat request carries a
+ * stable id per conversation (https://opencode.ai/v2/docs/console/go/).
+ */
+export const OPENCODE_SESSION_HEADER = 'x-opencode-session';
 
-const ANTHROPIC_MODEL_IDS = new Set([
-  'deepseek-v4-pro',
-  'deepseek-v4-flash',
-  'minimax-m2.7',
-  'minimax-m2.5',
-]);
+const MODELS_TIMEOUT_MS = 15_000;
+
+/** An entry of the service's GET /v1/models (only the fields we read). */
+interface UpstreamModel {
+  id?: unknown;
+  name?: unknown;
+  type?: unknown;
+  created?: unknown;
+  owned_by?: unknown;
+  context_length?: unknown;
+  limit?: { context?: unknown };
+  modalities?: { output?: unknown };
+}
+
+/** Chat models that answer in text, whatever their native API: the service translates. */
+function isTextModel(m: UpstreamModel): boolean {
+  if (typeof m.id !== 'string' || !m.id.trim()) return false;
+  if (m.type !== undefined && m.type !== 'chat') return false;
+  const output = m.modalities?.output;
+  return !Array.isArray(output) || output.includes('text');
+}
+
+function toModel(m: UpstreamModel): Model {
+  const id = (m.id as string).trim();
+  const context = typeof m.limit?.context === 'number' ? m.limit.context : m.context_length;
+  return {
+    id,
+    name: typeof m.name === 'string' && m.name.trim() ? m.name : id,
+    object: 'model',
+    created: typeof m.created === 'number' ? m.created : 0,
+    owned_by: typeof m.owned_by === 'string' ? m.owned_by : 'opencode-go',
+    ...(typeof context === 'number' ? { context_length: context } : {}),
+  };
+}
+
+function networkError(error: unknown): Error {
+  if (error instanceof Error && (error.name === 'AbortError' || error.name === 'TimeoutError')) {
+    return new Error('Network Error: The API endpoint did not answer in time.');
+  }
+  return new Error('Network Error: Could not connect to the API endpoint. Please check your URL and internet connection.');
+}
 
 export class OpencodeGoProvider implements IAPIProvider {
-  private axiosInstance: AxiosInstance;
   private config: OpencodeGoConfig;
 
   constructor(config: OpencodeGoConfig) {
-    this.config = config;
-    this.axiosInstance = this.createAxiosInstance(config);
+    // Defensive copy to avoid holding a reference to external (e.g. Redux) state objects
+    this.config = { ...config };
   }
 
   private normalizeBaseUrl(url: string): string {
@@ -57,7 +78,8 @@ export class OpencodeGoProvider implements IAPIProvider {
       .replace(/\/v1$/i, ''); // Remove /v1 suffix (prevents double /v1 in requests)
   }
 
-  private normalizeModelId(modelId: string): string {
+  /** The model id the service expects, without a provider prefix. */
+  normalizeModelId(modelId: string): string {
     // Strip opencode-go/ prefix if present (e.g. opencode-go/kimi-k2.6 → kimi-k2.6)
     if (modelId.startsWith('opencode-go/')) {
       return modelId.slice('opencode-go/'.length);
@@ -74,17 +96,49 @@ export class OpencodeGoProvider implements IAPIProvider {
     return modelId;
   }
 
-  private createAxiosInstance(config: OpencodeGoConfig): AxiosInstance {
-    return axios.create({
-      baseURL: this.normalizeBaseUrl(config.baseUrl),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${config.apiKey}`,
-      },
-      timeout: 30000,
-      httpAgent: config.http?.httpAgent,
-      httpsAgent: config.http?.httpsAgent,
-    });
+  private get baseUrl(): string {
+    return this.normalizeBaseUrl(this.config.baseUrl);
+  }
+
+  /** The configured transport (the server's SSRF guard), else the global fetch. */
+  private fetch(url: string, init: RequestInit): Promise<Response> {
+    return (this.config.http?.fetch ?? fetch)(url, init);
+  }
+
+  /**
+   * Authorization and client identification. Browsers do not let pages set
+   * User-Agent, so the desktop app sets it in its main process instead.
+   */
+  private baseHeaders(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.config.apiKey}`,
+      ...(this.config.userAgent ? { 'User-Agent': this.config.userAgent } : {}),
+    };
+  }
+
+  /** Headers of a chat request. A request outside a conversation gets a session of its own. */
+  private chatHeaders(options?: RequestOptions): Record<string, string> {
+    return {
+      'Content-Type': 'application/json',
+      ...this.baseHeaders(),
+      [OPENCODE_SESSION_HEADER]: options?.sessionId?.trim() || uuidv4(),
+    };
+  }
+
+  /** POST a JSON body; throws with the service's reason when it fails. */
+  private async post(path: string, body: unknown, options?: RequestOptions): Promise<Response> {
+    let response: Response;
+    try {
+      response = await this.fetch(`${this.baseUrl}${path}`, {
+        method: 'POST',
+        headers: this.chatHeaders(options),
+        body: JSON.stringify(body),
+      });
+    } catch (error) {
+      throw networkError(error);
+    }
+    if (!response.ok) throw new Error(`API Error: ${await readErrorMessage(response)}`);
+    return response;
   }
 
   getProviderType(): ProviderType {
@@ -101,12 +155,38 @@ export class OpencodeGoProvider implements IAPIProvider {
     };
   }
 
+  /** The text models the configured service lists at GET /v1/models. */
   async getModels(): Promise<Model[]> {
-    const isAnthropic = this.config.apiCompatibility === 'anthropic';
-    return OPENCODE_GO_MODELS.filter((m) => {
-      const isAnthropicModel = ANTHROPIC_MODEL_IDS.has(m.id);
-      return isAnthropic ? isAnthropicModel : !isAnthropicModel;
-    });
+    const url = `${this.baseUrl}/v1/models`;
+    let response: Response;
+    try {
+      response = await this.fetch(url, {
+        method: 'GET',
+        headers: this.baseHeaders(),
+        signal: typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(MODELS_TIMEOUT_MS) : undefined,
+      });
+    } catch (error) {
+      throw networkError(error);
+    }
+    if (!response.ok) {
+      throw new Error(`Could not load models: ${await readErrorMessage(response)}`);
+    }
+
+    let payload: unknown;
+    try {
+      payload = await response.json();
+    } catch {
+      throw new Error(`Could not load models: ${url} did not return JSON.`);
+    }
+    const data = (payload as { data?: unknown } | null)?.data;
+    if (!Array.isArray(data)) {
+      throw new Error(`Could not load models: ${url} did not return a model list.`);
+    }
+    const models = (data as UpstreamModel[]).filter(isTextModel).map(toModel);
+    if (models.length === 0) {
+      throw new Error(`Could not load models: ${url} returned no text models.`);
+    }
+    return models;
   }
 
   /**
@@ -117,23 +197,19 @@ export class OpencodeGoProvider implements IAPIProvider {
     return request.reasoning_effort ? toAnthropicEffort(request.reasoning_effort) : 'high';
   }
 
-  async chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+  async chatCompletion(request: ChatCompletionRequest, options?: RequestOptions): Promise<ChatCompletionResponse> {
     const normalizedRequest = { ...request, model: this.normalizeModelId(request.model) };
-    try {
-      if (this.config.apiCompatibility === 'anthropic') {
-        return await this.chatCompletionAnthropic(normalizedRequest);
-      }
-      const response = await this.axiosInstance.post<ChatCompletionResponse>(
-        '/v1/chat/completions',
-        { ...normalizedRequest, stream: false }
-      );
-      return response.data;
-    } catch (error) {
-      throw this.handleError(error);
+    if (this.config.apiCompatibility === 'anthropic') {
+      return this.chatCompletionAnthropic(normalizedRequest, options);
     }
+    const response = await this.post('/v1/chat/completions', { ...normalizedRequest, stream: false }, options);
+    return (await response.json()) as ChatCompletionResponse;
   }
 
-  private async chatCompletionAnthropic(request: ChatCompletionRequest): Promise<ChatCompletionResponse> {
+  private async chatCompletionAnthropic(
+    request: ChatCompletionRequest,
+    options?: RequestOptions
+  ): Promise<ChatCompletionResponse> {
     const systemMessages = request.messages.filter((m) => m.role === 'system');
     const nonSystemMessages = request.messages.filter((m) => m.role !== 'system');
     const systemText = systemMessages.map((m) => (typeof m.content === 'string' ? m.content : '')).join('\n');
@@ -153,25 +229,7 @@ export class OpencodeGoProvider implements IAPIProvider {
 
     console.log('[OpencodeGoProvider] Anthropic non-streaming request body:', JSON.stringify(anthropicBody));
 
-    const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
-    const response = await (this.config.http?.fetch ?? fetch)(`${baseUrl}/v1/messages`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${this.config.apiKey}`,
-      },
-      body: JSON.stringify(anthropicBody),
-    });
-
-    if (!response.ok) {
-      let msg = `HTTP ${response.status}: ${response.statusText}`;
-      try {
-        const err = await response.json();
-        msg = err.error?.message || msg;
-      } catch { /* ignore */ }
-      throw new Error(msg);
-    }
-
+    const response = await this.post('/v1/messages', anthropicBody, options);
     const data: any = await response.json();
     console.log('[OpencodeGoProvider] Anthropic non-streaming response:', JSON.stringify(data));
     let text = '';
@@ -201,28 +259,29 @@ export class OpencodeGoProvider implements IAPIProvider {
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
     abortSignal?: AbortSignal,
-    _traceId?: string
+    _traceId?: string,
+    options?: RequestOptions
   ): Promise<void> {
     const normalizedRequest = { ...request, model: this.normalizeModelId(request.model) };
     if (this.config.apiCompatibility === 'anthropic') {
-      return this.streamChatCompletionAnthropic(normalizedRequest, callbacks, abortSignal);
+      return this.streamChatCompletionAnthropic(normalizedRequest, callbacks, abortSignal, options);
     }
-    return this.streamChatCompletionOpenAI(normalizedRequest, callbacks, abortSignal);
+    return this.streamChatCompletionOpenAI(normalizedRequest, callbacks, abortSignal, options);
   }
 
   private async streamChatCompletionOpenAI(
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    options?: RequestOptions
   ): Promise<void> {
-    const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
     const body = { ...request, stream: true };
     console.log('[OpencodeGoProvider] Request body:', JSON.stringify(body));
 
     await streamOpenAICompatible(
       {
-        url: `${baseUrl}/v1/chat/completions`,
-        headers: { Authorization: `Bearer ${this.config.apiKey}` },
+        url: `${this.baseUrl}/v1/chat/completions`,
+        headers: this.chatHeaders(options),
         body,
         signal: abortSignal,
         fetchImpl: this.config.http?.fetch,
@@ -240,7 +299,8 @@ export class OpencodeGoProvider implements IAPIProvider {
   private async streamChatCompletionAnthropic(
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
-    abortSignal?: AbortSignal
+    abortSignal?: AbortSignal,
+    options?: RequestOptions
   ): Promise<void> {
     const cb = onceTerminal(callbacks);
     const { onChunk, onReasoning, onUsage } = cb;
@@ -266,15 +326,10 @@ export class OpencodeGoProvider implements IAPIProvider {
 
     console.log('[OpencodeGoProvider] Anthropic streaming request body:', JSON.stringify(anthropicBody));
 
-    const baseUrl = this.normalizeBaseUrl(this.config.baseUrl);
-
     try {
-      const response = await (this.config.http?.fetch ?? fetch)(`${baseUrl}/v1/messages`, {
+      const response = await this.fetch(`${this.baseUrl}/v1/messages`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${this.config.apiKey}`,
-        },
+        headers: this.chatHeaders(options),
         body: JSON.stringify(anthropicBody),
         signal: abortSignal,
       });
@@ -371,13 +426,23 @@ export class OpencodeGoProvider implements IAPIProvider {
     }
   }
 
+  /**
+   * Sends a minimal chat request to `model`. The model list is public, so only
+   * a chat tells whether the key, endpoint and model work. Throws with the
+   * service's reason.
+   */
+  async verifyConnection(model: string): Promise<void> {
+    await this.chatCompletion({
+      model,
+      messages: [{ role: 'user', content: 'hi' }],
+      max_tokens: 16,
+    });
+  }
+
   async testConnection(): Promise<boolean> {
     try {
-      await this.chatCompletion({
-        model: this.normalizeModelId(this.config.selectedModel),
-        messages: [{ role: 'user', content: 'hi' }],
-        max_tokens: 1,
-      });
+      const model = this.config.selectedModel?.trim() || (await this.getModels())[0].id;
+      await this.verifyConnection(model);
       return true;
     } catch {
       return false;
@@ -387,19 +452,5 @@ export class OpencodeGoProvider implements IAPIProvider {
   updateConfig(config: OpencodeGoConfig): void {
     // Defensive copy to avoid holding a reference to external (e.g. Redux) state objects
     this.config = { ...config };
-    this.axiosInstance = this.createAxiosInstance(this.config);
-  }
-
-  private handleError(error: unknown): Error {
-    if (axios.isAxiosError(error)) {
-      const axiosError = error as AxiosError<APIError>;
-      if (axiosError.response) {
-        const message = axiosError.response.data?.error?.message || axiosError.response.statusText || 'Unknown server error';
-        return new Error(`API Error: ${message}`);
-      } else if (axiosError.request) {
-        return new Error('Network Error: Could not connect to the API endpoint. Please check your URL and internet connection.');
-      }
-    }
-    return new Error('An unexpected error occurred');
   }
 }

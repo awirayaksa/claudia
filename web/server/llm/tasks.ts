@@ -36,7 +36,9 @@ export async function generateTitle(
   provider: IAPIProvider,
   model: string,
   userText: string,
-  assistantText: string
+  assistantText: string,
+  /** The chat's id: the request belongs to its conversation. */
+  sessionId?: string
 ): Promise<string> {
   const call = provider.chatCompletion({
     model,
@@ -52,7 +54,7 @@ export async function generateTitle(
     stream: false,
     max_tokens: 30,
     temperature: 0.3,
-  });
+  }, { sessionId });
   const response = await withTimeout(call, 'Title generation');
   const content = response.choices[0]?.message?.content;
   const title = typeof content === 'string' ? cleanTitle(content) : '';
@@ -98,7 +100,9 @@ export async function generateFollowUps(
   provider: IAPIProvider,
   model: string,
   userText: string,
-  assistantText: string
+  assistantText: string,
+  /** The chat's id: the request belongs to its conversation. */
+  sessionId?: string
 ): Promise<string[]> {
   const call = provider.chatCompletion({
     model,
@@ -115,7 +119,7 @@ export async function generateFollowUps(
     stream: false,
     max_tokens: 200,
     temperature: 0.5,
-  });
+  }, { sessionId });
   const response = await withTimeout(call, 'Follow-up suggestions');
   const content = response.choices[0]?.message?.content;
   return typeof content === 'string' ? parseFollowUps(content) : [];

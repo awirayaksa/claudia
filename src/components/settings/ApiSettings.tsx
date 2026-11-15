@@ -9,6 +9,12 @@ import { OpenRouterConfigForm } from './OpenRouterConfigForm';
 import { CustomConfigForm } from './CustomConfigForm';
 import { OpencodeGoConfigForm } from './OpencodeGoConfigForm';
 
+/** The listed id `typed` names (also as "opencode-go/<id>"), or undefined. */
+function findModelId(ids: string[], typed: string): string | undefined {
+  const bare = typed.replace(/^opencode-go\//, '');
+  return ids.find((id) => id === typed || id === bare);
+}
+
 export function ApiSettings() {
   const dispatch = useAppDispatch();
   const { api, preferences } = useAppSelector((state) => state.settings);
@@ -67,7 +73,8 @@ export function ApiSettings() {
     setIsDirty(true);
   };
 
-  const validateConfig = (): string => {
+  // Testing may leave the opencode Go model empty: the test picks one from the service's list
+  const validateConfig = (purpose: 'test' | 'save' = 'save'): string => {
     if (provider === 'openwebui') {
       if (!openwebuiConfig?.baseUrl?.trim()) return 'API URL is required';
       try { new URL(openwebuiConfig.baseUrl); } catch { return 'Please enter a valid URL'; }
@@ -83,13 +90,13 @@ export function ApiSettings() {
       if (!opencodeGoConfig?.baseUrl?.trim()) return 'Base URL is required';
       try { new URL(opencodeGoConfig.baseUrl); } catch { return 'Please enter a valid URL'; }
       if (!opencodeGoConfig?.apiKey?.trim()) return 'API Key is required';
-      if (!opencodeGoConfig?.selectedModel?.trim()) return 'Model name is required';
+      if (purpose === 'save' && !opencodeGoConfig?.selectedModel?.trim()) return 'Model name is required';
     }
     return '';
   };
 
   const handleTestConnection = async () => {
-    const validationError = validateConfig();
+    const validationError = validateConfig('test');
     if (validationError) {
       setTestResult({ success: false, message: validationError });
       return;
@@ -119,13 +126,42 @@ export function ApiSettings() {
 
       console.log('[ApiSettings] Test connection - baseUrl AFTER getModels:', openwebuiConfig?.baseUrl);
 
+      // Update available models in store (kept even when the chat test below fails)
+      dispatch(setAvailableModels(models.map((m) => m.id)));
+
+      if (provider === 'opencode-go') {
+        // Its model list is public, so only a chat tells whether the key, endpoint and model work
+        const typed = opencodeGoConfig.selectedModel?.trim() ?? '';
+        const model = typed ? findModelId(models.map((m) => m.id), typed) : models[0]?.id;
+        if (!model) {
+          setTestResult({
+            success: false,
+            message: `Model "${typed}" is not offered by this service. Pick one of the ${models.length} listed model(s).`,
+          });
+          return;
+        }
+        if (model !== typed) setOpencodeGoConfig({ ...opencodeGoConfig, selectedModel: model });
+        try {
+          await tempProvider.verifyConnection?.(model);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : 'unknown error';
+          setTestResult({
+            success: false,
+            message: `Found ${models.length} model(s), but a test chat with ${model} failed: ${reason}`,
+          });
+          return;
+        }
+        setTestResult({
+          success: true,
+          message: `Connected successfully! Found ${models.length} model(s); a test chat with ${model} worked.`,
+        });
+        return;
+      }
+
       setTestResult({
         success: true,
         message: `Connected successfully! Found ${models.length} model(s).`,
       });
-
-      // Update available models in store
-      dispatch(setAvailableModels(models.map((m) => m.id)));
 
       // If no model selected, select the first one (only for providers that support model listing)
       if (provider === 'openwebui' && !openwebuiConfig.selectedModel && models.length > 0) {
@@ -133,8 +169,6 @@ export function ApiSettings() {
         setOpenwebuiConfig({ ...openwebuiConfig, selectedModel: models[0].id });
       } else if (provider === 'openrouter' && !openrouterConfig.selectedModel && models.length > 0) {
         setOpenrouterConfig({ ...openrouterConfig, selectedModel: models[0].id });
-      } else if (provider === 'opencode-go' && !opencodeGoConfig.selectedModel && models.length > 0) {
-        setOpencodeGoConfig({ ...opencodeGoConfig, selectedModel: models[0].id });
       }
 
       console.log('[ApiSettings] Test connection complete - baseUrl FINAL:', openwebuiConfig?.baseUrl);

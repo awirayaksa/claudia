@@ -45,9 +45,7 @@ export function OpencodeGoConfigForm({
       newErrors.apiKey = 'API Key is required';
     }
 
-    if (!config?.selectedModel?.trim()) {
-      newErrors.selectedModel = 'Model name is required';
-    }
+    // Model Name may stay empty: Test Connection fills it from the service's list
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
@@ -121,17 +119,17 @@ export function OpencodeGoConfigForm({
           <option value="anthropic">Anthropic-compatible (/v1/messages)</option>
         </select>
         <p style={{ fontSize: 11.5, color: '#6f6b66', marginTop: 4 }}>
-          Choose the API format your Opencode server uses
+          The request format Claudia sends to your Opencode server
         </p>
       </div>
 
       <Input
         label="Model Name"
-        placeholder="kimi-k2.6"
+        placeholder="Leave empty to use the first available model"
         value={config?.selectedModel || ''}
         onChange={(e) => onConfigChange({ selectedModel: e.target.value })}
         error={errors.selectedModel}
-        helperText="Models are auto-populated when you click Test Connection. You can also enter a model ID manually (e.g., kimi-k2.6, deepseek-v4-pro)."
+        helperText="Test Connection loads the models the service offers and checks this one with a short chat. Leave it empty to use the first model, or enter a model ID (e.g., kimi-k2.7-code)."
       />
 
       <div className="flex gap-2">

@@ -16,7 +16,7 @@ import { uuidv7 } from '../../lib/ids';
 import { currentUser, requireUser } from '../../auth/rbac';
 import type { ResolvedModel } from '../../llm/model-registry';
 import { fillSystemVariables } from '../../../shared/prompts';
-import type { ChatCompletionRequest, ChatMessage } from '../../../../src/types/api.types';
+import type { ChatCompletionRequest, ChatMessage, RequestOptions } from '../../../../src/types/api.types';
 import type { ToolCall } from '../../../../src/types/message.types';
 import type { MessageUsage } from '../../../../src/types/statistics.types';
 
@@ -145,6 +145,9 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
       await ctx.usage.check(me);
       const target = await ctx.models.resolve(body.model, me.role, me.id);
       const request = buildRequest(body, target, me.name);
+      // Keep the caller's conversation id for providers that route by it (opencode Go)
+      const session = req.headers['x-opencode-session'];
+      const options: RequestOptions = typeof session === 'string' && session.trim() ? { sessionId: session.trim().slice(0, 200) } : {};
 
       const id = `chatcmpl-${randomUUID().replace(/-/g, '')}`;
       const created = Math.floor(Date.now() / 1000);
@@ -188,7 +191,9 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
                 onComplete: (r) => resolve(r ?? 'stop'),
                 onError: reject,
               },
-              controller.signal
+              controller.signal,
+              undefined,
+              options
             )
             .catch(reject);
         }).catch((err: Error) => err);
@@ -262,7 +267,9 @@ export async function openaiRoutes(app: FastifyInstance, ctx: ServerContext): Pr
                 resolve();
               },
             },
-            controller.signal
+            controller.signal,
+            undefined,
+            options
           )
           .catch((err: Error) => {
             send({ error: { message: err.message, type: 'upstream_error' } });
