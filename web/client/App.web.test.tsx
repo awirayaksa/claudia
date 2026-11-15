@@ -206,6 +206,41 @@ describe('web client', () => {
     window.history.pushState({}, '', '/');
   });
 
+  it("starts a new chat in a folder from the folder's + button, and can leave the folder", async () => {
+    cleanup();
+    const folder = {
+      id: '0190a000-0000-7000-8000-000000000001',
+      parentId: null,
+      name: 'Work',
+      systemPrompt: null,
+      knowledgeIds: [],
+      mine: true,
+      ownerName: null,
+      canEdit: true,
+      canManage: true,
+      shared: false,
+      createdAt: new Date().toISOString(),
+    };
+    stubApi({
+      '/api/auth/session': { user: { id: 'u', email: 'a@example.com', name: 'Ada', role: 'admin', hasPassword: true }, auth },
+      '/api/me/settings': { settings: {} },
+      '/api/models': { models: [], defaultModel: null },
+      '/api/chats': { chats: [] },
+      '/api/folders': { folders: [folder] },
+    });
+    renderApp();
+    expect(await screen.findByText('Work')).toBeInTheDocument();
+    expect(screen.queryByTestId('new-chat-folder')).toBeNull();
+
+    fireEvent.click(screen.getByRole('button', { name: 'New chat in folder' }));
+    expect(await screen.findByTestId('new-chat-folder')).toHaveTextContent('In Work');
+    expect(window.location.search).toBe(`?folder=${folder.id}`);
+
+    fireEvent.click(screen.getByRole('button', { name: "Don't put this chat in a folder" }));
+    await waitFor(() => expect(screen.queryByTestId('new-chat-folder')).toBeNull());
+    expect(window.location.search).toBe('');
+  });
+
   it('never gives MCP-UI iframes same-origin access', () => {
     setPlatform(createWebPlatform({ sandboxOrigin: 'https://sandbox.example.com/' }));
     const { uiSandbox, capabilities } = getPlatform();
