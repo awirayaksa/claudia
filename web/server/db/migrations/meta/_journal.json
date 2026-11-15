@@ -99,6 +99,13 @@
       "when": 1793234455033,
       "tag": "0013_azdo_connections",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794737221925,
+      "tag": "0014_conversation_log",
+      "breakpoints": true
     }
   ]
 }

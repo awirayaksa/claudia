@@ -24,6 +24,7 @@ import { MediaSettingsPage } from './pages/admin/MediaSettingsPage';
 import { PluginsPage } from './pages/admin/PluginsPage';
 import { AnalyticsPage } from './pages/admin/AnalyticsPage';
 import { AuditPage } from './pages/admin/AuditPage';
+import { ConversationsPage } from './pages/admin/ConversationsPage';
 import { WebhooksPage } from './pages/admin/WebhooksPage';
 import { SignInPage } from './pages/admin/SignInPage';
 import { EvaluationsPage } from './pages/admin/EvaluationsPage';
@@ -76,6 +77,7 @@ export const routes: RouteObject[] = [
           { path: 'evaluations', element: <EvaluationsPage /> },
           { path: 'integrations', element: <IntegrationsPage /> },
           { path: 'audit', element: <AuditPage /> },
+          { path: 'conversations', element: <ConversationsPage /> },
           { path: 'settings', element: <AdminSettingsPage /> },
         ],
       },

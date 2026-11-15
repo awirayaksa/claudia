@@ -24,6 +24,7 @@ import type { EventHub } from './ws/gateway';
 import type { MediaConfig } from './media/config';
 import type { Cluster } from './cluster/cluster';
 import type { AuditLog } from './admin/audit';
+import type { ConversationLog } from './admin/conversation-log';
 import type { Webhooks } from './admin/webhooks';
 import type { OidcService } from './auth/providers/oidc';
 import type { CloudFiles } from './cloud/cloud-files';
@@ -76,6 +77,8 @@ export interface ServerContext {
   /** Other instances: pub/sub, shared state and change signals. */
   cluster: Cluster;
   audit: AuditLog;
+  /** Copies of users' messages and the replies, for admins (when switched on). */
+  conversations: ConversationLog;
   webhooks: Webhooks;
   /** OpenID Connect sign-in providers. */
   sso: OidcService;

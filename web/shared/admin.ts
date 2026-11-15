@@ -18,6 +18,10 @@ export const AUDIT_ACTIONS = [
   'scim.request',
   /** Any change made through /api/admin. */
   'admin.request',
+  /** An admin opened one recorded conversation turn. */
+  'conversations.viewed',
+  /** An admin downloaded recorded conversations as CSV. */
+  'conversations.exported',
 ] as const;
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
 
@@ -50,6 +54,79 @@ export type AuditQuery = z.input<typeof AuditQuery>;
 export interface AuditPage {
   entries: AuditEntry[];
   /** Pass as `before` for the next page; null at the end. */
+  next: string | null;
+}
+
+// ─── Conversation log ────────────────────────────────────────────────────────
+
+/**
+ * Where a recorded turn came from: a chat, the OpenAI-compatible API
+ * (/api/v1) or an @model mention in a channel.
+ */
+export const CONVERSATION_SOURCES = ['chat', 'api', 'channel'] as const;
+export type ConversationSource = (typeof CONVERSATION_SOURCES)[number];
+
+/** What gets recorded (setting "audit.conversations"); off by default. */
+export const ConversationLogSetting = z.object({
+  enabled: z.boolean(),
+  /** Turns older than this are removed daily. */
+  retentionDays: z.number().int().min(1).max(3650),
+  chats: z.boolean(),
+  api: z.boolean(),
+  channels: z.boolean(),
+});
+export type ConversationLogSetting = z.infer<typeof ConversationLogSetting>;
+
+/** A recorded turn in a list: the text is cut to a preview. */
+export interface ConversationTurnSummary {
+  id: string;
+  createdAt: string;
+  source: ConversationSource;
+  userId: string | null;
+  userEmail: string | null;
+  modelId: string;
+  chatId: string | null;
+  chatTitle: string | null;
+  /** The first characters of what the user sent and of the reply. */
+  promptPreview: string;
+  replyPreview: string;
+  status: string;
+  promptTokens: number | null;
+  completionTokens: number | null;
+}
+
+/** One recorded turn in full. */
+export interface ConversationTurn extends ConversationTurnSummary {
+  prompt: string;
+  reply: string;
+  error: string | null;
+  messageId: string | null;
+  /** Attachments, tool calls and other context, never file contents. */
+  details: {
+    attachments?: Array<{ name: string; mime?: string }>;
+    toolCalls?: Array<{ name: string; args: string }>;
+    continued?: boolean;
+    [key: string]: unknown;
+  };
+  ip: string | null;
+}
+
+export const ConversationQuery = z.object({
+  /** Matches the user's email (contains, case-insensitive). */
+  user: z.string().max(200).optional(),
+  source: z.enum(CONVERSATION_SOURCES).optional(),
+  /** Text the prompt or the reply contains (case-insensitive). */
+  q: z.string().max(500).optional(),
+  chatId: z.uuid().optional(),
+  from: z.iso.datetime({ offset: true }).optional(),
+  to: z.iso.datetime({ offset: true }).optional(),
+  before: z.uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(500).default(50),
+});
+export type ConversationQuery = z.input<typeof ConversationQuery>;
+
+export interface ConversationPage {
+  turns: ConversationTurnSummary[];
   next: string | null;
 }
 

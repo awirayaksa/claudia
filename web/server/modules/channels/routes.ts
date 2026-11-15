@@ -170,7 +170,7 @@ export async function channelRoutes(app: FastifyInstance, ctx: ServerContext): P
     const names = new Map([[me.id, me.name]]);
     const message = view(row, names);
     publish(id, { type: 'channel.message', message });
-    if (target && mention) void answer(me, channel, row, mention, target);
+    if (target && mention) void answer(me, channel, row, mention, target, req.ip);
     reply.code(201);
     return { message };
   });
@@ -208,7 +208,14 @@ export async function channelRoutes(app: FastifyInstance, ctx: ServerContext): P
   });
 
   /** Stream a mentioned model's reply into the channel. */
-  async function answer(user: AuthUser, channel: ChannelRow, question: MessageRow, modelKey: string, target: NonNullable<Awaited<ReturnType<typeof ctx.models.resolve>>>) {
+  async function answer(
+    user: AuthUser,
+    channel: ChannelRow,
+    question: MessageRow,
+    modelKey: string,
+    target: NonNullable<Awaited<ReturnType<typeof ctx.models.resolve>>>,
+    ip: string
+  ) {
     const [reply] = await ctx.db
       .insert(channelMessages)
       .values({ id: uuidv7(), channelId: channel.id, userId: null, modelId: modelKey, replyToId: question.id, content: '', status: 'streaming' })
@@ -237,6 +244,7 @@ export async function channelRoutes(app: FastifyInstance, ctx: ServerContext): P
     let text = '';
     let usage: { prompt_tokens?: number; completion_tokens?: number; cost?: number } | null = null;
     let status: 'done' | 'error' = 'done';
+    let failure: string | null = null;
     const started = Date.now();
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REPLY_TIMEOUT_MS);
@@ -267,12 +275,28 @@ export async function channelRoutes(app: FastifyInstance, ctx: ServerContext): P
       });
     } catch (err) {
       status = 'error';
+      failure = err instanceof Error ? err.message : String(err);
       text = text || `The model couldn't answer: ${err instanceof Error ? err.message : String(err)}`;
     } finally {
       clearTimeout(timer);
     }
     const [done] = await ctx.db.update(channelMessages).set({ content: text || '…', status }).where(eq(channelMessages.id, reply.id)).returning();
     publish(channel.id, { type: 'channel.message.updated', message: view(done, new Map()) });
+    await ctx.conversations.record({
+      source: 'channel',
+      user: { id: user.id, email: user.email },
+      modelId: modelKey,
+      prompt: question.content,
+      reply: text,
+      status: status === 'done' ? 'completed' : 'error',
+      error: failure,
+      chatId: channel.id,
+      chatTitle: `#${channel.name}`,
+      messageId: reply.id,
+      // Set in a callback, so TypeScript thinks it is still null here
+      usage: usage as { prompt_tokens?: number; completion_tokens?: number } | null,
+      ip,
+    });
     const u = usage as { prompt_tokens?: number; completion_tokens?: number; cost?: number } | null;
     if (u) {
       await ctx.db

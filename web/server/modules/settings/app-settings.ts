@@ -9,7 +9,7 @@ import type { Database } from '../../db/client';
 import type { Cluster } from '../../cluster/cluster';
 import { appConfig } from '../../db/schema';
 import { DEFAULT_PERMISSIONS, DefaultCapsSchema, PermissionsSchema } from '../../../shared/access';
-import { Banner } from '../../../shared/admin';
+import { Banner, ConversationLogSetting } from '../../../shared/admin';
 import { UserDefaultsSchema } from '../../../shared/settings';
 import { AzdoServersSetting } from '../../../shared/azdo';
 
@@ -57,6 +57,8 @@ export const AppSettingsSchema = {
   /** Appearance and preferences a user has until they change them. */
   'users.defaults': UserDefaultsSchema,
   audit: z.object({ retentionDays: z.number().int().min(1).max(3650) }),
+  /** Keep a copy of what users send and what models answer, for admins to audit. */
+  'audit.conversations': ConversationLogSetting,
   /** Who must use two-factor sign-in. */
   'auth.mfa': z.object({ require: z.enum(['off', 'admins', 'everyone']) }),
   /** Blind comparisons: a model called "Arena" answers with two of these, unnamed until the user votes. */
@@ -122,6 +124,7 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   'ui.banners': { items: [] },
   'users.defaults': { appearance: {}, preferences: {} },
   audit: { retentionDays: 365 },
+  'audit.conversations': { enabled: false, retentionDays: 90, chats: true, api: true, channels: true },
   'auth.mfa': { require: 'off' },
   arena: { enabled: false, models: [] },
   compaction: { enabled: true, threshold: 0.8, keepRecentTurns: 4, model: null },
