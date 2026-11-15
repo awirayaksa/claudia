@@ -25,7 +25,7 @@ import {
 } from '../../../src/services/chat/context-budget';
 import { coerceEffort, resolveEffort, type ReasoningEffort } from '../../../src/utils/effort-utils';
 import { VISUAL_EXPLANATIONS_PROMPT } from '../../../src/utils/visual-explanations';
-import type { ChatCompletionRequest, ChatMessage } from '../../../src/types/api.types';
+import type { ChatCompletionRequest, ChatMessage, RequestOptions } from '../../../src/types/api.types';
 import type { ToolCall } from '../../../src/types/message.types';
 import type { MessageNode, MessagePart, PartOf } from '../../../src/types/turn.types';
 import type { MessageUsage } from '../../../src/types/statistics.types';
@@ -700,7 +700,8 @@ export class ChatOrchestrator {
         };
 
         let toolCalls: ToolCall[] = [];
-        const reason = await this.stream(target, request, signal, {
+        // One session per chat, so providers that route by conversation keep it together
+        const reason = await this.stream(target, request, signal, { sessionId: chat.id }, {
           onText: (text) => {
             builder.appendText(text);
             runs.emit(run, { type: 'message.delta', messageId: assistantId, text });
@@ -908,6 +909,7 @@ export class ChatOrchestrator {
         // About half the summarizer's window per call, in characters
         chunkChars: Math.floor(window / 2) * 4,
         signal: plan.run.controller.signal,
+        sessionId: plan.chat.id,
       });
       const priorTurns = plan.history.length > rest.length ? (plan.history[plan.history.length - rest.length - 1].compaction?.turns ?? 0) : 0;
       const compaction = { summary: result.summary, turns: priorTurns + fold, modelId: model.model.id, at: new Date().toISOString() };
@@ -1292,6 +1294,7 @@ export class ChatOrchestrator {
     target: ResolvedModel,
     request: ChatCompletionRequest,
     signal: AbortSignal,
+    options: RequestOptions,
     on: {
       onText: (t: string) => void;
       onReasoning: (t: string) => void;
@@ -1320,7 +1323,9 @@ export class ChatOrchestrator {
               reject(err);
             },
           },
-          signal
+          signal,
+          undefined,
+          options
         )
         .catch((err) => {
           if (!settled) {
@@ -1352,7 +1357,7 @@ export class ChatOrchestrator {
     const assistantText = await this.replyText(target.assistantId);
     if (!assistantText.trim()) return;
     const model = await this.taskModel(target.model);
-    const followUps = await generateFollowUps(model.provider, model.providerModelId, userText, assistantText);
+    const followUps = await generateFollowUps(model.provider, model.providerModelId, userText, assistantText, plan.chat.id);
     if (followUps.length === 0) return;
     await this.deps.db
       .update(messages)
@@ -1373,7 +1378,7 @@ export class ChatOrchestrator {
       try {
         const assistantText = await this.replyText(firstOk.assistantId);
         const model = await this.taskModel(firstOk.model);
-        title = await generateTitle(model.provider, model.providerModelId, userText, assistantText);
+        title = await generateTitle(model.provider, model.providerModelId, userText, assistantText, chat.id);
       } catch (err) {
         this.deps.log.warn({ err: String(err), chatId: chat.id }, 'model title failed; using the first line');
       }

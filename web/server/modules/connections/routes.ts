@@ -138,7 +138,7 @@ export async function adminConnectionRoutes(app: FastifyInstance, ctx: ServerCon
     return { ok: true };
   });
 
-  // List the endpoint's models now and report whether that worked
+  // List the endpoint's models now (and, where listing proves nothing, chat once) and report whether that worked
   app.post('/:id/test', async (req) => {
     const { id } = IdParams.parse(req.params);
     const [row] = await ctx.db
@@ -148,7 +148,7 @@ export async function adminConnectionRoutes(app: FastifyInstance, ctx: ServerCon
     if (!row) throw notFound('Connection');
     ctx.models.invalidate(id);
     const models = (await ctx.models.all({ refresh: true })).filter((m) => m.connectionId === id);
-    const { error } = ctx.models.status(id);
+    const error = ctx.models.status(id).error ?? (await ctx.models.verifyChat(row, models));
     return { ok: !error, error, models: models.map((m) => m.id) };
   });
 }
@@ -287,10 +287,10 @@ export async function userConnectionRoutes(app: FastifyInstance, ctx: ServerCont
     const me = currentUser(req);
     await ensureAllowed(me);
     const { id } = IdParams.parse(req.params);
-    await getOwned(me.id, id);
+    const row = await getOwned(me.id, id);
     ctx.models.invalidate(id);
     const models = (await ctx.models.own(me, { refresh: true })).filter((m) => m.connectionId === id);
-    const { error } = ctx.models.status(id);
+    const error = ctx.models.status(id).error ?? (await ctx.models.verifyChat(row, models));
     return { ok: !error, error, models: models.map((m) => m.id) };
   });
 }

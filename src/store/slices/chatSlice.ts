@@ -1,7 +1,7 @@
 import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
 import { Message, Attachment, ToolCall, ToolResult } from '../../types/message.types';
 import { MessageUsage } from '../../types/statistics.types';
-import { ChatCompletionRequest } from '../../types/api.types';
+import { ChatCompletionRequest, RequestOptions } from '../../types/api.types';
 import {
   buildAPIMessage,
   buildMessageContent,
@@ -80,6 +80,11 @@ function effortForRequest(
   return coerceEffort(resolved, model);
 }
 
+/** The open conversation, so providers that route by conversation keep one session per chat. */
+function conversationOptions(state: RootState): RequestOptions {
+  return { sessionId: state.conversation.currentConversationId ?? undefined };
+}
+
 // Async thunk for sending a message
 export const sendMessage = createAsyncThunk(
   'chat/sendMessage',
@@ -116,7 +121,7 @@ export const sendMessage = createAsyncThunk(
         temperature: temperature,
         reasoning_effort: reasoningEffort,
         files: openWebUIFiles(provider, state.chat.messages, attachments),
-      });
+      }, conversationOptions(state));
 
       // Assistant responses are always plain text strings
       const rawContent = response.choices[0].message.content;
@@ -460,7 +465,9 @@ export const sendStreamingMessage = createAsyncThunk(
             reject(error);
           },
         },
-        abortController.signal
+        abortController.signal,
+        undefined,
+        conversationOptions(state)
       );
     });
   }
@@ -609,7 +616,8 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
               },
             },
             abortController.signal,
-            undefined
+            undefined,
+            conversationOptions(state)
           );
         });
 

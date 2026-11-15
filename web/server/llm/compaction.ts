@@ -101,7 +101,14 @@ function addUsage(a: MessageUsage, b: MessageUsage | undefined): MessageUsage {
 export async function summarize(
   provider: IAPIProvider,
   model: string,
-  opts: { previous: string | null; nodes: MessageNode[]; chunkChars: number; signal?: AbortSignal }
+  opts: {
+    previous: string | null;
+    nodes: MessageNode[];
+    chunkChars: number;
+    signal?: AbortSignal;
+    /** The chat's id: the request belongs to its conversation. */
+    sessionId?: string;
+  }
 ): Promise<{ summary: string; usage: MessageUsage }> {
   let summary = opts.previous;
   let usage: MessageUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
@@ -123,7 +130,7 @@ export async function summarize(
         stream: false,
         max_tokens: SUMMARY_MAX_TOKENS,
         temperature: 0.2,
-      })
+      }, { sessionId: opts.sessionId })
     );
     const content = res.choices[0]?.message?.content;
     const text = typeof content === 'string' ? content.trim() : '';

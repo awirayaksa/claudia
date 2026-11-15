@@ -3,7 +3,8 @@ import {
   ChatCompletionRequest,
   ChatCompletionResponse,
   ProviderType,
-  ProviderCapabilities
+  ProviderCapabilities,
+  RequestOptions
 } from '../../types/api.types';
 import { StreamCallbacks } from './streaming.service';
 
@@ -19,8 +20,9 @@ export interface IAPIProvider {
 
   /**
    * Send a chat completion request (non-streaming)
+   * @param options - Context sent outside the body (e.g. the conversation id)
    */
-  chatCompletion(request: ChatCompletionRequest): Promise<ChatCompletionResponse>;
+  chatCompletion(request: ChatCompletionRequest, options?: RequestOptions): Promise<ChatCompletionResponse>;
 
   /**
    * Send a streaming chat completion request
@@ -28,12 +30,14 @@ export interface IAPIProvider {
    * @param callbacks - Callbacks for handling streaming events
    * @param abortSignal - Optional signal to abort the request
    * @param traceId - Optional trace ID for logging correlation
+   * @param options - Context sent outside the body (e.g. the conversation id)
    */
   streamChatCompletion(
     request: ChatCompletionRequest,
     callbacks: StreamCallbacks,
     abortSignal?: AbortSignal,
-    traceId?: string
+    traceId?: string,
+    options?: RequestOptions
   ): Promise<void>;
 
   /**
@@ -41,6 +45,13 @@ export interface IAPIProvider {
    * @returns true if connection is successful, false otherwise
    */
   testConnection(): Promise<boolean>;
+
+  /**
+   * Send a minimal chat request to `model` (optional feature). For providers
+   * whose model list proves nothing about the key or endpoint.
+   * Throws with the reason when it fails.
+   */
+  verifyConnection?(model: string): Promise<void>;
 
   /**
    * Update the provider configuration

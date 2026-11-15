@@ -335,12 +335,30 @@ function saveWindowState() {
   });
 }
 
+/**
+ * opencode Go asks clients to name themselves in User-Agent, which the
+ * renderer's fetch cannot set: give its chat requests (they carry
+ * x-opencode-session) Claudia's own instead of Chromium's.
+ */
+function identifyOpencodeRequests(userAgent: string): void {
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const headers = details.requestHeaders;
+    const names = Object.keys(headers);
+    if (names.some((name) => name.toLowerCase() === 'x-opencode-session')) {
+      for (const name of names) if (name.toLowerCase() === 'user-agent') delete headers[name];
+      headers['User-Agent'] = userAgent;
+    }
+    callback({ requestHeaders: headers });
+  });
+}
+
 // App lifecycle
 app.whenReady().then(async () => {
   // Check version and migrate settings/clear cache if needed
   const packageJson = require(path.join(__dirname, '..', 'package.json'));
   const currentVersion = packageJson.version;
   await checkVersionAndMigrate(currentVersion, session.defaultSession);
+  identifyOpencodeRequests(`Claudia/${currentVersion}`);
 
   // Seed built-in MCP servers (adds them if missing, preserves existing config)
   seedBuiltinServers();

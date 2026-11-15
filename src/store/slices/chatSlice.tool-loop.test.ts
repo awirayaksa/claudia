@@ -82,6 +82,17 @@ describe('sendStreamingMessageWithTools', () => {
     });
   });
 
+  it('sends every request of a tool loop with the open conversation as its session', async () => {
+    const { provider, sessions } = scriptedProvider([{ toolCalls: [readFileCall] }, { text: 'done' }]);
+    providerRef.current = provider;
+    stubPlatform(async () => textResult('hi'));
+    const store = makeChatStore([readyServer('fs', 'Filesystem', [tool('read_file')])], { conversationId: 'conv-1' });
+
+    await store.dispatch(sendStreamingMessageWithTools({ content: 'Read a.txt', model: 'm' }) as any);
+
+    expect(sessions).toEqual(['conv-1', 'conv-1']);
+  });
+
   it('offers tools only on the first request when the provider is toolsFirstTurnOnly', async () => {
     const { provider, requests } = scriptedProvider([{ toolCalls: [readFileCall] }, { text: 'done' }], {
       toolsFirstTurnOnly: true,

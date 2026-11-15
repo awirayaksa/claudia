@@ -4,8 +4,9 @@ import chatReducer from '../store/slices/chatSlice';
 import settingsReducer, { setPreferences } from '../store/slices/settingsSlice';
 import mcpReducer from '../store/slices/mcpSlice';
 import composerReducer from '../store/slices/composerSlice';
+import conversationReducer from '../store/slices/conversationSlice';
 import type { StreamCallbacks } from '../services/api/streaming.service';
-import type { ChatCompletionRequest } from '../types/api.types';
+import type { ChatCompletionRequest, RequestOptions } from '../types/api.types';
 import type { ToolCall } from '../types/message.types';
 import type { MCPServerState, MCPTool } from '../types/mcp.types';
 import type { MessageUsage } from '../types/statistics.types';
@@ -28,6 +29,8 @@ export interface ScriptedTurn {
  */
 export function scriptedProvider(turns: ScriptedTurn[], capabilities: Record<string, unknown> = {}) {
   const requests: ChatCompletionRequest[] = [];
+  /** The session id each request was sent with. */
+  const sessions: Array<string | undefined> = [];
   const queue = [...turns];
   const provider = {
     getModels: vi.fn(async () => []),
@@ -43,9 +46,16 @@ export function scriptedProvider(turns: ScriptedTurn[], capabilities: Record<str
       ...capabilities,
     }),
     streamChatCompletion: vi.fn(
-      async (request: ChatCompletionRequest, cb: StreamCallbacks, signal?: AbortSignal) => {
+      async (
+        request: ChatCompletionRequest,
+        cb: StreamCallbacks,
+        signal?: AbortSignal,
+        _traceId?: string,
+        options?: RequestOptions
+      ) => {
         // Deep-copy so later mutation of the shared messages array doesn't rewrite history
         requests.push(JSON.parse(JSON.stringify(request)));
+        sessions.push(options?.sessionId);
         const turn = queue.shift() ?? { text: '' };
         turn.before?.();
         if (signal?.aborted) {
@@ -64,7 +74,7 @@ export function scriptedProvider(turns: ScriptedTurn[], capabilities: Record<str
       }
     ),
   };
-  return { provider, requests };
+  return { provider, requests, sessions };
 }
 
 export function readyServer(id: string, name: string, tools: MCPTool[]): MCPServerState {
@@ -82,7 +92,7 @@ export function tool(name: string, description = ''): MCPTool {
   return { name, description, inputSchema: { type: 'object', properties: {} } };
 }
 
-export function makeChatStore(servers: MCPServerState[] = []) {
+export function makeChatStore(servers: MCPServerState[] = [], opts: { conversationId?: string } = {}) {
   const serverStates = Object.fromEntries(servers.map((s) => [s.config.id, s]));
   // Same first-wins de-duplication mcpSlice applies when it rebuilds the list
   const seen = new Set<string>();
@@ -96,9 +106,17 @@ export function makeChatStore(servers: MCPServerState[] = []) {
     }
   }
   const mcpInitial = mcpReducer(undefined, { type: '@@init' });
+  const conversationInitial = conversationReducer(undefined, { type: '@@init' });
   const store = configureStore({
-    reducer: { chat: chatReducer, settings: settingsReducer, mcp: mcpReducer, composer: composerReducer },
+    reducer: {
+      chat: chatReducer,
+      settings: settingsReducer,
+      mcp: mcpReducer,
+      composer: composerReducer,
+      conversation: conversationReducer,
+    },
     preloadedState: {
+      conversation: { ...conversationInitial, currentConversationId: opts.conversationId ?? null },
       mcp: {
         ...mcpInitial,
         servers: Object.fromEntries(servers.map((s) => [s.config.id, s.config])),

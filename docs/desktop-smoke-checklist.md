@@ -17,6 +17,7 @@ what needs a real window, real providers and real MCP servers.
 - [ ] Start and stop a built-in server from the badges above the input; the chat resets.
 - [ ] A request that needs two tool rounds in a row completes (tools are re-offered each round).
 - [ ] With opencode-go (Kimi), a tool round still works (tools only on the first request).
+- [ ] opencode-go: Test Connection with an empty Model Name fills it from the service's list; a bad key, `http://127.0.0.1:1` or `not-a-model` each fail. In DevTools > Network, chat requests carry `x-opencode-session` (same within a conversation, new for another) and a `Claudia/<version>` User-Agent.
 - [ ] Two servers exposing a tool with the same name: both work and each call goes to its own server.
 - [ ] Press Stop while a slow tool runs: the tool result is kept and no further model request is sent.
 - [ ] An MCP-UI tool renders its UI; an action button in it runs and updates the result.

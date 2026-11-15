@@ -27,6 +27,7 @@ export type CustomModelRow = typeof customModels.$inferSelect;
 
 const CACHE_MS = 60_000;
 const LIST_TIMEOUT_MS = 15_000;
+const VERIFY_TIMEOUT_MS = 30_000;
 
 export interface ResolvedModel {
   model: ModelInfo;
@@ -202,6 +203,25 @@ export class ModelRegistry {
     } else {
       this.states.clear();
       this.providers.clear();
+    }
+  }
+
+  /**
+   * A short chat with the first offered model, for providers whose model list
+   * proves nothing about the key or endpoint (opencode Go lists models
+   * publicly). The reason it failed, or null (also when the provider has no
+   * such check).
+   */
+  async verifyChat(conn: ConnectionRow, models: ModelInfo[]): Promise<string | null> {
+    const provider = this.providerFor(conn);
+    if (!provider.verifyConnection) return null;
+    const modelId = models[0] ? splitModelKey(models[0].id)?.modelId : undefined;
+    if (!modelId) return 'The connection offers no models to test.';
+    try {
+      await withTimeout(provider.verifyConnection(modelId), VERIFY_TIMEOUT_MS, 'The test chat');
+      return null;
+    } catch (err) {
+      return `A test chat with ${modelId} failed: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 

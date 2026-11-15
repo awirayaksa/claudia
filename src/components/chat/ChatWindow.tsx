@@ -243,7 +243,7 @@ export function ChatWindow() {
         stream: false,
         max_tokens: 30,
         temperature: 0.3,
-      });
+      }, { sessionId: conversationId });
 
       const rawTitle = response.choices[0]?.message?.content;
       if (rawTitle && typeof rawTitle === 'string') {

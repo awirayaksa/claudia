@@ -258,7 +258,10 @@ export async function channelRoutes(app: FastifyInstance, ctx: ServerContext): P
               onComplete: () => resolve(),
               onError: (err: unknown) => reject(err),
             },
-            controller.signal
+            controller.signal,
+            undefined,
+            // The channel is the conversation
+            { sessionId: channel.id }
           )
           .catch(reject);
       });

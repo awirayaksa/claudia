@@ -12,6 +12,7 @@ import { AnthropicProvider } from '../../../src/services/api/providers/anthropic
 import { OllamaProvider } from '../../../src/services/api/providers/ollama.provider';
 import type { ConnectionQuirks, ConnectionType } from '../db/schema';
 import type { ProviderHttp } from '../../../src/types/api.types';
+import { VERSION } from '../version';
 
 export interface ProviderSpec {
   type: ConnectionType;
@@ -52,6 +53,8 @@ export function createProvider(spec: ProviderSpec): IAPIProvider {
         selectedModel: '',
         apiCompatibility: spec.quirks.apiCompatibility ?? 'openai',
         http: spec.http,
+        // opencode Go asks clients to name themselves rather than their HTTP library
+        userAgent: `Claudia-Web/${VERSION}`,
       });
     case 'anthropic':
       return new AnthropicProvider({ baseUrl, apiKey: spec.apiKey, http: spec.http });
