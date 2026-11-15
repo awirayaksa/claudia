@@ -19,6 +19,7 @@ import type { Database } from '../db/client';
 import { mcpOAuth } from '../db/schema';
 import type { SecretBox } from '../crypto/secrets';
 import { badRequest, notFound } from '../lib/errors';
+import { BRAND_NAME } from '../brand';
 
 /** A pending sign-in must be finished within this time. */
 const PENDING_MS = 10 * 60_000;
@@ -60,7 +61,7 @@ class StoredProvider implements OAuthClientProvider {
 
   get clientMetadata(): OAuthClientMetadata {
     return {
-      client_name: 'Claudia',
+      client_name: BRAND_NAME,
       redirect_uris: [this.data.redirectUrl],
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],

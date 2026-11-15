@@ -2,7 +2,11 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { setPlatform } from '@/platform';
+import { setBranding } from '@/branding';
 import '@/styles/globals.css';
+// A white-label brand's colours, over the defaults (brands/README.md)
+import 'virtual:brand-theme.css';
+import { brand } from './brand';
 import './i18n';
 import { PublicConfig } from '@shared/api';
 import { createWebPlatform } from './platform/web.platform';
@@ -19,6 +23,7 @@ function registerServiceWorker() {
 }
 
 async function start() {
+  setBranding({ avatarUrl: brand.avatar, accent: brand.accent });
   registerServiceWorker();
   // The sandbox origin is server configuration; MCP-UI frames need it before rendering
   let sandboxOrigin: string | undefined;
