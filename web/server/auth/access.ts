@@ -57,6 +57,7 @@ const PERMISSION_MESSAGES: Partial<Record<PermissionKey, string>> = {
   'features.code': 'You are not allowed to run code.',
   'features.image_gen': 'You are not allowed to generate images.',
   'features.voice': 'You are not allowed to use voice input or read-aloud.',
+  'features.agent': 'You are not allowed to run agent tasks.',
 };
 
 export class AccessService {

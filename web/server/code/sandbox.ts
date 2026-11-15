@@ -60,6 +60,13 @@ export interface RunInput {
   code: string;
   /** Copied into /workspace before the run. */
   files: Array<{ name: string; data: Buffer }>;
+  /**
+   * Names are relative paths to keep (an agent task's folder: "receipts/a.pdf"),
+   * not base names to flatten (chat attachments).
+   */
+  keepPaths?: boolean;
+  /** How many changed files (and how large each) come back; default 10 files of 25 MB. */
+  outputLimits?: { files: number; bytes: number };
   /** Printed output as it comes. */
   onOutput?: (stream: 'stdout' | 'stderr', text: string) => void;
   signal?: AbortSignal;
@@ -98,6 +105,26 @@ export function workspaceNames(names: string[]): string[] {
     used.add(name.toLowerCase());
     return name;
   });
+}
+
+/** Safe relative paths (an agent task's folder): each segment cleaned, no "..", unique; with the folders they need. */
+export function workspacePaths(names: string[]): { paths: string[]; dirs: string[] } {
+  const used = new Set<string>([SCRIPT_DIR]);
+  const dirs = new Set<string>();
+  const paths = names.map((n) => {
+    const segments = n
+      .split(/[\\/]+/)
+      .filter((s) => s && s !== '.' && s !== '..')
+      .map((s) => s.replace(/[^\w.\- ()+,@]/g, '_').slice(0, 120));
+    if (segments.length === 0) segments.push('file');
+    if (segments[0].toLowerCase() === SCRIPT_DIR) segments[0] = `_${segments[0]}`;
+    let rel = segments.join('/');
+    for (let i = 2; used.has(rel.toLowerCase()); i++) rel = `${segments.join('/')} (${i})`;
+    used.add(rel.toLowerCase());
+    for (let i = 1; i < segments.length; i++) dirs.add(segments.slice(0, i).join('/'));
+    return rel;
+  });
+  return { paths, dirs: [...dirs].sort((a, b) => a.split('/').length - b.split('/').length) };
 }
 
 const sha = (b: Buffer) => crypto.createHash('sha256').update(b).digest('hex');
@@ -185,8 +212,11 @@ export class CodeSandbox {
     const image = input.language === 'node' ? settings.nodeImage : settings.pythonImage;
     const script = input.language === 'node' ? 'main.mjs' : 'main.py';
 
-    const names = workspaceNames(input.files.map((f) => f.name));
+    const layout = input.keepPaths ? workspacePaths(input.files.map((f) => f.name)) : { paths: workspaceNames(input.files.map((f) => f.name)), dirs: [] };
+    const names = layout.paths;
     const inputs = new Map(input.files.map((f, i) => [names[i], sha(f.data)]));
+    const maxFiles = input.outputLimits?.files ?? MAX_OUTPUT_FILES;
+    const maxFileBytes = input.outputLimits?.bytes ?? MAX_OUTPUT_FILE_BYTES;
     const total = input.files.reduce((n, f) => n + f.data.byteLength, 0);
     if (total > MAX_INPUT_BYTES) throw new Error(`The attachments are larger than ${MAX_INPUT_BYTES / (1024 * 1024)} MB together.`);
     const archive = packTar(
@@ -194,6 +224,7 @@ export class CodeSandbox {
         { path: 'workspace/' },
         { path: `workspace/${SCRIPT_DIR}/` },
         { path: `workspace/${SCRIPT_DIR}/${script}`, data: Buffer.from(input.code, 'utf-8') },
+        ...layout.dirs.map((d) => ({ path: `workspace/${d}/` })),
         ...input.files.map((f, i) => ({ path: `workspace/${names[i]}`, data: f.data })),
       ],
       { uid: UID, gid: UID }
@@ -287,7 +318,7 @@ export class CodeSandbox {
           const path = f.path.replace(/^workspace\//, '');
           if (!path || path === 'workspace' || path.startsWith(`${SCRIPT_DIR}/`)) continue;
           if (inputs.get(path) === sha(f.data)) continue;
-          if (files.length >= MAX_OUTPUT_FILES || f.data.byteLength > MAX_OUTPUT_FILE_BYTES) {
+          if (files.length >= maxFiles || f.data.byteLength > maxFileBytes) {
             skippedFiles++;
             continue;
           }

@@ -57,9 +57,9 @@ export function SettingsPage() {
 
 function SettingsTabs() {
   const { t } = useTranslation();
-  // ?tab=styles (from the composer's style menu) opens that tab
+  // ?tab=styles (from the composer's style menu) opens that tab; ?tab=files&dir=… a workspace folder (an agent task's)
   const [params] = useSearchParams();
-  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'styles' ? 'styles' : 'appearance'));
+  const [tab, setTab] = useState<Tab>(() => (params.get('tab') === 'styles' ? 'styles' : params.get('tab') === 'files' ? 'files' : 'appearance'));
   const permissions = usePermissions();
   const draft = useSettingsDraft()!;
 
@@ -100,7 +100,7 @@ function SettingsTabs() {
           <>
             <FilesSettings />
             <div className="border-t border-border p-5">
-              <WorkspaceFiles />
+              <WorkspaceFiles initialDir={params.get('dir') ?? ''} />
             </div>
           </>
         )}

@@ -105,6 +105,10 @@ const attempts: Record<PermissionKey, (c: TestClient) => Promise<number>> = {
   'features.voice': async (c) => (await c.post('/api/audio/speech', { text: 'Hi' })).statusCode,
   'features.notes': async (c) => (await c.get('/api/notes')).statusCode,
   'features.schedules': async (c) => (await c.get('/api/schedules')).statusCode,
+  'features.agent': async (c) => {
+    expect((await admin.patch('/api/admin/settings/agent', { enabled: true, maxSteps: 5, maxMinutes: 5, maxTokens: 100_000 })).statusCode).toBe(200);
+    return completion(c, { agent: true });
+  },
 };
 
 async function completion(c: TestClient, features: Record<string, boolean>): Promise<number> {

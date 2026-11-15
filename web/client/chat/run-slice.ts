@@ -119,6 +119,15 @@ const runSlice = createSlice({
           if (n) n.memoryChanges = [...(n.memoryChanges ?? []), e.change];
           break;
         }
+        case 'message.todo': {
+          // An agent task's plan: one checklist per reply, replaced in place
+          const n = live.nodes[e.messageId];
+          if (!n) break;
+          const i = n.parts.findIndex((p) => p.type === 'todo');
+          if (i >= 0) n.parts[i] = { type: 'todo', items: e.items };
+          else n.parts.unshift({ type: 'todo', items: e.items });
+          break;
+        }
         case 'message.followups': {
           const n = live.nodes[e.messageId];
           if (n) n.followUps = e.followUps;

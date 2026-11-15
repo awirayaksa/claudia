@@ -22,9 +22,13 @@ merged into `main`). What is left:
 - [ ] **Shared workspace volume.** Built-in file tools keep per-user workspaces
       in `DATA_DIR`, so instances on several hosts need a shared filesystem (NFS
       etc.). S3 only covers uploaded files.
-- [ ] **Runs are tied to one instance.** If it dies, followers are told the run
-      failed within about a minute, but the partial reply can stay `streaming`
-      in the database. Add a sweep for stale replies.
+- [x] **Runs are tied to one instance.** If it dies, followers are told the run
+      failed within about a minute; replies it left `streaming` are now marked
+      failed by a sweep (`server/llm/stale-sweep.ts`) once no live run is left
+      for their chat.
+- [ ] **Agent tasks are confined by instructions only.** The Filesystem and
+      Office tools reach the whole workspace, not just the task folder; a
+      per-task built-in instance would enforce it.
 - [ ] **SSO is OpenID Connect only.** Plain OAuth 2 providers (e.g. GitHub) are
       not supported.
 - [ ] **SSO admin groups only promote.** Leaving the admin group never demotes.
@@ -49,7 +53,8 @@ merged into `main`). What is left:
 ## Deferred in the plan
 
 - [x] Server-side (container) code execution (Docker; see the README).
-- [ ] Sub-agents ("revisit after Phase 5", no decision yet).
+- [ ] Sub-agents: a `spawn_agent` tool for agent tasks (next after the agent
+      task MVP, issue #42).
 - [ ] Move the desktop app to the web's conversation format (message tree,
       sharing, multi-model).
 

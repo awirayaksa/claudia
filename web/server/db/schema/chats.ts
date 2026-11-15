@@ -49,6 +49,8 @@ export interface ChatParams {
   systemPrompt?: string;
   /** The writing style last used in the chat (a built-in id or a style's id). */
   styleId?: string;
+  /** The workspace folder of the chat's agent tasks (later tasks in the chat reuse it). */
+  taskFolder?: string;
 }
 
 const tsvector = customType<{ data: string }>({ dataType: () => 'tsvector' });
@@ -72,6 +74,8 @@ export interface MessageMeta {
   code?: boolean;
   /** User nodes: image generation was offered. */
   imageGen?: boolean;
+  /** User nodes sent as an agent task: the workspace folder it works in. */
+  agent?: { folder: string };
   /** User nodes of a blind comparison: the real models (A, B) and the vote. */
   arena?: { models: [string, string]; winner?: 'a' | 'b' | 'tie' };
   /** The path up to here was summarized (`turns` turns, folding in any earlier summary). */

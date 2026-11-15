@@ -102,6 +102,7 @@ export function toNode(m: MessageRow): MessageNode {
     ...(m.meta?.followUps?.length ? { followUps: m.meta.followUps } : {}),
     ...(m.meta?.refs?.length ? { refs: m.meta.refs } : {}),
     ...(m.meta?.webSearch ? { webSearch: true } : {}),
+    ...(m.meta?.agent?.folder ? { task: { folder: m.meta.agent.folder } } : {}),
     ...(m.meta?.arena ? { arena: { winner: m.meta.arena.winner ?? null, models: m.meta.arena.models } } : {}),
     ...(m.meta?.compaction?.summary ? { compaction: { summary: m.meta.compaction.summary, turns: m.meta.compaction.turns } } : {}),
     ...(m.meta?.memoryChanges?.length ? { memoryChanges: m.meta.memoryChanges } : {}),

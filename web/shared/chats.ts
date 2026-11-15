@@ -33,6 +33,8 @@ export const ChatParamsSchema = z.object({
   systemPrompt: z.string().max(100_000).nullable(),
   /** The writing style last used (set by the server with each message). */
   styleId: z.string().max(64).nullable(),
+  /** The workspace folder of the chat's agent tasks (set by the server with each task). */
+  taskFolder: z.string().max(300).nullable(),
 });
 export type ChatParams = { [K in keyof z.infer<typeof ChatParamsSchema>]?: Exclude<z.infer<typeof ChatParamsSchema>[K], null> };
 
@@ -115,6 +117,8 @@ export const CompletionRequest = z.object({
   features: z.record(z.string(), z.boolean()).default({}),
   /** #kb, #url and #chat references. */
   refs: z.array(MessageRef).max(10).default([]),
+  /** With `features.agent`: the workspace folder to work in (relative); unset = the chat's, or a new one. */
+  task: z.object({ folder: z.string().trim().min(1).max(300).optional() }).optional(),
 });
 export type CompletionRequest = z.infer<typeof CompletionRequest>;
 
@@ -252,6 +256,12 @@ export const MessagePartSchema = z.discriminatedUnion('type', [
     type: z.literal('workspace_file'),
     path: z.string().max(4000),
     size: z.number().int().min(0).optional(),
+  }),
+  z.object({
+    type: z.literal('todo'),
+    items: z
+      .array(z.object({ content: z.string().max(1000), status: z.enum(['pending', 'in_progress', 'completed']) }))
+      .max(100),
   }),
 ]);
 

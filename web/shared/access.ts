@@ -21,6 +21,7 @@ export const PERMISSION_KEYS = [
   'features.voice',
   'features.notes',
   'features.schedules',
+  'features.agent',
 ] as const;
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 export type Permissions = Record<PermissionKey, boolean>;
@@ -43,6 +44,7 @@ export const DEFAULT_PERMISSIONS: Permissions = {
   'features.voice': true,
   'features.notes': true,
   'features.schedules': false,
+  'features.agent': true,
 };
 
 export const PermissionsSchema = z.object(

@@ -23,6 +23,12 @@ export interface CitationSource {
   section?: string;
 }
 
+/** One step of an agent task's plan (web), as the model keeps it with its todo tool. */
+export interface TodoItem {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
+
 /** A tool call that needed the user's approval: waiting, or how it was decided. */
 export type ToolApproval = 'pending' | 'approved' | 'rejected' | 'expired';
 
@@ -42,7 +48,9 @@ export type MessagePart =
   | { type: 'tool_result'; callId: string; content: string; isError?: boolean; uiResource?: UIResourceContent }
   | { type: 'citation'; index: number; source: CitationSource }
   /** A file a tool wrote in the user's workspace (web), by its path there ("reports/q3.md"). */
-  | { type: 'workspace_file'; path: string; size?: number };
+  | { type: 'workspace_file'; path: string; size?: number }
+  /** Web, agent tasks: the plan as a checklist; one per reply, replaced as the model updates it. */
+  | { type: 'todo'; items: TodoItem[] };
 
 export type MessagePartType = MessagePart['type'];
 export type PartOf<T extends MessagePartType> = Extract<MessagePart, { type: T }>;
@@ -72,6 +80,8 @@ export interface MessageNode {
   /** User turns: #kb / #url / #chat references, and whether the web was searched. */
   refs?: Array<{ type: 'kb' | 'url' | 'chat' | 'note'; id?: string; url?: string; name?: string }>;
   webSearch?: boolean;
+  /** Web, user turns sent as an agent task: the workspace folder it works in. */
+  task?: { folder: string };
   /**
    * User turns of a blind comparison (web): the vote, and the two models in
    * A/B order once voted (null before, when replies show as "arena:A"/"arena:B").

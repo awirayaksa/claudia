@@ -65,6 +65,25 @@ import { ARENA_LABELS, ARENA_MODEL_ID } from '../../shared/arena';
 import type { ToolExecution } from './tools';
 import { fillSystemVariables, type SystemValues } from '../../shared/prompts';
 import { latestCompaction, nodeTurns, summarize } from './compaction';
+import fs from 'node:fs';
+import {
+  AGENT_BUILTINS,
+  agentPrompt,
+  overBudget,
+  parseTodos,
+  readTaskFiles,
+  resolveTaskFolder,
+  RUN_CODE_TASK_TOOL,
+  TASK_INPUT_BYTES,
+  TASK_OUTPUT_LIMITS,
+  todoResult,
+  TODO_TOOL,
+  TODO_TOOL_NAME,
+  writeTaskFiles,
+  type AgentBudget,
+} from './agent';
+import { userWorkspace } from '../mcp/builtin';
+import { changedFiles, resolveInWorkspace, snapshotWorkspace } from '../workspace/files';
 
 /** What the model is told about a call the user didn't approve. */
 const DECLINED_MESSAGE: Record<Exclude<ApprovalDecision, 'approved'>, string> = {
@@ -117,6 +136,8 @@ export interface OrchestratorDeps {
   memoryLearner?: MemoryLearner;
   /** How long a chat stays quiet before it is read for memories (default 2 minutes). */
   memoryIdleMs?: number;
+  /** DATA_DIR, for the users' workspaces (without it, agent tasks are off). */
+  dataDir?: string;
 }
 
 /** What admin webhooks hear about a finished run (no message text). */
@@ -166,6 +187,8 @@ interface RunPlan {
   style: { id: string; name: string; instructions: string } | null;
   /** The model may search the user's earlier chats. */
   pastChats: boolean;
+  /** An agent task: its folder (relative to the workspace, and absolute) and budget. */
+  agent: { folder: string; workspace: string; budget: AgentBudget } | null;
   targets: Array<{ assistantId: string; model: ResolvedModel }>;
 }
 
@@ -267,11 +290,15 @@ export class ChatOrchestrator {
     const refs: MessageRef[] = existing ? (existing.meta?.refs ?? []) : req.refs;
     const webSearch = existing ? !!existing.meta?.webSearch : req.features.webSearch === true;
     const code = existing ? !!existing.meta?.code : req.features.code === true;
-    const codeEngine = code ? await this.checkCode(user) : null;
+    let codeEngine = code ? await this.checkCode(user) : null;
     const imageGen = existing ? !!existing.meta?.imageGen : req.features.imageGen === true;
     if (imageGen) await this.checkImageGen(user);
     const pastChats = existing ? !!existing.meta?.pastChats : req.features.pastChats === true;
     await this.checkRefs(user, refs, webSearch);
+    // An agent task: one model, in a folder of the workspace (a regeneration keeps the turn's)
+    const agentOn = existing ? !!existing.meta?.agent : req.features.agent === true;
+    const agent = agentOn ? await this.prepareAgent(user, chat, req, existing?.meta?.agent?.folder ?? null, modelIds.length, !!arena) : null;
+    if (agent && !code) codeEngine = await this.taskCodeEngine(user);
     // The writing style: a regeneration (or continuation) keeps the turn's
     const styleId = existing ? existing.meta?.style : req.styleId;
     const style =
@@ -304,6 +331,7 @@ export class ChatOrchestrator {
           ...(imageGen ? { imageGen: true } : {}),
           ...(style ? { style: style.id } : {}),
           ...(pastChats ? { pastChats: true } : {}),
+          ...(agent ? { agent: { folder: agent.folder } } : {}),
         };
         userNode = {
           id: uuidv7(),
@@ -314,6 +342,7 @@ export class ChatOrchestrator {
           ...(req.params.effort ? { effort: req.params.effort } : {}),
           ...(meta.models ? { models: meta.models } : {}),
           ...(arena ? { arena: { winner: null, models: null } } : {}),
+          ...(agent ? { task: { folder: agent.folder } } : {}),
           status: 'completed',
           createdAt: now.toISOString(),
         };
@@ -354,11 +383,14 @@ export class ChatOrchestrator {
       });
       // Answering one turn again doesn't change which models the chat uses
       await this.repo.touch(chat.id, { currentLeafId: targets[0].assistantId, ...(existing ? {} : { modelIds: req.modelIds }) });
-      // The chat remembers the style last used
+      // The chat remembers the style last used, and its task folder
       const chatStyle = style?.id ?? null;
-      if (!existing && (chat.params.styleId ?? null) !== chatStyle) {
-        const { styleId: _old, ...params } = chat.params;
-        await db.update(chats).set({ params: chatStyle ? { ...params, styleId: chatStyle } : params }).where(eq(chats.id, chat.id));
+      const styleChanged = !existing && (chat.params.styleId ?? null) !== chatStyle;
+      const folderChanged = !!agent && chat.params.taskFolder !== agent.folder;
+      if (styleChanged || folderChanged) {
+        const { styleId: _old, ...rest } = chat.params;
+        const params = { ...(styleChanged ? (chatStyle ? { ...rest, styleId: chatStyle } : rest) : chat.params), ...(agent ? { taskFolder: agent.folder } : {}) };
+        await db.update(chats).set({ params }).where(eq(chats.id, chat.id));
       }
 
       runs.emit(run, {
@@ -412,6 +444,7 @@ export class ChatOrchestrator {
         continueNode,
         style,
         pastChats,
+        agent,
       };
       void withSpan('claudia.run', { 'claudia.run_id': run.id, 'claudia.chat_id': chat.id, 'enduser.id': user.id }, () => this.execute(plan)).catch((err) => {
         this.deps.log.error({ err, runId: run.id }, 'run failed unexpectedly');
@@ -475,6 +508,8 @@ export class ChatOrchestrator {
     if (chat.params.systemPrompt?.trim()) after.push(sys(chat.params.systemPrompt));
     // The writing style, apart from the system prompts
     if (plan.style) after.push({ role: 'system', content: stylePrompt(plan.style) });
+    // An agent task's instructions
+    if (plan.agent) after.push({ role: 'system', content: agentPrompt(plan.agent.folder, plan.codeEngine === 'server') });
 
     // Sources (knowledge, references, web), numbered for citations, last
     const sources = await this.gatherSources(plan, userText).catch((err) => {
@@ -487,7 +522,8 @@ export class ChatOrchestrator {
     // A custom model's tools are on whenever it answers
     const toolsets = new Map<string, Promise<RunToolset>>();
     const toolsetFor = (target: ResolvedModel) => {
-      const alwaysOn = target.custom?.toolIds ?? [];
+      // A task always has the workspace built-ins (those the admin offers)
+      const alwaysOn = [...(target.custom?.toolIds ?? []), ...(plan.agent ? AGENT_BUILTINS : [])];
       const key = alwaysOn.join('\n');
       if (!toolsets.has(key)) {
         toolsets.set(
@@ -662,19 +698,23 @@ export class ChatOrchestrator {
         .where(eq(messages.id, assistantId));
     };
     const ticker = setInterval(() => void persist().catch(() => {}), PERSIST_INTERVAL_MS);
+    // What the task folder held before (to list what the task changed)
+    const taskBefore = plan.agent ? await snapshotWorkspace(this.taskFolderAbs(plan.agent)).catch(() => null) : null;
 
     try {
       const tools = [
         ...opts.toolset.definitions,
-        ...(plan.codeEngine === 'browser' ? [CODE_TOOL] : plan.codeEngine === 'server' ? [RUN_CODE_TOOL] : []),
+        ...(plan.agent ? [TODO_TOOL] : []),
+        ...(plan.codeEngine === 'browser' ? [CODE_TOOL] : plan.codeEngine === 'server' ? [plan.agent ? RUN_CODE_TASK_TOOL : RUN_CODE_TOOL] : []),
         ...(plan.imageGen ? [IMAGE_TOOL] : []),
         ...(opts.memory ? memoryToolDefinitions(!!chat.folderId) : []),
         ...(plan.pastChats ? CHAT_SEARCH_TOOLS : []),
       ];
       const isChatSearch = (name: string) => plan.pastChats && CHAT_SEARCH_TOOL_NAMES.has(name);
       const isMemoryTool = (name: string) => !!opts.memory && MEMORY_TOOL_NAMES.has(name);
+      const isTodo = (name: string) => !!plan.agent && name === TODO_TOOL_NAME;
       const onServer = (name: string) =>
-        (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name) || isServerCode(name) || isChatSearch(name);
+        (plan.imageGen && name === IMAGE_TOOL_NAME) || isMemoryTool(name) || isServerCode(name) || isChatSearch(name) || isTodo(name);
       const inBrowser = (name: string) => plan.codeEngine === 'browser' && CLIENT_TOOL_NAMES.has(name);
       const isServerCode = (name: string) => plan.codeEngine === 'server' && name === RUN_CODE_TOOL_NAME;
       const firstTurnOnly = opts.toolset.firstTurnOnly || !!target.connection.quirks.toolsFirstTurnOnly;
@@ -729,9 +769,19 @@ export class ChatOrchestrator {
           break;
         }
         if (toolCalls.length === 0) break;
-        if (iteration + 1 >= limits.maxToolIterations) {
+        // A task has budgets in steps, time and tokens instead of the tool-round cap
+        const overLimit = plan.agent
+          ? overBudget(plan.agent.budget, {
+              steps: iteration + 1,
+              startedAt: started,
+              tokens: (runUsage?.prompt_tokens ?? 0) + (runUsage?.completion_tokens ?? 0),
+            })
+          : iteration + 1 >= limits.maxToolIterations
+            ? 'Stopped after the maximum number of tool rounds.'
+            : null;
+        if (overLimit) {
           status = 'error';
-          error = 'Stopped after the maximum number of tool rounds.';
+          error = overLimit;
           break;
         }
 
@@ -778,6 +828,8 @@ export class ChatOrchestrator {
             async (span) => {
               const result = inBrowser(call.function.name)
                 ? await this.runInBrowser(plan, assistantId, call, signal)
+                : isTodo(call.function.name)
+                  ? this.todoTool(plan, assistantId, call, builder)
                 : isChatSearch(call.function.name)
                   ? await this.searchChats(plan, assistantId, call, builder)
                 : isServerCode(call.function.name)
@@ -795,6 +847,8 @@ export class ChatOrchestrator {
           builder.add(exec.result);
           runs.emit(run, { type: 'tool.result', messageId: assistantId, part: exec.result });
           for (const part of exec.extraParts ?? []) {
+            // A file written again is shown once
+            if (part.type === 'workspace_file' && builder.parts.some((p) => p.type === 'workspace_file' && p.path === part.path)) continue;
             builder.add(part);
             runs.emit(run, { type: 'message.part', messageId: assistantId, part });
           }
@@ -809,6 +863,18 @@ export class ChatOrchestrator {
       error = err instanceof Error ? err.message : String(err);
     } finally {
       clearInterval(ticker);
+    }
+
+    // A task lists every file it made or changed in its folder (code runs, anything a tool didn't report)
+    if (taskBefore && plan.agent) {
+      const after = await snapshotWorkspace(this.taskFolderAbs(plan.agent)).catch(() => null);
+      for (const f of after ? changedFiles(taskBefore, after) : []) {
+        const rel = `${plan.agent.folder}/${f.path}`;
+        if (builder.parts.some((p) => p.type === 'workspace_file' && p.path === rel)) continue;
+        const part: MessagePart = { type: 'workspace_file', path: rel, size: f.size };
+        builder.add(part);
+        runs.emit(run, { type: 'message.part', messageId: assistantId, part });
+      }
     }
 
     await persist(true);
@@ -1017,6 +1083,66 @@ export class ChatOrchestrator {
     return execution;
   }
 
+  /**
+   * Check that this user may run an agent task now, and find its folder: the
+   * turn's (regenerating), the one asked for, the chat's, or a new one.
+   */
+  private async prepareAgent(
+    user: AuthUser,
+    chat: ChatRow,
+    req: CompletionRequest,
+    turnFolder: string | null,
+    models: number,
+    arena: boolean
+  ): Promise<{ folder: string; workspace: string; budget: AgentBudget }> {
+    const setting = await this.deps.settings.get('agent');
+    if (!setting.enabled || !this.deps.dataDir) throw badRequest('Agent tasks are turned off on this server.', 'agent_off');
+    if (this.deps.access) await this.deps.access.require(user, 'features.agent');
+    if (!(await this.deps.settings.get('mcp.builtins')).enabled.includes('builtin-filesystem-001')) {
+      throw badRequest('Agent tasks need the Filesystem tools, which the administrator has turned off.', 'agent_off');
+    }
+    if (models !== 1 || arena) throw badRequest('Choose a single model for a task.', 'agent_one_model');
+    const workspace = userWorkspace(this.deps.dataDir, user.id);
+    const budget = { maxSteps: setting.maxSteps, maxMinutes: setting.maxMinutes, maxTokens: setting.maxTokens };
+    if (turnFolder) {
+      // Regenerating: the same folder (made again if it was deleted)
+      await fs.promises.mkdir(resolveInWorkspace(workspace, turnFolder), { recursive: true });
+      return { folder: turnFolder, workspace, budget };
+    }
+    if (req.task?.folder) return { folder: await resolveTaskFolder(workspace, { requested: req.task.folder, text: req.content }), workspace, budget };
+    if (chat.params.taskFolder) {
+      const reused = await resolveTaskFolder(workspace, { requested: chat.params.taskFolder, text: req.content }).catch(() => null);
+      if (reused) return { folder: reused, workspace, budget };
+    }
+    return { folder: await resolveTaskFolder(workspace, { text: req.content }), workspace, budget };
+  }
+
+  /** A task runs code on the server when the admin set that up and the user may run code; else it has no code tool. */
+  private async taskCodeEngine(user: AuthUser): Promise<'server' | null> {
+    if ((await activeCodeEngine(this.deps.settings, this.deps.sandboxOrigin, this.deps.code)) !== 'server') return null;
+    if (this.deps.access && !(await this.deps.access.can(user, 'features.code'))) return null;
+    return 'server';
+  }
+
+  private taskFolderAbs(agent: { folder: string; workspace: string }): string {
+    return resolveInWorkspace(agent.workspace, agent.folder);
+  }
+
+  /** The task's plan: replaces the reply's checklist. */
+  private todoTool(plan: RunPlan, messageId: string, call: ToolCall, builder: PartsBuilder): ToolExecution {
+    const parsed = parseTodos(call.function.arguments);
+    if ('error' in parsed) {
+      return {
+        serverId: 'claudia',
+        tool: TODO_TOOL_NAME,
+        result: { type: 'tool_result', callId: call.id, content: JSON.stringify({ error: parsed.error }), isError: true },
+      };
+    }
+    builder.setTodo(parsed.items);
+    this.deps.runs.emit(plan.run, { type: 'message.todo', messageId, items: parsed.items });
+    return { serverId: 'claudia', tool: TODO_TOOL_NAME, result: { type: 'tool_result', callId: call.id, content: todoResult(parsed.items) } };
+  }
+
   private async checkImageGen(user: AuthUser): Promise<void> {
     const engine = (await this.deps.media?.settings())?.image.engine ?? 'none';
     if (engine === 'none' || !this.deps.files) throw badRequest('Image generation is not set up on this server.', 'image_gen_off');
@@ -1105,14 +1231,24 @@ export class ChatOrchestrator {
     const { files, code, runs } = this.deps;
     if (!code || !files) return fail('Server-side code runs are not set up.');
 
-    // The attachments of this chat's path, the user's own and readable
-    const ids = [
-      ...new Set([...plan.history, plan.userNode].flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' && UUID.test(p.fileId) ? [p.fileId] : [])))),
-    ];
+    // A task's code sees its folder; a chat's, the attachments of its path (the user's own and readable)
     const inputs: Array<{ name: string; data: Buffer }> = [];
-    for (const row of await files.ownedByIds(plan.user.id, ids)) {
-      const data = await files.content(row).catch(() => null);
-      if (data) inputs.push({ name: row.name, data });
+    if (plan.agent) {
+      const task = await readTaskFiles(this.taskFolderAbs(plan.agent), TASK_INPUT_BYTES);
+      if (task.tooLarge) {
+        return fail(
+          `The task folder is larger than ${TASK_INPUT_BYTES / (1024 * 1024)} MB, too large to copy into the sandbox. Work on fewer or smaller files with the file tools.`
+        );
+      }
+      inputs.push(...task.files);
+    } else {
+      const ids = [
+        ...new Set([...plan.history, plan.userNode].flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' && UUID.test(p.fileId) ? [p.fileId] : [])))),
+      ];
+      for (const row of await files.ownedByIds(plan.user.id, ids)) {
+        const data = await files.content(row).catch(() => null);
+        if (data) inputs.push({ name: row.name, data });
+      }
     }
 
     // Printed output, a few times a second
@@ -1129,6 +1265,7 @@ export class ChatOrchestrator {
         language,
         code: args.code,
         files: inputs,
+        ...(plan.agent ? { keepPaths: true, outputLimits: TASK_OUTPUT_LIMITS } : {}),
         signal,
         onOutput: (_stream, text) => {
           pending += text;
@@ -1138,15 +1275,31 @@ export class ChatOrchestrator {
       if (flushTimer) clearTimeout(flushTimer);
       flush();
       const extraParts: MessagePart[] = [];
-      for (const f of result.files) {
-        const row = await files.ingest(plan.user.id, { name: f.path.slice(0, 255), mime: workspaceMime(f.path), data: f.data });
-        extraParts.push({ type: 'file', fileId: row.id, name: row.name, mime: row.mime, size: row.size });
+      if (plan.agent) {
+        // Back into the task folder, shown as workspace files
+        for (const w of await writeTaskFiles(plan.agent.workspace, plan.agent.folder, result.files)) {
+          extraParts.push({ type: 'workspace_file', path: w.path, size: w.size });
+        }
+      } else {
+        for (const f of result.files) {
+          const row = await files.ingest(plan.user.id, { name: f.path.slice(0, 255), mime: workspaceMime(f.path), data: f.data });
+          extraParts.push({ type: 'file', fileId: row.id, name: row.name, mime: row.mime, size: row.size });
+        }
       }
       const failed = result.timedOut || result.oomKilled || result.stopped || (result.exitCode ?? 0) !== 0;
+      const summary = codeRunSummary(result, result.files.map((f) => f.path));
       return {
         serverId: 'claudia',
         tool: RUN_CODE_TOOL_NAME,
-        result: { type: 'tool_result', callId: call.id, content: codeRunSummary(result, result.files.map((f) => f.path)), ...(failed ? { isError: true } : {}) },
+        result: {
+          type: 'tool_result',
+          callId: call.id,
+          // In a task the files stay in its folder rather than being handed over
+          content: plan.agent
+            ? summary.replace('These files were given to the user under your reply.', `These files were saved in the task folder (${plan.agent.folder}).`)
+            : summary,
+          ...(failed ? { isError: true } : {}),
+        },
         ...(extraParts.length ? { extraParts } : {}),
       };
     } catch (err) {

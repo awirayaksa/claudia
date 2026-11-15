@@ -127,3 +127,10 @@ export const HistoryIcon = () => (
     <path d="M3 3v5h5M12 7v5l3 2" />
   </svg>
 );
+export const TaskIcon = () => (
+  <svg {...base}>
+    <path d="M9 6h11M9 12h11M9 18h11" />
+    <path d="M3.5 6l1.2 1.2L7 5M3.5 12l1.2 1.2L7 11" />
+    <circle cx="5" cy="18" r="1.2" />
+  </svg>
+);
