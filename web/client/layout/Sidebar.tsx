@@ -141,6 +141,10 @@ export function Sidebar() {
       open={!!openFolders[f.id]}
       onToggle={() => setOpenFolders((o) => ({ ...o, [f.id]: !o[f.id] }))}
       onNewSubfolder={() => startFolder(f.id)}
+      onNewChat={() => {
+        setOpenFolders((o) => ({ ...o, [f.id]: true }));
+        navigate(`/?folder=${f.id}`);
+      }}
     >
       {newFolderForm(f.id)}
       {(tree.byParent.get(f.id) ?? []).map(renderFolder)}
@@ -322,6 +326,7 @@ function FolderItem({
   open,
   onToggle,
   onNewSubfolder,
+  onNewChat,
   children,
 }: {
   folder: Folder;
@@ -329,6 +334,8 @@ function FolderItem({
   open: boolean;
   onToggle: () => void;
   onNewSubfolder: () => void;
+  /** Start a chat that is saved in this folder. */
+  onNewChat: () => void;
   children: React.ReactNode;
 }) {
   const { t } = useTranslation();
@@ -343,6 +350,7 @@ function FolderItem({
   const ownTree = { ...tree, flat: tree.flat.filter(({ folder: f }) => f.mine) };
   const items: Array<MenuItem | 'separator' | { heading: string }> = folder.canManage
     ? [
+        { label: t('nav.newChatInFolder'), onSelect: onNewChat },
         { label: t('nav.newSubfolder'), onSelect: onNewSubfolder },
         { label: t('app.rename'), onSelect: () => setRenaming(true) },
         { label: t('folder.settings'), onSelect: () => setSettings(true) },
@@ -354,6 +362,7 @@ function FolderItem({
         { label: t('app.delete'), danger: true, onSelect: () => setConfirm(true) },
       ]
     : [
+        { label: t('nav.newChatInFolder'), onSelect: onNewChat },
         ...(folder.canEdit ? [{ label: t('app.rename'), onSelect: () => setRenaming(true) }] : []),
         { label: t('folder.settings'), onSelect: () => setSettings(true) },
       ];
@@ -393,7 +402,15 @@ function FolderItem({
             </span>
           )}
         </button>
-        <div className="opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+        <div className="flex items-center opacity-100 md:opacity-0 md:group-hover:opacity-100 md:focus-within:opacity-100">
+          <button
+            className="rounded p-0.5 text-text-secondary hover:text-text-primary"
+            aria-label={t('nav.newChatInFolder')}
+            title={t('nav.newChatInFolder')}
+            onClick={onNewChat}
+          >
+            <PlusIcon />
+          </button>
           <Menu label={t('chat.folderActions')} trigger={<DotsIcon />} items={items} />
         </div>
       </div>

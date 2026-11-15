@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { ChatInput, type ChatInputRef } from '@/components/chat/ChatInput';
 import { SuggestedPrompts } from '@/components/chat/SuggestedPrompts';
@@ -20,6 +20,7 @@ import {
   errorMessage,
   useChatQuery,
   useCreateChatMutation,
+  useFoldersQuery,
   useForkChatMutation,
   useMcpServersQuery,
   useArenaVoteMutation,
@@ -45,7 +46,7 @@ import { useResumeActiveRuns, useRunFollower } from '../chat/useRunFollower';
 import { enabledServerIds } from '../chat/useMcpSync';
 import { MessageTurns } from '../chat/MessageTurns';
 import { ChatHeader } from '../chat/ChatHeader';
-import { CloseIcon, CodeIcon, GlobeIcon, ImageIcon, PlusIcon, HistoryIcon } from '../components/icons';
+import { CloseIcon, CodeIcon, FolderIcon, GlobeIcon, ImageIcon, PlusIcon, HistoryIcon } from '../components/icons';
 import { PromptVariablesForm } from '../workspace/PromptForm';
 import { StylePicker } from '../chat/StylePicker';
 import { ContextBar, hashMenuItems, refFromItem, sameRef, UrlDialog, urlRefsIn, type FeatureToggle } from '../chat/ContextBar';
@@ -90,6 +91,10 @@ export function ChatPage() {
   const { data: modelsData, isLoading: modelsLoading } = useModelsQuery();
   const { data: chatData, error: chatError } = useChatQuery(chatId!, { skip: !chatId });
   const chat = chatId ? chatData?.chat : undefined;
+  // A new chat started from a folder ("/?folder=<id>") is saved in it
+  const [searchParams, setSearchParams] = useSearchParams();
+  const { data: folderData } = useFoldersQuery(undefined, { skip: !!chatId });
+  const newChatFolder = chatId ? undefined : folderData?.folders.find((f) => f.id === searchParams.get('folder'));
   const live = useWebSelector((s) => (chatId ? s.runs[chatId] : undefined));
   const sessionEffort = useAppSelector((s) => s.composer.effortLevel);
   const skills = useAppSelector((s) => s.skills.skills);
@@ -255,7 +260,13 @@ export function ChatPage() {
     try {
       let id = chatId;
       if (!id) {
-        id = (await createChat({ modelIds: sendModels, ...(temporary ? { temporary: true } : {}) }).unwrap()).chat.id;
+        id = (
+          await createChat({
+            modelIds: sendModels,
+            ...(newChatFolder ? { folderId: newChatFolder.id } : {}),
+            ...(temporary ? { temporary: true } : {}),
+          }).unwrap()
+        ).chat.id;
       }
       const res = await sendCompletion({
         chatId: id,
@@ -434,6 +445,23 @@ export function ChatPage() {
             <div className="flex flex-col items-center pt-[10vh] text-center">
               <h1 className="mb-6 text-2xl font-semibold">{temporary ? t('chat.temporaryTitle') : t('chat.emptyTitle')}</h1>
               {temporary && <p className="mb-6 max-w-md text-sm text-text-secondary">{t('chat.temporaryHelp')}</p>}
+              {newChatFolder && (
+                <div
+                  className="-mt-3 mb-6 flex items-center gap-1.5 rounded-full border border-border px-3 py-1 text-sm text-text-secondary"
+                  data-testid="new-chat-folder"
+                >
+                  <FolderIcon />
+                  <span className="max-w-[16rem] truncate">{t('chat.inFolder', { name: newChatFolder.name })}</span>
+                  <button
+                    className="rounded p-0.5 hover:text-text-primary"
+                    aria-label={t('chat.leaveFolder')}
+                    title={t('chat.leaveFolder')}
+                    onClick={() => setSearchParams({}, { replace: true })}
+                  >
+                    <CloseIcon />
+                  </button>
+                </div>
+              )}
               {selectedInfo?.description && <p className="mb-4 max-w-md text-sm text-text-secondary">{selectedInfo.description}</p>}
               {noModels ? (
                 <p className="max-w-md text-text-secondary">
