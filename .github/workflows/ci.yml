@@ -179,7 +179,11 @@ jobs:
       - name: Trust the test CA
         run: |
           echo "127.0.0.1 ldap.claudia.test" | sudo tee -a /etc/hosts
-          docker compose -f docker/compose.ldap.yml cp ldap:/container/service/slapd/assets/certs/ca.crt "$RUNNER_TEMP/ldap-ca.crt"
+          # --copy-service runs (and generates the certificates) from /container/run/service
+          docker compose -f docker/compose.ldap.yml exec -T ldap sh -c \
+            'cat /container/run/service/slapd/assets/certs/ca.crt 2>/dev/null || cat /container/service/slapd/assets/certs/ca.crt' \
+            > "$RUNNER_TEMP/ldap-ca.crt"
+          grep -q 'BEGIN CERTIFICATE' "$RUNNER_TEMP/ldap-ca.crt"
 
       - name: LDAP integration tests
         run: npx vitest run server/auth/ldap.integration.test.ts

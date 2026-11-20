@@ -8,8 +8,8 @@ vi.mock('../../platform', () => ({ getPlatform: () => ({ files }) }));
 
 afterEach(cleanup);
 
-const a = { path: 'C:\Docs\budget.xlsx', name: 'budget.xlsx', size: 100 };
-const b = { path: 'C:\Docs\deck.pptx', name: 'deck.pptx', size: 2048 };
+const a = { path: 'C:\\Docs\\budget.xlsx', name: 'budget.xlsx', size: 100 };
+const b = { path: 'C:\\Docs\\deck.pptx', name: 'deck.pptx', size: 2048 };
 
 describe('filesOfResults', () => {
   it('lists each file once, with its latest size, skipping failed calls', () => {
