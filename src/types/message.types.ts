@@ -73,6 +73,11 @@ export interface Message {
   effort?: ReasoningEffort;
   /** Numbered sources a reply cites as [n] (Claudia Web: knowledge, web pages, chats). */
   citations?: Array<{ index: number; source: CitationSource }>;
+  /**
+   * Desktop: the messages up to and including this one were summarized to fit
+   * the context window (`turns` exchanges in all); later sends use the summary.
+   */
+  compaction?: { summary: string; turns: number };
 }
 
 export interface ChatState {

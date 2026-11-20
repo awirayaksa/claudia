@@ -3,6 +3,10 @@
     "name": "Claudia"
   },
   "chat": {
+    "compacted_one": "The first exchange was summarized to fit the context",
+    "compacted_other": "The first {{count}} exchanges were summarized to fit the context",
+    "compactedSummary": "Summary the model sees instead",
+    "compacting": "Summarizing earlier messages to fit the context…",
     "stop": "Stop generating"
   },
   "chatInput": {
@@ -104,6 +108,10 @@
   "preferences": {
     "autoUpdate": "Auto Update",
     "autoUpdateHelp": "Automatically check for newer portable versions. The URL must point to a JSON manifest file with",
+    "compaction": "Summarize earlier messages",
+    "compactionHelp": "Near the model's context limit, the oldest exchanges are summarized by the chat's model and the summary is sent in their place. The last 4 exchanges are always sent word for word. Off: the oldest exchanges are left out instead.",
+    "compactionShare": "{{percent}}% of the context window",
+    "compactionThreshold": "Start summarizing at",
     "displayHelp": "Configure what information to display in chat messages.",
     "displayTitle": "Display Preferences",
     "effort": "Reasoning effort",
@@ -111,6 +119,7 @@
     "effortHelp": "Default thinking budget for reasoning models. Models that don't offer the tier you pick fall back to their closest one (Qwen3.8, for example, only takes Low, Medium and X-High). Override it per session with the effort button next to the chat input, or per message by typing",
     "effortHelpEnd": "in the prompt.",
     "loadedFrom": "Loaded from file:",
+    "longChats": "Long chats",
     "modelHelp": "Configure model parameters for API requests.",
     "modelTitle": "Model Preferences",
     "note": "Note:",

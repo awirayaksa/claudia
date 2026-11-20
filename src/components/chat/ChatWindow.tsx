@@ -7,6 +7,7 @@ import { FilesystemDirectoryBar } from './FilesystemDirectoryBar';
 import { TextSelectionMenu } from './TextSelectionMenu';
 import { SuggestedPrompts } from './SuggestedPrompts';
 import { TokenUsageIndicator } from './TokenUsageIndicator';
+import { CompactionDivider } from './CompactionDivider';
 import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { getContextWindow, getCurrentContextTokens } from '../../utils/modelContextLimits';
 import { useChat } from '../../hooks/useChat';
@@ -22,6 +23,7 @@ import { parseEffortDirective } from '../../utils/effort-utils';
 import { setApiConfig } from '../../store/slices/settingsSlice';
 import { Conversation } from '../../types/conversation.types';
 import { getAPIProvider } from '../../services/api/provider.service';
+import { useT } from '../../i18n';
 
 export function ChatWindow() {
   const dispatch = useAppDispatch();
@@ -52,6 +54,8 @@ export function ChatWindow() {
   const serverStates = useAppSelector((state) => state.mcp.serverStates);
   const streamingUsage = useAppSelector((state) => state.chat.streamingUsage);
   const modelContextLengths = useAppSelector((state) => state.settings.api.modelContextLengths);
+  const isCompacting = useAppSelector((state) => state.chat.isCompacting);
+  const t = useT();
 
   const {
     conversations,
@@ -761,9 +765,19 @@ export function ChatWindow() {
                     onBranch={handleBranchMessage}
                     disabled={isLoading || isStreaming || isExecutingTools}
                   />
+                  {message.compaction && (
+                    <CompactionDivider summary={message.compaction.summary} turns={message.compaction.turns} />
+                  )}
                 </div>
               );
             })}
+            {isCompacting && (
+              <div className="my-4 flex items-center gap-3 text-xs text-text-secondary" data-testid="compacting">
+                <span className="h-px flex-1 bg-border" />
+                <span className="animate-pulse">{t('chat.compacting', 'Summarizing earlier messages to fit the context…')}</span>
+                <span className="h-px flex-1 bg-border" />
+              </div>
+            )}
             {/* Streaming message */}
             {isStreaming && (
               <StreamingMessage
