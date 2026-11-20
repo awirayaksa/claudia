@@ -1,14 +1,15 @@
 # OpenLDAP for the directory sign-in integration tests (CI) and for trying
 # LDAP locally:
 #
+#   sh ldap/make-certs.sh
 #   docker compose -f compose.ldap.yml up -d --wait
 #
 # Base DN dc=claudia,dc=test; service account cn=readonly,dc=claudia,dc=test
 # (password "readonly-secret"); users alice / bob / carol (passwords
 # "<name>-pass") in ou=people; alice is in cn=staff,ou=groups.
 # ldap:// on 389 (StartTLS available) and ldaps:// on 636. The certificate is
-# issued for ldap.claudia.test by a generated CA:
-#   docker compose -f compose.ldap.yml cp ldap:/container/run/service/slapd/assets/certs/ca.crt ./ldap-ca.crt
+# issued for ldap.claudia.test by the CA in ldap/certs/ca.crt, which
+# make-certs.sh creates (the image's own default CA has expired).
 services:
   ldap:
     image: osixia/openldap:1.5.0
@@ -23,8 +24,13 @@ services:
       LDAP_READONLY_USER_PASSWORD: readonly-secret
       LDAP_TLS: 'true'
       LDAP_TLS_VERIFY_CLIENT: never
+      LDAP_TLS_CRT_FILENAME: ldap.crt
+      LDAP_TLS_KEY_FILENAME: ldap.key
+      LDAP_TLS_CA_CRT_FILENAME: ca.crt
     volumes:
       - ./ldap/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-seed.ldif:ro
+      # --copy-service copies these to a writable place before starting
+      - ./ldap/certs:/container/service/slapd/assets/certs:ro
     ports:
       - '389:389'
       - '636:636'
