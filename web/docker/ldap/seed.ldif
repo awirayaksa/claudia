@@ -31,6 +31,6 @@ mail: carol@claudia.test
 userPassword: carol-pass
 
 dn: cn=staff,ou=groups,dc=claudia,dc=test
-objectClass: groupOfNames
+objectClass: groupOfUniqueNames
 cn: staff
-member: uid=alice,ou=people,dc=claudia,dc=test
+uniqueMember: uid=alice,ou=people,dc=claudia,dc=test

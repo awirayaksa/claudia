@@ -6,3 +6,5 @@ coverage
 test-results
 playwright-report
 deploy/airgap/out
+# Test LDAP certificates (docker/ldap/make-certs.sh)
+docker/ldap/certs

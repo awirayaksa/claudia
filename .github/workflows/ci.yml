@@ -172,20 +172,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # The image's own default CA has expired: bring a fresh one
       - name: Start OpenLDAP
-        run: docker compose -f docker/compose.ldap.yml up -d --wait --wait-timeout 180
+        run: |
+          sh docker/ldap/make-certs.sh
+          docker compose -f docker/compose.ldap.yml up -d --wait --wait-timeout 180
 
       # The certificate is issued for ldap.claudia.test, so connect by that name
-      - name: Trust the test CA
-        run: |
-          echo "127.0.0.1 ldap.claudia.test" | sudo tee -a /etc/hosts
-          docker compose -f docker/compose.ldap.yml cp ldap:/container/service/slapd/assets/certs/ca.crt "$RUNNER_TEMP/ldap-ca.crt"
+      - name: Resolve the test host name
+        run: echo "127.0.0.1 ldap.claudia.test" | sudo tee -a /etc/hosts
 
       - name: LDAP integration tests
         run: npx vitest run server/auth/ldap.integration.test.ts
         env:
           TEST_LDAP_HOST: ldap.claudia.test
-          TEST_LDAP_CA_FILE: ${{ runner.temp }}/ldap-ca.crt
+          TEST_LDAP_CA_FILE: docker/ldap/certs/ca.crt
 
       - name: Logs on failure
         if: failure()
