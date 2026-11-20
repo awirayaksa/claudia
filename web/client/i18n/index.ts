@@ -12,6 +12,7 @@
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
 import { setTranslator } from '@/i18n';
+import { brand, rebrandCatalog } from '../brand';
 
 export const defaultNS = 'common';
 
@@ -24,6 +25,8 @@ for (const [file, catalog] of Object.entries(files)) {
   const m = /\/([A-Za-z-]+?)(\.shared)?\.json$/.exec(file);
   if (!m) continue;
   (resources[m[1]] ??= {})[m[2] ? 'shared' : 'common'] = catalog;
+  // A white-label build names itself (brands/README.md)
+  if (brand.id) rebrandCatalog(catalog, brand.name);
 }
 export const LANGUAGES = Object.keys(resources).filter((lng) => resources[lng].common);
 

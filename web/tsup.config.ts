@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { defineConfig } from 'tsup';
+import { loadBrand } from './scripts/brand';
+
+// A white-label build's name for the server (server/brand.ts, brands/README.md)
+const brand = loadBrand();
 
 /**
  * Server bundle. First-party code (server/, shared/, ../src, ../electron/services)
@@ -19,6 +23,7 @@ export default defineConfig({
   shims: true,
   splitting: false,
   tsconfig: 'tsconfig.server.json',
+  env: brand.id ? { BRAND_NAME: brand.name } : {},
   esbuildOptions(options) {
     // Leave every bare import to Node's resolver at runtime
     options.packages = 'external';

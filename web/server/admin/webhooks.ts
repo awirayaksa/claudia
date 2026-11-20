@@ -19,6 +19,7 @@ import { webhooks } from '../db/schema';
 import type { SecretBox } from '../crypto/secrets';
 import type { JobQueue } from '../jobs/queue';
 import { uuidv7 } from '../lib/ids';
+import { BRAND_NAME } from '../brand';
 import { WEBHOOK_HEADERS, type WebhookEvent, type WebhookPayload, type WebhookTestResult, type WebhookView } from '../../shared/admin';
 
 export const WEBHOOK_TIMEOUT_MS = 10_000;
@@ -123,7 +124,7 @@ export class Webhooks {
   async test(id: string): Promise<WebhookTestResult> {
     const [row] = await this.deps.db.select().from(webhooks).where(eq(webhooks.id, id));
     if (!row) throw new Error('No such webhook');
-    const payload = this.payload('webhook.test', { webhookId: id, message: 'This is a test delivery from Claudia.' });
+    const payload = this.payload('webhook.test', { webhookId: id, message: `This is a test delivery from ${BRAND_NAME}.` });
     const started = Date.now();
     try {
       const status = await this.send(row, 'webhook.test', payload.id, JSON.stringify(payload));

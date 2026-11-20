@@ -2,6 +2,7 @@ import { defineConfig, normalizePath, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { brandHtml, brandPublicDir, brandThemeCss, brandThemeFile, clientBrand, loadBrand, type Brand } from './scripts/brand';
 
 const webDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(webDir, '..');
@@ -40,9 +41,38 @@ function resolveSharedFromWeb(): Plugin {
   };
 }
 
+const BRAND_THEME = 'virtual:brand-theme.css';
+const RESOLVED_THEME = '\0brand-theme.css';
+
+/**
+ * White-label branding (brands/README.md): the brand's colours as
+ * `virtual:brand-theme.css`, and its name and colour in index.html.
+ */
+function brandPlugin(brand: Brand): Plugin {
+  const themeFile = brandThemeFile(brand);
+  return {
+    name: 'claudia:brand',
+    resolveId(source) {
+      return source === BRAND_THEME ? RESOLVED_THEME : null;
+    },
+    load(id) {
+      if (id !== RESOLVED_THEME) return null;
+      if (themeFile) this.addWatchFile(themeFile);
+      return brandThemeCss(brand);
+    },
+    transformIndexHtml(html) {
+      return brandHtml(html, brand);
+    },
+  };
+}
+
+const brand = loadBrand();
+
 export default defineConfig({
   root: webDir,
-  plugins: [resolveSharedFromWeb(), react()],
+  publicDir: brandPublicDir(brand),
+  define: { __BRAND__: JSON.stringify(clientBrand(brand)) },
+  plugins: [resolveSharedFromWeb(), brandPlugin(brand), react()],
   resolve: {
     alias: {
       '@': path.join(rootDir, 'src'),

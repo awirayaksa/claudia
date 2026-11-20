@@ -7,6 +7,7 @@ import { badRequest, conflict, forbidden, notFound, unauthorized } from '../../l
 import { currentUser, requireAdmin, requireSignedIn } from '../../auth/rbac';
 import { hashPassword, verifyPassword } from '../../auth/passwords';
 import { revokeAllSessions } from '../../auth/sessions';
+import { BRAND_NAME } from '../../brand';
 import {
   AdminCreateUserRequest,
   AdminUpdateUserRequest,
@@ -57,7 +58,7 @@ export async function meRoutes(app: FastifyInstance, ctx: ServerContext): Promis
   app.post('/mfa/setup', async (req) => {
     const me = currentUser(req);
     if ((await mfaStatus(ctx, me.id)).enabled) throw conflict('Two-factor sign-in is already on.', 'mfa_enabled');
-    return { setup: await startMfaSetup(ctx, me, 'Claudia') };
+    return { setup: await startMfaSetup(ctx, me, BRAND_NAME) };
   });
 
   app.post('/mfa/confirm', async (req) => {

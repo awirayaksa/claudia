@@ -3,6 +3,7 @@ import { useTheme, Theme } from '../../hooks/useTheme';
 import { useAppDispatch, useAppSelector } from '../../store';
 import { setAppearance } from '../../store/slices/settingsSlice';
 import { getPlatform } from '../../platform';
+import { DEFAULT_ACCENT, getBranding } from '../../branding';
 import { useT } from '../../i18n';
 
 export function ThemeSettings() {
@@ -41,7 +42,8 @@ export function ThemeSettings() {
   ];
 
   // Default accent colors based on current theme
-  const defaultAccentColor = effectiveTheme === 'dark' ? '#E8917B' : '#D97757';
+  const accentDefaults = getBranding().accent ?? DEFAULT_ACCENT;
+  const defaultAccentColor = effectiveTheme === 'dark' ? accentDefaults.dark : accentDefaults.light;
 
   // Load icon preview on mount
   useEffect(() => {

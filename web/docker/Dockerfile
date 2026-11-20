@@ -21,6 +21,9 @@ COPY electron/services ./electron/services
 COPY tailwind.config.js ./tailwind.config.js
 COPY web ./web
 
+# White-label brand (web/brands/README.md): --build-arg BRAND=<id>; empty uses
+# web/brands/active if there is one, else Claudia
+ARG BRAND=
 RUN cd web \
   && npm run check:shared-deps \
   && npm run build \

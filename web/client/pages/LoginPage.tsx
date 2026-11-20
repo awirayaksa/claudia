@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/common/Button';
 import { Input } from '@/components/common/Input';
 import type { AuthOptions } from '@shared/auth';
+import { brand } from '../brand';
 import { errorMessage, useLdapLoginMutation, useLoginMutation, useMfaVerifyMutation, useSignupMutation } from '../api/rtk-api';
 
 type Mode = 'login' | 'signup' | 'ldap';
@@ -47,6 +48,7 @@ export function LoginPage({ auth }: { auth: AuthOptions }) {
   return (
     <main className="flex min-h-[100dvh] items-center justify-center bg-background px-4 py-8">
       <div className="w-full max-w-sm">
+        {brand.logo && <img src={brand.logo} alt="" className="mx-auto mb-4 h-24 w-auto object-contain" draggable={false} />}
         <h1 className="mb-1 text-center text-2xl font-semibold text-text-primary">{t('app.name')}</h1>
         <p className="mb-6 text-center text-sm text-text-secondary">{title}</p>
 
