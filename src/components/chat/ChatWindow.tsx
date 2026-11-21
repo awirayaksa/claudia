@@ -8,6 +8,7 @@ import { TextSelectionMenu } from './TextSelectionMenu';
 import { SuggestedPrompts } from './SuggestedPrompts';
 import { TokenUsageIndicator } from './TokenUsageIndicator';
 import { CompactionDivider } from './CompactionDivider';
+import { ToolApprovalCards } from './ToolApprovalCards';
 import { ClaudiaAvatar } from './ClaudiaAvatar';
 import { getContextWindow, getCurrentContextTokens } from '../../utils/modelContextLimits';
 import { useChat } from '../../hooks/useChat';
@@ -778,6 +779,7 @@ export function ChatWindow() {
                 <span className="h-px flex-1 bg-border" />
               </div>
             )}
+            <ToolApprovalCards />
             {/* Streaming message */}
             {isStreaming && (
               <StreamingMessage

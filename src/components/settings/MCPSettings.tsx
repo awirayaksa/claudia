@@ -18,6 +18,7 @@ import { MCPServerConfig } from '../../types/mcp.types';
 import { Button } from '../common/Button';
 import { MCPServerModal } from './MCPServerModal';
 import { BuiltinMCPSection } from './BuiltinMCPSection';
+import { ToolPermissions } from './ToolPermissions';
 import { getPlatform } from '../../platform';
 
 export function MCPSettings() {
@@ -420,6 +421,11 @@ export function MCPSettings() {
                           {getServerInfo(server)}
                         </div>
                       )}
+
+                      {/* Per-tool permissions (while it runs) */}
+                      <div style={{ marginBottom: 10 }}>
+                        <ToolPermissions serverId={server.id} />
+                      </div>
 
                       {/* Action row */}
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>

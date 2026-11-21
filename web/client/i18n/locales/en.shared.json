@@ -74,9 +74,17 @@
   },
   "mcp": {
     "hideServers": "Hide MCP servers",
+    "policy": {
+      "allow": "Always allow",
+      "ask": "Ask first",
+      "block": "Blocked"
+    },
+    "policyFor": "Permission for {{tool}}",
     "showServers": "Show MCP servers ({{count}})",
     "start": "Start {{name}}",
-    "stop": "Stop {{name}}"
+    "stop": "Stop {{name}}",
+    "toolPermissions": "Tool permissions",
+    "toolsAsking": "{{count}} of {{total}} ask first"
   },
   "mention": {
     "builtin": "built-in",
@@ -289,9 +297,13 @@
     "title": "Appearance"
   },
   "tool": {
+    "allowAlways": "Always allow",
+    "allowOnce": "Allow once",
+    "approvalTitle": "Allow this tool to run?",
     "approved": "Approved",
     "arguments": "Arguments:",
     "awaitingApproval": "Waiting for your approval",
+    "deny": "Deny",
     "error": "Error",
     "errorLabel": "Error:",
     "expired": "Not approved in time",
