@@ -27,6 +27,7 @@ services:
       LDAP_TLS_CRT_FILENAME: ldap.crt
       LDAP_TLS_KEY_FILENAME: ldap.key
       LDAP_TLS_CA_CRT_FILENAME: ca.crt
+      LDAP_TLS_DH_PARAM_FILENAME: dhparam.pem
     volumes:
       - ./ldap/seed.ldif:/container/service/slapd/assets/config/bootstrap/ldif/custom/50-seed.ldif:ro
       # --copy-service copies these to a writable place before starting
@@ -34,8 +35,10 @@ services:
     ports:
       - '389:389'
       - '636:636'
+    # Over ldaps://: the first-start setup runs a plain-LDAP server that already
+    # has the seed but not TLS; only the final server listens on 636
     healthcheck:
-      test: ['CMD', 'ldapsearch', '-x', '-H', 'ldap://localhost', '-b', 'ou=people,dc=claudia,dc=test', '-D', 'cn=readonly,dc=claudia,dc=test', '-w', 'readonly-secret', '(uid=alice)']
+      test: ['CMD-SHELL', "LDAPTLS_REQCERT=never ldapsearch -x -H ldaps://localhost -b ou=people,dc=claudia,dc=test -D cn=readonly,dc=claudia,dc=test -w readonly-secret '(uid=alice)'"]
       interval: 3s
       timeout: 5s
       retries: 40

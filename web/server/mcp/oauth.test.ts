@@ -86,7 +86,9 @@ describe('MCP OAuth', () => {
     expect(ready.tools.map((t: any) => t.name)).toEqual(['echo']);
     // Tokens are stored encrypted
     const [row] = await fx.db.db.select().from(mcpOAuth).where(eq(mcpOAuth.serverId, id));
-    expect(row.cipher).not.toContain('at-');
+    // (whole tokens: the ciphertext is base64url, so a short prefix like "at-" can turn up by chance)
+    expect(server.bearers.length).toBeGreaterThan(0);
+    for (const token of server.bearers) expect(row.cipher).not.toContain(token);
     expect(row.pendingState).toBeNull();
 
     // Used in a chat with the bearer token

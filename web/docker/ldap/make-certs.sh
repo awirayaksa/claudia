@@ -19,6 +19,10 @@ printf 'subjectAltName=DNS:ldap.claudia.test,DNS:localhost\nextendedKeyUsage=ser
 openssl x509 -req -in ldap.csr -CA ca.crt -CAkey ca.key -CAcreateserial -days 30 \
   -extfile ldap.ext -out ldap.crt 2>/dev/null
 rm -f ldap.csr ldap.ext ca.srl ca.key
+# DH parameters: the image would otherwise generate them at first start, which
+# takes a while. The standard RFC 7919 group is instant; slapd (GnuTLS) reads
+# its PKCS#3 "DH PARAMETERS" form, not the X9.42 one -dsaparam writes.
+openssl genpkey -genparam -algorithm DH -pkeyopt group:ffdhe2048 -out dhparam.pem 2>/dev/null
 # slapd runs as its own user inside the container; a test-only key
-chmod 644 ldap.key
-echo "Wrote $dir/{ca.crt,ldap.crt,ldap.key}"
+chmod 644 ldap.key dhparam.pem
+echo "Wrote $dir/{ca.crt,ldap.crt,ldap.key,dhparam.pem}"
