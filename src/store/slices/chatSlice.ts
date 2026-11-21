@@ -1,9 +1,8 @@
-import { createSlice, createAsyncThunk, PayloadAction } from '@reduxjs/toolkit';
+import { createSlice, createAsyncThunk, PayloadAction, type UnknownAction } from '@reduxjs/toolkit';
 import { Message, Attachment, ToolCall, ToolResult } from '../../types/message.types';
 import { MessageUsage } from '../../types/statistics.types';
-import { ChatCompletionRequest, RequestOptions } from '../../types/api.types';
+import { ChatCompletionRequest, ChatMessage, RequestOptions } from '../../types/api.types';
 import {
-  buildAPIMessage,
   buildMessageContent,
   remoteFileIds,
   toolContentForModel,
@@ -16,6 +15,7 @@ import { v4 as uuidv4 } from 'uuid';
 import type { RootState } from '../index';
 import { ReasoningEffort, resolveEffort, coerceEffort } from '../../utils/effort-utils';
 import { withVisualExplanations } from '../../utils/visual-explanations';
+import { prepareHistory } from '../../services/chat/history-compaction';
 
 interface ChatState {
   messages: Message[];
@@ -33,6 +33,8 @@ interface ChatState {
   toolCallIteration: number;
   // Edit state
   editingMessage: { id: string; content: string; attachments?: Attachment[] } | null;
+  /** Earlier messages are being summarized to fit the context window. */
+  isCompacting: boolean;
 }
 
 const initialState: ChatState = {
@@ -49,6 +51,7 @@ const initialState: ChatState = {
   isExecutingTools: false,
   toolCallIteration: 0,
   editingMessage: null,
+  isCompacting: false,
 };
 
 /**
@@ -68,7 +71,7 @@ function openWebUIFiles(
 
 /**
  * Effort that applies to an outgoing request: an explicit per-message override,
- * then the session override, then the Preferences default — mapped onto a tier
+ * then the session override, then the Preferences default â€” mapped onto a tier
  * the target model actually accepts.
  */
 function effortForRequest(
@@ -85,12 +88,57 @@ function conversationOptions(state: RootState): RequestOptions {
   return { sessionId: state.conversation.currentConversationId ?? undefined };
 }
 
+/**
+ * The messages to send: system prompts, the chat so far fitted to the model's
+ * context window (the oldest exchanges summarized when it nears the limit),
+ * and the message being sent. A new summary is stored on the last message it
+ * covers, so the conversation's autosave keeps it for later sends.
+ */
+async function requestMessages(
+  state: RootState,
+  dispatch: (action: UnknownAction) => unknown,
+  provider: IAPIProvider,
+  model: string,
+  system: ChatMessage[],
+  current: ChatMessage[],
+  signal?: AbortSignal
+): Promise<ChatMessage[]> {
+  const prefs = state.settings.preferences;
+  try {
+    const prepared = await prepareHistory({
+      history: state.chat.messages,
+      system,
+      current,
+      model,
+      modelContextLengths: state.settings.api.modelContextLengths,
+      compaction: { enabled: prefs.contextCompaction !== false, threshold: prefs.compactionThreshold },
+      provider,
+      signal,
+      sessionId: conversationOptions(state).sessionId,
+      onSummarizing: () => dispatch(setCompacting(true)),
+    });
+    if (prepared.compaction) dispatch(setCompaction(prepared.compaction));
+    return prepared.messages;
+  } finally {
+    dispatch(setCompacting(false));
+  }
+}
+
+/** The global system prompt and an invoked skill: sent with the request, never stored in the chat. */
+function systemMessages(state: RootState, skillPrompt?: string): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  const systemPrompt = withVisualExplanations(state.settings.preferences.systemPrompt, state.settings.preferences.visualExplanations);
+  if (systemPrompt) out.push({ role: 'system', content: systemPrompt });
+  if (skillPrompt) out.push({ role: 'system', content: skillPrompt });
+  return out;
+}
+
 // Async thunk for sending a message
 export const sendMessage = createAsyncThunk(
   'chat/sendMessage',
   async (
     { content, model, attachments, effort }: { content: string; model: string; attachments?: Attachment[]; effort?: ReasoningEffort | null },
-    { getState, rejectWithValue }
+    { getState, dispatch, rejectWithValue }
   ) => {
     try {
       const state = getState() as RootState;
@@ -98,20 +146,10 @@ export const sendMessage = createAsyncThunk(
       const temperature = state.settings.preferences.temperature;
       const reasoningEffort = effortForRequest(state, model, effort);
 
-      // Get all messages for context (include attachments for prior messages)
-      const messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
-
-      // Add the new user message with attachments
-      messages.push({
-        role: 'user' as const,
-        content: buildMessageContent(content, attachments),
-      });
-
-      // Prepend global system prompt if set (only to API payload, not stored in chat state)
-      const systemPrompt = withVisualExplanations(state.settings.preferences.systemPrompt, state.settings.preferences.visualExplanations);
-      if (systemPrompt) {
-        messages.unshift({ role: 'system' as const, content: systemPrompt });
-      }
+      // System prompts, the history that fits, then the new message
+      const messages = await requestMessages(state, dispatch, provider, model, systemMessages(state), [
+        { role: 'user', content: buildMessageContent(content, attachments) },
+      ]);
 
       // Call the API
       const response = await provider.chatCompletion({
@@ -291,6 +329,14 @@ const chatSlice = createSlice({
     ) => {
       state.editingMessage = action.payload;
     },
+    setCompacting: (state, action: PayloadAction<boolean>) => {
+      state.isCompacting = action.payload;
+    },
+    /** The messages up to and including `messageId` were summarized. */
+    setCompaction: (state, action: PayloadAction<{ messageId: string; summary: string; turns: number }>) => {
+      const message = state.messages.find((m) => m.id === action.payload.messageId);
+      if (message) message.compaction = { summary: action.payload.summary, turns: action.payload.turns };
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -389,6 +435,8 @@ export const {
   updateMessageToolResults,
   deleteMessagesAfter,
   setEditingMessage,
+  setCompacting,
+  setCompaction,
 } = chatSlice.actions;
 
 // Thunk for sending streaming message
@@ -417,24 +465,26 @@ export const sendStreamingMessage = createAsyncThunk(
       effort: reasoningEffort,
     }));
 
-    // Get all messages for context (include attachments for prior messages)
-    const messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
-
-    // Add the new user message with attachments
-    messages.push({
-      role: 'user' as const,
-      content: buildMessageContent(content, attachments),
-    });
-
-    // Prepend global system prompt if set (only to API payload, not stored in chat state)
-    const systemPrompt = withVisualExplanations(state.settings.preferences.systemPrompt, state.settings.preferences.visualExplanations);
-    if (systemPrompt) {
-      messages.unshift({ role: 'system' as const, content: systemPrompt });
-    }
-
-    // Create abort controller
+    // Created first, so Stop also reaches a summary of earlier messages
     const abortController = new AbortController();
     dispatch(setAbortController(abortController as any));
+
+    // System prompts, the history that fits, then the new message
+    let messages: ChatMessage[];
+    try {
+      messages = await requestMessages(state, dispatch, provider, model, systemMessages(state), [
+        { role: 'user', content: buildMessageContent(content, attachments) },
+      ], abortController.signal);
+    } catch (error) {
+      dispatch(completeStreaming());
+      if (abortController.signal.aborted) return;
+      throw error;
+    }
+    // Stopped while the summary was being written: don't send
+    if (abortController.signal.aborted) {
+      dispatch(completeStreaming());
+      return;
+    }
 
     return new Promise<void>((resolve, reject) => {
       provider.streamChatCompletion(
@@ -503,42 +553,6 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
     // Clear tool state
     dispatch(clearToolCalls());
 
-    // Get all messages for context (include attachments for prior messages)
-    const messages = state.chat.messages.map((msg: Message) => buildAPIMessage(msg));
-
-    // Add the new user message with attachments
-    messages.push({
-      role: 'user' as const,
-      content: buildMessageContent(content, attachments),
-      tool_calls: undefined,
-      tool_call_id: undefined,
-      name: undefined,
-    });
-
-    // Prepend global system prompt if set (only to API payload, not stored in chat state)
-    const systemPromptText = withVisualExplanations(state.settings.preferences.systemPrompt, state.settings.preferences.visualExplanations);
-    if (systemPromptText) {
-      messages.unshift({
-        role: 'system' as const,
-        content: systemPromptText,
-        tool_calls: undefined,
-        tool_call_id: undefined,
-        name: undefined,
-      });
-    }
-
-    // Inject skill prompt if a skill was invoked (inserted after global system prompt)
-    if (skillPrompt) {
-      const insertIdx = systemPromptText ? 1 : 0;
-      messages.splice(insertIdx, 0, {
-        role: 'system' as const,
-        content: skillPrompt,
-        tool_calls: undefined,
-        tool_call_id: undefined,
-        name: undefined,
-      });
-    }
-
     // Get available MCP tools, named by alias so same-named tools on two servers both work
     const mcpState = state.mcp;
     const openAITools = ToolIntegrationService.getOpenAITools(mcpState);
@@ -554,9 +568,22 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
         .map(([id, state]) => ({ id, name: state.config.name, toolCount: state.tools.length })),
     });
 
-    // Create abort controller
+    // Create abort controller (Stop also reaches a summary of earlier messages)
     const abortController = new AbortController();
     dispatch(setAbortController(abortController as any));
+
+    // System prompts and the invoked skill, the history that fits, then the new message
+    let messages: ChatMessage[];
+    try {
+      messages = await requestMessages(state, dispatch, provider, model, systemMessages(state, skillPrompt), [
+        { role: 'user', content: buildMessageContent(content, attachments) },
+      ], abortController.signal);
+    } catch (error) {
+      dispatch(completeStreaming());
+      dispatch(clearToolCalls());
+      if (abortController.signal.aborted) return;
+      throw error;
+    }
 
     // Tool calling loop
     let iteration = 0;

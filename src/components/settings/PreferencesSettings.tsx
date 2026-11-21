@@ -9,7 +9,7 @@ import { useT } from '../../i18n';
 export function PreferencesSettings() {
   const t = useT();
   const dispatch = useAppDispatch();
-  const { temperature, showReasoning, showStatistics, visualExplanations, pasteLongTextAsFile, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
+  const { temperature, showReasoning, showStatistics, visualExplanations, pasteLongTextAsFile, contextCompaction, compactionThreshold, systemPrompt, systemPromptFileName, updateCheckUrl, reasoningEffort } = useAppSelector((state) => state.settings.preferences);
 
   const platform = getPlatform();
 
@@ -20,6 +20,8 @@ export function PreferencesSettings() {
   const handleShowStatisticsChange = (value: boolean) => dispatch(setPreferences({ showStatistics: value }));
   const handleVisualExplanationsChange = (value: boolean) => dispatch(setPreferences({ visualExplanations: value }));
   const handlePasteLongChange = (value: boolean) => dispatch(setPreferences({ pasteLongTextAsFile: value }));
+  const handleCompactionChange = (value: boolean) => dispatch(setPreferences({ contextCompaction: value }));
+  const handleCompactionThresholdChange = (value: number) => dispatch(setPreferences({ compactionThreshold: value }));
   const handleSystemPromptChange = (value: string) => dispatch(setPreferences({ systemPrompt: value, systemPromptFileName: '' }));
 
   const handleSelectFile = async () => {
@@ -197,6 +199,49 @@ export function PreferencesSettings() {
           </div>
         </label>
       </div>
+
+      {/* Desktop only: on the web an admin sets this for everyone */}
+      {platform.capabilities.kind === 'electron' && (
+        <div>
+          <h3 className="mb-4 text-lg font-semibold text-text-primary">{t('preferences.longChats', 'Long chats')}</h3>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={contextCompaction !== false}
+              onChange={(e) => handleCompactionChange(e.target.checked)}
+              className="h-4 w-4 rounded border-border bg-surface text-accent focus:ring-2 focus:ring-accent focus:ring-offset-0"
+              data-testid="context-compaction"
+            />
+            <div className="flex-1">
+              <div className="text-sm font-medium text-text-primary">{t('preferences.compaction', 'Summarize earlier messages')}</div>
+              <div className="text-xs text-text-secondary">
+                {t(
+                  'preferences.compactionHelp',
+                  "Near the model's context limit, the oldest exchanges are summarized by the chat's model and the summary is sent in their place. The last 4 exchanges are always sent word for word. Off: the oldest exchanges are left out instead."
+                )}
+              </div>
+            </div>
+          </label>
+          {contextCompaction !== false && (
+            <div className="mt-4">
+              <label className="mb-1.5 block text-sm font-medium text-text-primary">
+                {t('preferences.compactionThreshold', 'Start summarizing at')}
+              </label>
+              <select
+                value={String(compactionThreshold ?? 0.8)}
+                onChange={(e) => handleCompactionThresholdChange(Number(e.target.value))}
+                className="w-full rounded border border-border bg-background px-3 py-2 text-sm text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent"
+              >
+                {[0.6, 0.7, 0.8, 0.9].map((v) => (
+                  <option key={v} value={String(v)}>
+                    {t('preferences.compactionShare', '{{percent}}% of the context window', { percent: Math.round(v * 100) })}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       {platform.capabilities.autoUpdate && (
       <div>

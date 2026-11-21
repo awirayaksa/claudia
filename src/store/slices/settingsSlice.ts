@@ -45,6 +45,10 @@ export interface SettingsState {
     reasoningEffort: ReasoningEffort | null;
     /** Long pastes become a "Pasted text" attachment (on unless turned off). */
     pasteLongTextAsFile?: boolean;
+    /** Near the context limit, summarize the oldest exchanges instead of failing (on unless turned off). */
+    contextCompaction?: boolean;
+    /** Share of the context that starts a summary (default 0.8). */
+    compactionThreshold?: number;
   };
   profiles: ProfileMeta[];
   currentProfileId: string | null;
@@ -77,6 +81,8 @@ const initialState: SettingsState = {
     updateCheckUrl: '',
     reasoningEffort: null,
     pasteLongTextAsFile: true,
+    contextCompaction: true,
+    compactionThreshold: 0.8,
   },
   profiles: [],
   currentProfileId: null,
