@@ -12,6 +12,7 @@ import {
   resolveToolAlias,
 } from './tool-format';
 import { getPlatform } from '../../platform';
+import { toolPolicy, type ToolPolicy } from './tool-policy';
 
 /** Where a model-facing tool name is executed. */
 export interface ToolTarget {
@@ -47,8 +48,20 @@ export class ToolIntegrationService {
     return buildToolAliases(
       Object.entries(mcpState.serverStates)
         .filter(([, s]) => s.status === 'ready' && s.tools?.length)
-        .map(([id, s]) => ({ id, name: s.config?.name || id, tools: s.tools }))
+        .map(([id, s]) => {
+          // Blocked tools are never offered to the model
+          const config = mcpState.servers?.[id] ?? s.config;
+          return { id, name: s.config?.name || id, tools: s.tools.filter((t) => toolPolicy(config, t) !== 'block') };
+        })
+        .filter((s) => s.tools.length)
     );
+  }
+
+  /** Whether a call to this tool runs, asks first, or is refused (the saved config wins over the runtime copy). */
+  static policyFor(target: ToolTarget, mcpState: RootState['mcp']): ToolPolicy {
+    const config = mcpState.servers?.[target.serverId] ?? mcpState.serverStates[target.serverId]?.config;
+    const tool = mcpState.serverStates[target.serverId]?.tools?.find((t) => t.name === target.tool) ?? { name: target.tool };
+    return toolPolicy(config, tool);
   }
 
   /** OpenAI function definitions for every available tool, named by alias. */

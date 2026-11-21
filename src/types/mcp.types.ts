@@ -7,6 +7,9 @@
 
 export type MCPTransportType = 'stdio' | 'streamable-http' | 'sse' | 'builtin';
 
+/** Desktop: run a tool without asking, ask each time, or never offer it. */
+export type ToolPolicy = 'allow' | 'ask' | 'block';
+
 export interface MCPServerConfig {
   id: string; // UUID
   name: string; // Display name
@@ -20,6 +23,8 @@ export interface MCPServerConfig {
   builtin?: boolean; // true for built-in servers
   builtinId?: string; // e.g., 'filesystem', 'office'
   builtinConfig?: Record<string, unknown>; // server-specific config (e.g., allowedDirectories)
+  /** Desktop: per-tool policy by tool name; tools not listed use the default (see tool-policy.ts). */
+  toolPolicies?: Record<string, ToolPolicy>;
   metadata?: {
     description?: string;
     author?: string;

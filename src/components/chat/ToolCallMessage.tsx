@@ -95,14 +95,17 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
           <span className="font-mono text-sm font-medium text-text-primary">
             {toolCall.function.name}
           </span>
-          <span className={`flex items-center gap-1 text-xs ${statusConfig.color}`}>
-            {typeof statusConfig.icon === 'string' ? (
-              <span>{statusConfig.icon}</span>
-            ) : (
-              statusConfig.icon
-            )}
-            <span>{statusConfig.label}</span>
-          </span>
+          {/* (not running yet while it waits for approval) */}
+          {!(status === 'pending' && toolCall.approval === 'pending') && (
+            <span className={`flex items-center gap-1 text-xs ${statusConfig.color}`}>
+              {typeof statusConfig.icon === 'string' ? (
+                <span>{statusConfig.icon}</span>
+              ) : (
+                statusConfig.icon
+              )}
+              <span>{statusConfig.label}</span>
+            </span>
+          )}
           {toolCall.approval && (
             <span className="rounded-full border border-border px-1.5 text-xs text-text-secondary" data-testid="tool-approval-state">
               {approvalLabel[toolCall.approval]}
