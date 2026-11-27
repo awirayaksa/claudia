@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { createAzureDevOpsServer } from './azure-devops.server';
+import { createBrowserServer } from './browser.server';
 import { createDiagramServer } from './diagram.server';
 import { createFetchServer } from './fetch.server';
 import { createFilesystemServer } from './filesystem.server';
@@ -70,6 +71,14 @@ const BUILTIN_SERVERS: BuiltinServerDefinition[] = [
     description: 'Find, read, create and update work items on Azure DevOps Server / TFS: tasks, bugs, user stories, comments and links.',
     createServer: (config) => createAzureDevOpsServer(config),
     // Needs the web server's per-user connections
+    platforms: ['web'],
+  },
+  {
+    id: 'builtin-browser-001',
+    name: 'Web Browser',
+    description: 'Open web pages, read them, click, type and take screenshots, in a browser on the server.',
+    createServer: (config) => createBrowserServer(config),
+    // The browser runs on the web server
     platforms: ['web'],
   },
 ];

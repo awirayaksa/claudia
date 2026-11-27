@@ -69,6 +69,23 @@ const EnvSchema = z.object({
    * tcp://host:2375 or https://host:2376. Unset: code runs in the browser only.
    */
   CLAUDIA_CODE_DOCKER: z.string().regex(/^(unix|tcp|https?):\/\//, 'CLAUDIA_CODE_DOCKER must start with unix://, tcp://, http:// or https://').optional(),
+  /**
+   * The Web browser built-in: a Playwright browser server to use
+   * (ws://browser:3000/<path>, see docker/compose.browser.yml). Unset:
+   * Chromium starts inside this container, if it is installed.
+   */
+  CLAUDIA_BROWSER_WS: z.string().regex(/^wss?:\/\//, 'CLAUDIA_BROWSER_WS must start with ws:// or wss://').optional(),
+  /**
+   * Where the browser's egress proxy listens (host:port). Default
+   * 127.0.0.1 on a free port; a remote browser needs it on a network it
+   * shares with this container, e.g. 0.0.0.0:3128.
+   */
+  CLAUDIA_BROWSER_EGRESS_LISTEN: z
+    .string()
+    .regex(/^(\[[^\]]+\]|[^:]+):\d{1,5}$/, 'CLAUDIA_BROWSER_EGRESS_LISTEN must be host:port')
+    .optional(),
+  /** The address the remote browser reaches the egress proxy at, e.g. http://app:3128. */
+  CLAUDIA_BROWSER_EGRESS_URL: z.url().optional(),
   /** How long a chat stays quiet before it is read for memories to learn. */
   CLAUDIA_MEMORY_IDLE_SECONDS: z.coerce.number().int().min(0).max(86_400).default(120),
   CLAUDIA_ADMIN_EMAIL: z.email().optional(),
@@ -137,6 +154,11 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
   const cfg = parsed.data;
   if (!!cfg.S3_ACCESS_KEY_ID !== !!cfg.S3_SECRET_ACCESS_KEY) {
     throw new ConfigError(['S3_ACCESS_KEY_ID and S3_SECRET_ACCESS_KEY go together: set both or neither.']);
+  }
+  if (cfg.CLAUDIA_BROWSER_WS && !(cfg.CLAUDIA_BROWSER_EGRESS_LISTEN && cfg.CLAUDIA_BROWSER_EGRESS_URL)) {
+    throw new ConfigError([
+      'CLAUDIA_BROWSER_WS needs CLAUDIA_BROWSER_EGRESS_LISTEN and CLAUDIA_BROWSER_EGRESS_URL: the remote browser reaches the web only through this server.',
+    ]);
   }
   return {
     ...cfg,

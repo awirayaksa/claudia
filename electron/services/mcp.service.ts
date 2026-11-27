@@ -444,7 +444,8 @@ export class MCPClientWrapper extends EventEmitter {
     return this._tools;
   }
 
-  async callTool(name: string, args: Record<string, unknown>, _traceId?: string): Promise<MCPToolResult> {
+  /** `meta` goes in the request's `_meta` (the web passes the chat's session key to built-ins). */
+  async callTool(name: string, args: Record<string, unknown>, _traceId?: string, meta?: Record<string, unknown>): Promise<MCPToolResult> {
     if (this._status !== 'ready' || !this.client) {
       throw new Error(`Client is not ready (status: ${this._status})`);
     }
@@ -454,7 +455,7 @@ export class MCPClientWrapper extends EventEmitter {
     try {
       // The SDK types a result as either content or a legacy toolResult; servers send content
       const result = (await this.client.callTool(
-        { name, arguments: args },
+        { name, arguments: args, ...(meta ? { _meta: meta } : {}) },
         undefined,
         { timeout: 120000 }
       )) as { content?: Array<{ type: string } & Record<string, unknown>>; isError?: boolean };
@@ -650,13 +651,14 @@ export class MCPClientManager extends EventEmitter {
     serverId: string,
     toolName: string,
     args: Record<string, unknown>,
-    traceId?: string
+    traceId?: string,
+    meta?: Record<string, unknown>
   ): Promise<MCPToolResult> {
     const client = this.clients.get(serverId);
     if (!client) {
       throw new Error(`Server not found: ${serverId}`);
     }
-    return await client.callTool(toolName, args, traceId);
+    return await client.callTool(toolName, args, traceId, meta);
   }
 
   getServerTools(serverId: string): MCPTool[] {

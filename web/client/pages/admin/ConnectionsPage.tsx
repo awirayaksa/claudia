@@ -153,6 +153,7 @@ function ConnectionForm({ scope, connection, onClose }: { scope: Scope; connecti
   const [removeKey, setRemoveKey] = useState(false);
   const [modelFilter, setModelFilter] = useState((connection?.modelFilter ?? []).join(', '));
   const [toolsFirstTurnOnly, setToolsFirstTurnOnly] = useState(connection?.quirks.toolsFirstTurnOnly ?? false);
+  const [noVision, setNoVision] = useState(connection?.quirks.noVision ?? false);
   const [apiCompatibility, setApiCompatibility] = useState(connection?.quirks.apiCompatibility ?? 'openai');
   const [insecureTls, setInsecureTls] = useState(connection?.quirks.insecureTls ?? false);
   // Only admins' connections may skip certificate checks; OpenRouter is a fixed public endpoint
@@ -179,6 +180,7 @@ function ConnectionForm({ scope, connection, onClose }: { scope: Scope; connecti
       modelFilter: filter.length ? filter : null,
       quirks: {
         toolsFirstTurnOnly,
+        ...(noVision ? { noVision } : {}),
         ...(type === 'opencode-go' ? { apiCompatibility } : {}),
         ...(canSkipTls && insecureTls ? { insecureTls } : {}),
       },
@@ -280,6 +282,10 @@ function ConnectionForm({ scope, connection, onClose }: { scope: Scope; connecti
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={toolsFirstTurnOnly} onChange={(e) => setToolsFirstTurnOnly(e.target.checked)} />
           {t('admin.toolsFirstTurnOnly')}
+        </label>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={noVision} onChange={(e) => setNoVision(e.target.checked)} data-testid="connection-no-vision" />
+          {t('admin.noVision')}
         </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />

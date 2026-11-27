@@ -158,6 +158,7 @@ function userQuirks(q: ConnectionInput['quirks']): ConnectionInput['quirks'] {
   return {
     ...(q.apiCompatibility ? { apiCompatibility: q.apiCompatibility } : {}),
     ...(q.toolsFirstTurnOnly !== undefined ? { toolsFirstTurnOnly: q.toolsFirstTurnOnly } : {}),
+    ...(q.noVision !== undefined ? { noVision: q.noVision } : {}),
   };
 }
 

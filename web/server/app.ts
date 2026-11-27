@@ -28,6 +28,8 @@ import { adminScimRoutes, scimRoutes } from './auth/scim';
 import { CloudFiles, type CloudEndpoints } from './cloud/cloud-files';
 import { adminCloudRoutes, cloudRoutes } from './cloud/routes';
 import { AzdoService } from './azdo/azdo-service';
+import { BrowserService, type BrowserServiceOptions } from './browser/browser-service';
+import { parseAuthority } from './browser/egress-proxy';
 import { azdoRoutes } from './azdo/routes';
 import { noteRoutes } from './modules/notes/routes';
 import { channelRoutes } from './modules/channels/routes';
@@ -72,6 +74,7 @@ import { FolderService } from './modules/chats/folders';
 import { GitHubSources } from './rag/github-source';
 import { CodeSandbox } from './code/sandbox';
 import { adminCodeRoutes } from './code/routes';
+import { adminBrowserRoutes } from './browser/routes';
 import { styleRoutes } from './modules/styles/routes';
 import { adminGroupRoutes, directoryRoutes } from './modules/groups/routes';
 import { openaiRoutes } from './modules/openai/routes';
@@ -116,6 +119,8 @@ export interface AppDeps {
   youtubeOrigin?: string;
   /** Test hook: Google / Microsoft endpoints for cloud files. */
   cloudEndpoints?: Partial<CloudEndpoints>;
+  /** Test hook: browser options (fake DNS, extra egress ports). */
+  browser?: Partial<Pick<BrowserServiceOptions, 'lookup' | 'egressPorts'>>;
 }
 
 declare module 'fastify' {
@@ -238,6 +243,16 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     log: app.log,
   });
   const azdo = new AzdoService({ db: deps.db.db, secrets, settings, netPolicy });
+  const browser = new BrowserService({
+    settings: () => settings.get('browser'),
+    peekSettings: () => settings.peek('browser'),
+    netPolicy,
+    wsEndpoint: deps.config.CLAUDIA_BROWSER_WS ?? null,
+    egressListen: deps.config.CLAUDIA_BROWSER_EGRESS_LISTEN ? parseAuthority(deps.config.CLAUDIA_BROWSER_EGRESS_LISTEN) ?? undefined : undefined,
+    egressUrl: deps.config.CLAUDIA_BROWSER_EGRESS_URL ?? null,
+    log: app.log,
+    ...deps.browser,
+  });
   const mcpOAuth = new McpOAuth({ db: deps.db.db, secrets, log: app.log });
   const mcp = new McpPools({
     db: deps.db.db,
@@ -250,6 +265,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     netPolicy,
     access,
     azdo,
+    browser,
     oauth: mcpOAuth,
   });
   const ctx: ServerContext = {
@@ -315,6 +331,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     sso: new OidcService({ db: deps.db.db, secrets, log: app.log }),
     cloud: new CloudFiles({ db: deps.db.db, secrets, log: app.log, endpoints: deps.cloudEndpoints }),
     azdo,
+    browser,
     schedules: null as unknown as ScheduleRunner,
     log: app.log,
   };
@@ -342,6 +359,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
     ctx.schedules.stop();
     staleReplies.stop();
     await mcp.close();
+    await browser.close();
     await extract.close();
     await cluster.close();
   });
@@ -446,6 +464,7 @@ export async function buildApp(deps: AppDeps): Promise<FastifyInstance> {
       await api.register((a) => toolRoutes(a, ctx), { prefix: '/tools' });
       await api.register((a) => adminMcpRoutes(a, ctx), { prefix: '/admin/mcp-servers' });
       await api.register((a) => adminCodeRoutes(a, ctx), { prefix: '/admin/code' });
+      await api.register((a) => adminBrowserRoutes(a, ctx), { prefix: '/admin/browser' });
       await api.register((a) => styleRoutes(a, ctx), { prefix: '/styles' });
       await api.register((a) => adminUserRoutes(a, ctx), { prefix: '/admin/users' });
       await api.register((a) => adminConnectionRoutes(a, ctx), { prefix: '/admin/connections' });

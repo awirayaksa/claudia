@@ -15,7 +15,10 @@ import { uuidv7 } from '../lib/ids';
 import type { AuthUser } from '../auth/sessions';
 import type { AppSettings } from '../modules/settings/app-settings';
 import { ChatRepo, pathTo, toNode, type ChatRow } from '../modules/chats/repo';
-import { toOpenAIMessages, type ResolvedFile, type ToOpenAIOptions } from '../../../src/services/chat/message-builder';
+import { TOOL_RESULT_MAX_CHARS, toOpenAIMessages, type ResolvedFile, type ToOpenAIOptions } from '../../../src/services/chat/message-builder';
+import { elideStaleResults, hasToolImages, hoistToolImages, limitToolImages, stripToolImages } from '../../../src/services/chat/tool-images';
+import { sniffImage } from '../modules/files/service';
+import { BROWSER_BUILTIN_ID } from '../mcp/mcp-pool';
 import {
   compactionMessage,
   estimateMessagesTokens,
@@ -27,7 +30,7 @@ import { coerceEffort, resolveEffort, type ReasoningEffort } from '../../../src/
 import { VISUAL_EXPLANATIONS_PROMPT } from '../../../src/utils/visual-explanations';
 import type { ChatCompletionRequest, ChatMessage, RequestOptions } from '../../../src/types/api.types';
 import type { ToolCall } from '../../../src/types/message.types';
-import type { MessageNode, MessagePart, PartOf } from '../../../src/types/turn.types';
+import type { MessageNode, MessagePart, PartOf, ToolImage } from '../../../src/types/turn.types';
 import type { MessageUsage } from '../../../src/types/statistics.types';
 import type { StreamEndReason } from '../../../src/services/api/sse-parser';
 import type { CompletionRequest, CompletionResponse } from '../../shared/chats';
@@ -90,6 +93,18 @@ const DECLINED_MESSAGE: Record<Exclude<ApprovalDecision, 'approved'>, string> = 
   rejected: "The user declined this action, so it wasn't done. Don't try it again unless they ask.",
   expired: "The user didn't approve this action in time, so it wasn't done. Ask them before trying again.",
 };
+
+/** Tool pictures (screenshots) the model gets at most, the newest; older ones become a note. */
+const TOOL_IMAGES_SENT = 2;
+/** Pictures kept per tool call, and their size. */
+const MAX_TOOL_IMAGES = 4;
+const MAX_TOOL_IMAGE_BYTES = 5 * 1024 * 1024;
+/** A browser result is a page snapshot: it gets more room than other tools' results. */
+const BROWSER_RESULT_CHARS = 16_000;
+/** A provider refusing images says so in its error. */
+const IMAGES_REFUSED = /image|vision|multimodal|image_url/i;
+/** What a model that can't read images is told instead of a screenshot. */
+const NO_VISION_NOTE = "[A screenshot was shown to the user. This model can't view images; use browser_snapshot to read the page.]";
 
 /** Streaming replies are written to the database at most this often. */
 const PERSIST_INTERVAL_MS = 500;
@@ -560,6 +575,8 @@ export class ChatOrchestrator {
             memory: memoryTools ? { folderIds, sensitive: userSettings.memory?.sensitive === true } : null,
             toolset,
             fileOpts,
+            // The browser keeps one session per chat; replies side by side don't share one
+            sessionKey: plan.targets.length > 1 ? `${chat.id}:${i}` : chat.id,
             reportTrim: i === 0,
             citations: sources.map((src) => ({ type: 'citation' as const, index: src.index, source: src.source })),
           })
@@ -610,6 +627,7 @@ export class ChatOrchestrator {
       memory: { folderIds: string[]; sensitive: boolean } | null;
       toolset: RunToolset;
       fileOpts: ToOpenAIOptions;
+      sessionKey: string;
       reportTrim: boolean;
       citations: Array<PartOf<'citation'>>;
     }
@@ -701,9 +719,23 @@ export class ChatOrchestrator {
     // What the task folder held before (to list what the task changed)
     const taskBefore = plan.agent ? await snapshotWorkspace(this.taskFolderAbs(plan.agent)).catch(() => null) : null;
 
+    // Pictures tools return during this reply, as data URLs (stored files too)
+    const newImages = new Map<string, string>();
+    const turnOpts: ToOpenAIOptions = {
+      ...opts.fileOpts,
+      resolveToolImage: (img) => newImages.get(img.fileId) ?? opts.fileOpts.resolveToolImage?.(img) ?? null,
+    };
+    // The model reads images unless its connection says otherwise or the provider refused them
+    let vision = !target.connection.quirks.noVision;
+    const browserSettings = await settings.get('browser');
+    const isScreenshotTool = (name: string) => {
+      const where = opts.toolset.locate(name);
+      return where?.serverId === BROWSER_BUILTIN_ID && where.tool === 'browser_screenshot';
+    };
+
     try {
       const tools = [
-        ...opts.toolset.definitions,
+        ...opts.toolset.definitions.filter((d) => !isScreenshotTool(d.function.name) || (vision && browserSettings.screenshots)),
         ...(plan.agent ? [TODO_TOOL] : []),
         ...(plan.codeEngine === 'browser' ? [CODE_TOOL] : plan.codeEngine === 'server' ? [plan.agent ? RUN_CODE_TASK_TOOL : RUN_CODE_TOOL] : []),
         ...(plan.imageGen ? [IMAGE_TOOL] : []),
@@ -721,18 +753,35 @@ export class ChatOrchestrator {
       for (let iteration = 0; ; iteration++) {
         const offerTools = tools.length > 0 && (iteration === 0 || !firstTurnOnly);
         // The turn so far, expanded into assistant(tool_calls) → tool rounds
-        const turnSoFar = toOpenAIMessages([
-          { id: assistantId, chatId: chat.id, parentId: null, role: 'assistant', parts: builder.parts, status: 'streaming', createdAt: '' },
-        ]).filter((m) => m.role !== 'assistant' || m.tool_calls);
+        const turnSoFar = toOpenAIMessages(
+          [{ id: assistantId, chatId: chat.id, parentId: null, role: 'assistant', parts: builder.parts, status: 'streaming', createdAt: '' }],
+          turnOpts
+        ).filter((m) => m.role !== 'assistant' || m.tool_calls);
         // Continuing, first request: the reply so far, then carry on from its last word
         const messagesNow =
           continued && iteration === 0
             ? continuationMessages(continued, target.connection.type === 'anthropic')
             : turnSoFar;
 
+        // Old page snapshots and screenshots only fill the context: the newest few are sent in full
+        const browserCalls = new Set(
+          [...opts.history.flatMap((n) => n.parts), ...builder.parts].flatMap((p) =>
+            p.type === 'tool_call' && p.serverId === BROWSER_BUILTIN_ID ? [p.callId] : []
+          )
+        );
+        const conversation = limitToolImages(elideStaleResults([...budget.messages, ...messagesNow], browserCalls), TOOL_IMAGES_SENT);
+        const withImages = hasToolImages(conversation);
+        // Anthropic takes pictures inside tool results; the OpenAI format needs them in a user message
+        const shaped = (images: boolean) =>
+          !images
+            ? stripToolImages(conversation, NO_VISION_NOTE)
+            : target.connection.type === 'anthropic'
+              ? conversation
+              : hoistToolImages(conversation);
+
         const request: ChatCompletionRequest = {
           model: target.providerModelId,
-          messages: [...budget.messages, ...messagesNow],
+          messages: shaped(vision),
           ...(temperature !== undefined ? { temperature } : {}),
           ...(maxTokens !== undefined ? { max_tokens: maxTokens } : {}),
           ...(topP !== undefined ? { top_p: topP } : {}),
@@ -743,25 +792,39 @@ export class ChatOrchestrator {
         };
 
         let toolCalls: ToolCall[] = [];
-        // One session per chat, so providers that route by conversation keep it together
-        const reason = await this.stream(target, request, signal, { sessionId: chat.id }, {
-          onText: (text) => {
+        let streamed = false;
+        const callbacks = {
+          onText: (text: string) => {
+            streamed = true;
             builder.appendText(text);
             runs.emit(run, { type: 'message.delta', messageId: assistantId, text });
           },
-          onReasoning: (text) => {
+          onReasoning: (text: string) => {
+            streamed = true;
             builder.appendReasoning(text);
             runs.emit(run, { type: 'message.reasoning', messageId: assistantId, text });
           },
-          onUsage: (u) => {
+          onUsage: (u: MessageUsage) => {
             usage = addUsage(usage, u);
             runUsage = addUsage(runUsage, u);
             runs.emit(run, { type: 'message.usage', messageId: assistantId, usage });
           },
-          onToolCalls: (calls) => {
+          onToolCalls: (calls: ToolCall[]) => {
             toolCalls = calls;
           },
-        });
+        };
+        // One session per chat, so providers that route by conversation keep it together
+        let reason: Exclude<StreamEndReason, 'error'>;
+        try {
+          reason = await this.stream(target, request, signal, { sessionId: chat.id }, callbacks);
+        } catch (err) {
+          // A model that turns images away: once more without them, and none for the rest of the reply
+          const message = err instanceof Error ? err.message : String(err);
+          if (!vision || !withImages || streamed || !IMAGES_REFUSED.test(message)) throw err;
+          vision = false;
+          this.deps.log.info({ model: target.model.id, err: message }, 'the provider refused images; retrying without them');
+          reason = await this.stream(target, { ...request, messages: shaped(false) }, signal, { sessionId: chat.id }, callbacks);
+        }
 
         lastReason = reason;
         if (reason === 'aborted') {
@@ -838,7 +901,8 @@ export class ChatOrchestrator {
                   ? await this.memoryTool(plan, assistantId, call, opts.memory!)
                   : onServer(call.function.name)
                     ? await this.makeImage(plan, call, signal)
-                    : await opts.toolset.execute(call, signal);
+                    : await opts.toolset.execute(call, signal, { sessionKey: opts.sessionKey });
+              await this.storeToolImages(plan, result, newImages);
               span.setAttribute('claudia.tool.server', result.serverId);
               if (result.result.isError) span.setStatus({ code: SpanStatusCode.ERROR });
               return result;
@@ -1024,13 +1088,50 @@ export class ChatOrchestrator {
     const ids = [
       ...new Set(nodes.flatMap((n) => n.parts.flatMap((p) => (p.type === 'file' && UUID.test(p.fileId) ? [p.fileId] : [])))),
     ];
-    if (ids.length === 0 || !this.deps.files) return {};
+    // Pictures tools returned: only the newest few are ever sent (limitToolImages)
+    const imageIds = nodes
+      .flatMap((n) => n.parts.flatMap((p) => (p.type === 'tool_result' ? (p.images ?? []).map((i) => i.fileId) : [])))
+      .filter((id) => UUID.test(id))
+      .slice(-TOOL_IMAGES_SENT);
+    const toolResultChars = (call: PartOf<'tool_call'>) => (call.serverId === BROWSER_BUILTIN_ID ? BROWSER_RESULT_CHARS : TOOL_RESULT_MAX_CHARS);
+    if ((ids.length === 0 && imageIds.length === 0) || !this.deps.files) return { toolResultChars };
     const resolved = new Map<string, ResolvedFile>();
-    for (const row of await this.deps.files.ownedByIds(user.id, ids)) {
+    for (const row of await this.deps.files.ownedByIds(user.id, [...new Set([...ids, ...imageIds])])) {
       const view = await this.deps.files.forModel(row).catch(() => null);
       if (view) resolved.set(row.id, view);
     }
-    return { resolveFile: (part) => resolved.get(part.fileId) ?? null };
+    return {
+      resolveFile: (part) => resolved.get(part.fileId) ?? null,
+      resolveToolImage: (img) => {
+        const view = resolved.get(img.fileId);
+        return view?.kind === 'image' ? view.url : null;
+      },
+      toolResultChars,
+    };
+  }
+
+  /**
+   * Keep the pictures a tool returned as the user's files (checked to be
+   * images, a few per call) and link them from the result. Their data URLs
+   * go in `urls` so this reply's next requests send them without a reload.
+   */
+  private async storeToolImages(plan: RunPlan, exec: ToolExecution, urls: Map<string, string>): Promise<void> {
+    const images = exec.images ?? [];
+    if (images.length === 0 || !this.deps.files) return;
+    const stored: ToolImage[] = [];
+    for (const img of images.slice(0, MAX_TOOL_IMAGES)) {
+      const mime = sniffImage(img.data);
+      if (!mime || img.data.byteLength > MAX_TOOL_IMAGE_BYTES) continue;
+      const ext = mime.split('/')[1].replace('jpeg', 'jpg');
+      const row = await this.deps.files.ingest(plan.user.id, { name: `${exec.tool || 'tool'}-${Date.now()}.${ext}`, mime, data: img.data }).catch((err) => {
+        this.deps.log.warn({ err: String(err) }, 'storing a tool image failed');
+        return null;
+      });
+      if (!row) continue;
+      stored.push({ fileId: row.id, mime });
+      urls.set(row.id, `data:${mime};base64,${img.data.toString('base64')}`);
+    }
+    if (stored.length) exec.result = { ...exec.result, images: stored };
   }
 
   /**

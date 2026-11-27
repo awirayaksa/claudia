@@ -105,6 +105,33 @@ export const AppSettingsSchema = {
     /** Prompt + completion tokens per task reply. */
     maxTokens: z.number().int().min(10_000).max(100_000_000),
   }),
+  /**
+   * The Web browser built-in (a headless Chromium on the server; switched on
+   * for users under mcp.builtins). Private hosts stay blocked unless
+   * net.allowlist lets them through.
+   */
+  browser: z.object({
+    /** Only these sites ("example.com" also covers its subdomains, "*.example.com" only them); empty = any public site. */
+    allowedDomains: z.array(z.string().trim().min(1).max(253)).max(500),
+    /** Sites never opened, whatever else allows them. */
+    blockedDomains: z.array(z.string().trim().min(1).max(253)).max(500),
+    navigationTimeoutSeconds: z.number().int().min(5).max(120),
+    actionTimeoutSeconds: z.number().int().min(1).max(60),
+    /** A chat's browser closes after this long unused. */
+    idleMinutes: z.number().int().min(1).max(240),
+    /** ...and at the latest after this long. */
+    maxSessionMinutes: z.number().int().min(5).max(1440),
+    /** Browser sessions open at once on this instance, and per user. */
+    maxSessions: z.number().int().min(1).max(200),
+    maxSessionsPerUser: z.number().int().min(1).max(20),
+    maxTabs: z.number().int().min(1).max(20),
+    /** Characters of page text the model gets per snapshot. */
+    snapshotMaxChars: z.number().int().min(2000).max(100_000),
+    /** Offer the screenshot tool (the model sees the pictures). */
+    screenshots: z.boolean(),
+    /** 'interactions': clicks, typing, choosing and key presses wait for the user's OK; 'none': nothing does. */
+    approval: z.enum(['interactions', 'none']),
+  }),
 } as const;
 
 export type AppSettingKey = keyof typeof AppSettingsSchema;
@@ -151,6 +178,20 @@ export const APP_SETTING_DEFAULTS: { [K in AppSettingKey]: AppSettingValue<K> } 
   // Tools are off by default: not every model takes tools, and a tool the provider refuses fails the reply
   memory: { tools: false, extraction: true, model: null },
   agent: { enabled: false, maxSteps: 60, maxMinutes: 30, maxTokens: 2_000_000 },
+  browser: {
+    allowedDomains: [],
+    blockedDomains: [],
+    navigationTimeoutSeconds: 30,
+    actionTimeoutSeconds: 10,
+    idleMinutes: 10,
+    maxSessionMinutes: 60,
+    maxSessions: 10,
+    maxSessionsPerUser: 2,
+    maxTabs: 5,
+    snapshotMaxChars: 12_000,
+    screenshots: true,
+    approval: 'interactions',
+  },
 };
 
 export class AppSettings {

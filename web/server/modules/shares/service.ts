@@ -31,8 +31,9 @@ function cleanPart(p: MessagePart): MessagePart {
   if (p.type === 'workspace_file') {
     return { type: 'file', fileId: '', name: p.path, mime: workspaceMime(p.path), ...(p.size !== undefined ? { size: p.size } : {}) };
   }
-  if (p.type === 'tool_result' && p.uiResource) {
-    const { uiResource: _ui, ...rest } = p;
+  // Tool pictures are the owner's files: a shared chat doesn't link them
+  if (p.type === 'tool_result' && (p.uiResource || p.images)) {
+    const { uiResource: _ui, images: _images, ...rest } = p;
     return rest;
   }
   // Citations keep what they show (title, page, link, snippet), not file or chat ids

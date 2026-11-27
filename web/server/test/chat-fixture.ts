@@ -16,12 +16,13 @@ export async function chatFixture(
     env?: Record<string, string>;
     youtubeOrigin?: string;
     cloudEndpoints?: AppDeps['cloudEndpoints'];
+    browser?: AppDeps['browser'];
     /** What the mock endpoint lists (default gpt-test and gpt-other). */
     models?: MockModel[];
   } = {}
 ) {
   const mock = await startMockOpenAI(opts.models);
-  const t = await buildTestApp({ orchestrator: opts.orchestrator, env: opts.env, youtubeOrigin: opts.youtubeOrigin, cloudEndpoints: opts.cloudEndpoints });
+  const t = await buildTestApp({ orchestrator: opts.orchestrator, env: opts.env, youtubeOrigin: opts.youtubeOrigin, cloudEndpoints: opts.cloudEndpoints, browser: opts.browser });
   await t.app.listen({ port: 0, host: '127.0.0.1' });
   const base = `http://127.0.0.1:${(t.app.server.address() as AddressInfo).port}`;
 

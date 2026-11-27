@@ -874,6 +874,12 @@ export const api = createApi({
       invalidatesTags: ['AdminMcpServers', 'McpServers'],
     }),
     codeStatus: b.query<{ dockerConfigured: boolean }, void>({ query: () => '/admin/code' }),
+    /** Where the Web browser built-in runs (here or a remote browser), its open sessions and last start error. */
+    browserStatus: b.query<{ engine: 'remote' | 'local'; sessions: number; error: string | null }, void>({ query: () => '/admin/browser' }),
+    /** Start (or reach) the browser and open a blank page. */
+    testBrowser: b.mutation<{ ok: boolean; error: string | null; version: string | null }, void>({
+      query: () => ({ url: '/admin/browser/test', method: 'POST' }),
+    }),
     /** Reach the Docker daemon, pull the images if needed, and run a test program. */
     testCodeSandbox: b.mutation<{ ok: boolean; error: string | null; version: string | null }, void>({
       query: () => ({ url: '/admin/code/test', method: 'POST' }),
@@ -966,6 +972,8 @@ export const {
   useDeleteMcpServerMutation,
   useDisconnectMcpOAuthMutation,
   useCodeStatusQuery,
+  useBrowserStatusQuery,
+  useTestBrowserMutation,
   useTestCodeSandboxMutation,
   useLdapSettingsQuery,
   useUpdateLdapSettingsMutation,

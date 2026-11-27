@@ -13,7 +13,7 @@
  */
 import type { Attachment, Message, ToolCall } from '../../types/message.types';
 import type { ChatMessage, ContentPart } from '../../types/api.types';
-import type { MessageNode, MessagePart, PartOf } from '../../types/turn.types';
+import type { MessageNode, MessagePart, PartOf, ToolImage } from '../../types/turn.types';
 
 /** Tool output sent back to the model is cut to this many characters. */
 export const TOOL_RESULT_MAX_CHARS = 4000;
@@ -30,8 +30,8 @@ export function truncateText(text: string, maxLength: number): string {
 }
 
 /** Tool output as the model should see it: never empty, never too long. */
-export function toolContentForModel(content: string): string {
-  return content.trim() ? truncateText(content, TOOL_RESULT_MAX_CHARS) : '{}';
+export function toolContentForModel(content: string, maxChars = TOOL_RESULT_MAX_CHARS): string {
+  return content.trim() ? truncateText(content, maxChars) : '{}';
 }
 
 /** One `<attachment>` block with a document's extracted text. */
@@ -141,6 +141,13 @@ export interface ToOpenAIOptions {
    * null for (still processing, unsupported) are left out.
    */
   resolveFile?: (part: PartOf<'file'>) => ResolvedFile | null;
+  /**
+   * An image a tool returned → a data URL. Without it (or when it returns
+   * null) the image is left out; the result's text still says one was there.
+   */
+  resolveToolImage?: (image: ToolImage) => string | null;
+  /** How much of a call's result the model gets (default TOOL_RESULT_MAX_CHARS). */
+  toolResultChars?: (call: PartOf<'tool_call'>) => number;
 }
 
 function textOf(parts: MessagePart[], type: 'text' | 'reasoning'): string {
@@ -169,7 +176,7 @@ function userMessage(node: MessageNode, opts: ToOpenAIOptions): ChatMessage {
  * Expand one assistant turn into `assistant(tool_calls) → tool…` rounds and a
  * final assistant text message — the same records the desktop sends.
  */
-function assistantMessages(node: MessageNode): ChatMessage[] {
+function assistantMessages(node: MessageNode, opts: ToOpenAIOptions): ChatMessage[] {
   const out: ChatMessage[] = [];
   let text = '';
   let reasoning = '';
@@ -186,12 +193,18 @@ function assistantMessages(node: MessageNode): ChatMessage[] {
     );
     for (const call of calls) {
       const result = results.get(call.callId);
-      out.push({
-        role: 'tool',
-        tool_call_id: call.callId,
-        // A call without a recorded result (stopped mid-run) still needs an answer
-        content: toolContentForModel(result ? result.content : JSON.stringify({ error: 'No result: the run was stopped.' })),
+      // A call without a recorded result (stopped mid-run) still needs an answer
+      const text = toolContentForModel(
+        result ? result.content : JSON.stringify({ error: 'No result: the run was stopped.' }),
+        opts.toolResultChars?.(call)
+      );
+      const images = (result?.images ?? []).flatMap((img) => {
+        const url = opts.resolveToolImage?.(img);
+        return url ? [url] : [];
       });
+      // Tool messages with pictures are multi-part; providers that can't take
+      // them there move them to a user message (see tool-images.ts)
+      out.push({ role: 'tool', tool_call_id: call.callId, content: contentWithImages(text, images) });
     }
     // Text written before the calls was dropped from the API message (strict
     // providers), exactly as on desktop.
@@ -244,7 +257,7 @@ export function toOpenAIMessages(turns: MessageNode[], opts: ToOpenAIOptions = {
     } else if (node.role === 'user') {
       out.push(userMessage(node, opts));
     } else {
-      out.push(...assistantMessages(node));
+      out.push(...assistantMessages(node, opts));
     }
   }
   return out;

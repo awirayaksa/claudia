@@ -1,0 +1,55 @@
+# The Web browser built-in, in a container of its own:
+#
+#   CLAUDIA_BROWSER_SECRET=$(openssl rand -hex 24) \
+#     docker compose -f docker-compose.yml -f compose.browser.yml up -d
+#
+# (put CLAUDIA_BROWSER_SECRET in .env to keep it). Then Admin → Settings →
+# Built-in tools → Web browser, and users switch it on under Tools.
+#
+# The browser sits on an internal network with the app only: it can't reach
+# the database, the host or the internet by itself. Pages load through the
+# app's egress proxy, which allows public addresses only (net.allowlist and
+# the browser's site rules apply) and connects to exactly the address it
+# checked. A page that breaks out of Chromium's renderer lands in a
+# container with no secrets, no data volume and no way out.
+
+services:
+  app:
+    environment:
+      CLAUDIA_BROWSER_WS: ws://browser:3000/${CLAUDIA_BROWSER_SECRET:?set CLAUDIA_BROWSER_SECRET to a long random string}
+      CLAUDIA_BROWSER_EGRESS_LISTEN: 0.0.0.0:3128
+      CLAUDIA_BROWSER_EGRESS_URL: http://app:3128
+    networks:
+      - default
+      - browser
+    depends_on:
+      - browser
+
+  browser:
+    build:
+      context: ../..
+      dockerfile: web/docker/browser/Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      WS_PATH: ${CLAUDIA_BROWSER_SECRET:?set CLAUDIA_BROWSER_SECRET to a long random string}
+      EGRESS_PROXY: http://app:3128
+    networks:
+      - browser
+    # Chromium's tabs need shared memory; the limits keep a heavy page from taking the host
+    shm_size: 1gb
+    mem_limit: 2g
+    pids_limit: 512
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/pwuser
+
+networks:
+  browser:
+    # No route out: the only way to the web is the app's egress proxy
+    internal: true

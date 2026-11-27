@@ -178,6 +178,44 @@ function checkUrl(url: URL, policy: SafeFetchPolicy): void {
   }
 }
 
+/** Check a user-given URL before anything connects to it (http(s), no credentials, no private IP literal). */
+export function checkUserUrl(input: string | URL, policy: SafeFetchPolicy = {}): URL {
+  let url: URL;
+  try {
+    url = new URL(input);
+  } catch {
+    throw new BlockedRequestError(`Not a valid URL: ${String(input).slice(0, 200)}`);
+  }
+  checkUrl(url, policy);
+  return url;
+}
+
+/**
+ * The one address to connect to for `host`: an IP literal as it is, a name
+ * through the guarded lookup (every address it resolves to must be public,
+ * unless allowlisted). Connecting to exactly this address closes DNS
+ * rebinding between the check and the connection.
+ */
+export function resolvePublic(
+  host: string,
+  policy: SafeFetchPolicy,
+  lookup: typeof dns.lookup = dns.lookup
+): Promise<{ address: string; family: number }> {
+  const h = host.replace(/^\[|\]$/g, '');
+  if (net.isIP(h)) {
+    const err = literalHostError(h, policy);
+    return err ? Promise.reject(err) : Promise.resolve({ address: h, family: net.isIP(h) });
+  }
+  return new Promise((resolve, reject) => {
+    guardedLookup(policy, lookup)(h, { all: true }, (err, addresses) => {
+      if (err) return reject(err);
+      const first = (addresses as dns.LookupAddress[])[0];
+      if (!first) return reject(new BlockedRequestError(`${h} did not resolve`));
+      resolve({ address: first.address, family: first.family });
+    });
+  });
+}
+
 const REDIRECT_CODES = new Set([301, 302, 303, 307, 308]);
 
 /**

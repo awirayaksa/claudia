@@ -143,6 +143,8 @@ function LiveTools({ node, output }: { node: MessageNode; output?: Record<string
   const calls = node.parts.filter((p) => p.type === 'tool_call');
   if (calls.length === 0) return null;
   const done = new Set(node.parts.flatMap((p) => (p.type === 'tool_result' ? [p.callId] : [])));
+  // Pictures a call returned (a browser screenshot): what the model is looking at
+  const images = new Map(node.parts.flatMap((p) => (p.type === 'tool_result' && p.images?.length ? [[p.callId, p.images] as const] : [])));
   return (
     <ul className="mb-3 space-y-1.5 ps-[30px] text-xs" data-testid="live-tools">
       {calls.map((c) => {
@@ -157,6 +159,15 @@ function LiveTools({ node, output }: { node: MessageNode; output?: Record<string
               <span className="font-mono">{c.tool || c.alias}</span>
               <span>{running ? t('tools.running') : t('tools.done')}</span>
             </div>
+            {images.get(c.callId) && (
+              <div className="flex flex-wrap gap-2 border-t border-border px-3 py-2" data-testid="tool-images">
+                {images.get(c.callId)!.map((img) => (
+                  <a key={img.fileId} href={`/api/files/${img.fileId}/content`} target="_blank" rel="noreferrer">
+                    <img src={`/api/files/${img.fileId}/content`} alt={c.tool || c.alias} loading="lazy" className="max-h-40 max-w-full rounded border border-border object-contain" />
+                  </a>
+                ))}
+              </div>
+            )}
             {running && printed && (
               <pre className="max-h-48 overflow-auto whitespace-pre-wrap break-words border-t border-border px-3 py-2 font-mono text-[11px]" data-testid="live-tool-output">
                 {printed.split('\n').slice(-40).join('\n')}

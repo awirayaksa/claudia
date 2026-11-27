@@ -33,6 +33,8 @@ export const ConnectionQuirks = z
     siteUrl: z.string().max(500),
     siteName: z.string().max(200),
     insecureTls: z.boolean(),
+    /** The models can't read images: tool pictures (screenshots) are left out and the screenshot tool isn't offered. */
+    noVision: z.boolean(),
   })
   .partial();
 

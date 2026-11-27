@@ -253,6 +253,7 @@
     "modelFilter": "Models to offer",
     "modelFilterHelp": "Comma-separated model ids. Empty = everything the endpoint lists.",
     "toolsFirstTurnOnly": "Offer tools only on the first request (needed by some proxies)",
+    "noVision": "These models can't read images (screenshots from tools are left out)",
     "apiCompatibility": "API style",
     "enabled": "Enabled",
     "test": "Test",
@@ -308,7 +309,8 @@
       "builtin-pdf-001": "PDF documents",
       "builtin-diagram-001": "Diagrams",
       "builtin-fetch-001": "Web fetch",
-      "builtin-azdo-001": "Azure DevOps (work items)"
+      "builtin-azdo-001": "Azure DevOps (work items)",
+      "builtin-browser-001": "Web browser (open pages, click, type, screenshots)"
     },
     "network": "Network",
     "netAllowlist": "Private addresses users may reach",
@@ -394,7 +396,26 @@
     "agentEnabled": "Allow agent tasks",
     "agent_maxSteps": "Steps per task",
     "agent_maxMinutes": "Minutes per task",
-    "agent_maxTokens": "Tokens per task"
+    "agent_maxTokens": "Tokens per task",
+    "browser": "Web browser",
+    "browserHelp": "A headless Chromium on the server that the model can drive: open public pages, read them, click, type and take screenshots. Each chat gets its own private browser (no cookies kept). Private addresses stay blocked unless listed under Network.",
+    "browserLocal": "Runs on this server · {{sessions}} open",
+    "browserRemote": "Runs in the browser service (CLAUDIA_BROWSER_WS) · {{sessions}} open",
+    "browserAllowed": "Only these sites (one per line)",
+    "browserAllowedHelp": "Empty: any public site. “example.com” covers its subdomains; “*.example.com” only them.",
+    "browserBlocked": "Never these sites",
+    "browserApproval": "Ask the user before clicks, typing, choices and key presses",
+    "browserApprovalHelp": "Opening, reading, scrolling and screenshots never ask.",
+    "browserScreenshots": "Let the model take screenshots (it sees them, if it can read images)",
+    "browser_navigationTimeoutSeconds": "Page load limit (seconds)",
+    "browser_actionTimeoutSeconds": "Action limit (seconds)",
+    "browser_idleMinutes": "Close after idle (minutes)",
+    "browser_maxSessions": "Browsers open at once",
+    "browser_maxSessionsPerUser": "Per user",
+    "browser_maxTabs": "Tabs per browser",
+    "browserTest": "Test the browser",
+    "browserTesting": "Starting…",
+    "browserTestOk": "Works (Chromium {{version}})."
   },
   "notFound": {
     "title": "Page not found",
@@ -1302,7 +1323,11 @@
       "azdo_update_work_item": "Change a work item",
       "azdo_resolve_work_item": "Resolve a work item",
       "azdo_add_comment": "Comment on a work item",
-      "azdo_link_work_items": "Link work items"
+      "azdo_link_work_items": "Link work items",
+      "browser_click": "Click on a web page",
+      "browser_type": "Type on a web page",
+      "browser_select": "Choose an option on a web page",
+      "browser_press_key": "Press a key on a web page"
     }
   },
   "task": {

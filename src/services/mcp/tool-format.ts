@@ -177,6 +177,11 @@ export interface NormalizedToolResult {
   uiResource?: UIResourceContent;
   /** Files the tool reports it wrote (`_meta["claudia/files"]`, set by the built-in servers). */
   files?: Array<{ path: string; name: string; size: number }>;
+  /**
+   * Image items, base64 (the text keeps an `[Image: …]` marker where each one
+   * was). The web keeps them as files and shows them to the model.
+   */
+  images?: Array<{ mime: string; data: string }>;
 }
 
 /** An embedded resource whose URI uses the MCP-UI `ui://` scheme (same rule as @mcp-ui/client). */
@@ -232,7 +237,15 @@ export function normalizeToolResult(result: { content?: MCPContentItem[]; isErro
   }
 
   const files = writtenFiles(result._meta);
-  return { content: items.map(itemToText).join('\n'), isError: false, ...(files ? { files } : {}) };
+  const images = items.flatMap((c) =>
+    c.type === 'image' && typeof c.data === 'string' && c.data ? [{ mime: c.mimeType || 'image/png', data: c.data }] : []
+  );
+  return {
+    content: items.map(itemToText).join('\n'),
+    isError: false,
+    ...(files ? { files } : {}),
+    ...(images.length ? { images } : {}),
+  };
 }
 
 /** OpenAI function definitions for a set of aliases. */
