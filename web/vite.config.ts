@@ -8,9 +8,17 @@ const webDir = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(webDir, '..');
 /** Code shared with the desktop app, compiled into the web client. */
 const sharedDirs = [path.join(rootDir, 'src'), path.join(rootDir, 'electron')].map(
-  (d) => normalizePath(d) + '/'
+  (d) => samePath(normalizePath(d) + '/')
 );
 const webImporter = path.join(webDir, 'index.html');
+
+/**
+ * Paths for comparison. Windows paths are case-insensitive, and the same file
+ * can reach a plugin as c:/… or C:/… depending on how it was first imported.
+ */
+function samePath(p: string): string {
+  return process.platform === 'win32' ? p.toLowerCase() : p;
+}
 
 /**
  * Bare imports in files under ../src resolve against web/, not the root.
@@ -34,7 +42,7 @@ function resolveSharedFromWeb(): Plugin {
         !source.startsWith('@web/') &&
         !source.startsWith('@shared/');
       if (!isBare) return null;
-      const from = normalizePath(importer.split('?')[0]);
+      const from = samePath(normalizePath(importer.split('?')[0]));
       if (!sharedDirs.some((dir) => from.startsWith(dir))) return null;
       return this.resolve(source, webImporter, { ...options, skipSelf: true });
     },
