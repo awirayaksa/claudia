@@ -8,7 +8,7 @@ import conversationReducer from '../store/slices/conversationSlice';
 import type { StreamCallbacks } from '../services/api/streaming.service';
 import type { ChatCompletionRequest, RequestOptions } from '../types/api.types';
 import type { ToolCall } from '../types/message.types';
-import type { MCPServerState, MCPTool } from '../types/mcp.types';
+import type { MCPServerState, MCPTool, ToolPolicy } from '../types/mcp.types';
 import type { MessageUsage } from '../types/statistics.types';
 import { setPlatform, type ClaudiaPlatform } from '../platform';
 
@@ -77,9 +77,18 @@ export function scriptedProvider(turns: ScriptedTurn[], capabilities: Record<str
   return { provider, requests, sessions };
 }
 
-export function readyServer(id: string, name: string, tools: MCPTool[]): MCPServerState {
+/**
+ * A running third-party server. Its tools run without asking unless `toolPolicies`
+ * is given (tests of the tool loop itself; approval tests pass their own).
+ */
+export function readyServer(
+  id: string,
+  name: string,
+  tools: MCPTool[],
+  toolPolicies: Record<string, ToolPolicy> = Object.fromEntries(tools.map((t) => [t.name, 'allow' as const]))
+): MCPServerState {
   return {
-    config: { id, name, transport: 'stdio', command: 'x', enabled: true },
+    config: { id, name, transport: 'stdio', command: 'x', enabled: true, toolPolicies },
     status: 'ready',
     tools,
     resources: [],

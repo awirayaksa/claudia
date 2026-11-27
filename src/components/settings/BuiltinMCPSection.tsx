@@ -5,6 +5,7 @@ import {
   selectBuiltinServers,
 } from '../../store/slices/mcpSlice';
 import { Button } from '../common/Button';
+import { ToolPermissions } from './ToolPermissions';
 
 interface BuiltinMCPSectionProps {
   onViewLogs: (serverId: string, serverName: string) => void;
@@ -103,6 +104,7 @@ export function BuiltinMCPSection({ onViewLogs }: BuiltinMCPSectionProps) {
               {serverError && status === 'error' && (
                 <div className="mt-2 text-sm text-error">{serverError}</div>
               )}
+              <ToolPermissions serverId={server.id} />
             </div>
 
             {/* Actions */}

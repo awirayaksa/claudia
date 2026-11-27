@@ -222,13 +222,14 @@ export function registerMCPHandlers() {
       const servers = store.get('mcp.servers', {}) as Record<string, MCPServerConfig>;
       const existing = servers[config.id];
 
-      // Protect built-in servers: only allow changing enabled, autoStart, and builtinConfig
+      // Protect built-in servers: only allow changing enabled, autoStart, builtinConfig and tool policies
       if (existing?.builtin) {
         const updated: MCPServerConfig = {
           ...existing,
           enabled: config.enabled,
           autoStart: config.autoStart,
           builtinConfig: config.builtinConfig ?? existing.builtinConfig,
+          toolPolicies: 'toolPolicies' in config ? config.toolPolicies : existing.toolPolicies,
         };
         servers[config.id] = updated;
         store.set('mcp.servers', servers);

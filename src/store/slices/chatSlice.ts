@@ -11,6 +11,15 @@ import {
 import type { IAPIProvider } from '../../services/api/provider.interface';
 import { getAPIProvider } from '../../services/api/provider.service';
 import { ToolIntegrationService } from '../../services/mcp/tool-integration.service';
+import {
+  answerApproval,
+  approvalTarget,
+  waitForApproval,
+  waitingCallsFor,
+  type ApprovalDecision,
+} from '../../services/mcp/tool-approvals';
+import { withToolPolicy } from '../../services/mcp/tool-policy';
+import { saveMCPServer } from './mcpSlice';
 import { v4 as uuidv4 } from 'uuid';
 import type { RootState } from '../index';
 import { ReasoningEffort, resolveEffort, coerceEffort } from '../../utils/effort-utils';
@@ -35,6 +44,8 @@ interface ChatState {
   editingMessage: { id: string; content: string; attachments?: Attachment[] } | null;
   /** Earlier messages are being summarized to fit the context window. */
   isCompacting: boolean;
+  /** Tool calls (ids) waiting for the user to allow or deny them. */
+  awaitingApproval: string[];
 }
 
 const initialState: ChatState = {
@@ -52,6 +63,7 @@ const initialState: ChatState = {
   toolCallIteration: 0,
   editingMessage: null,
   isCompacting: false,
+  awaitingApproval: [],
 };
 
 /**
@@ -192,6 +204,9 @@ const chatSlice = createSlice({
       state.messages.push(action.payload);
     },
     clearMessages: (state) => {
+      // A reply still running belongs to the chat being cleared: stop it
+      // (this also releases tool calls waiting for approval)
+      (state.abortController as AbortController | null)?.abort();
       state.messages = [];
       state.error = null;
       state.streamingContent = '';
@@ -204,6 +219,7 @@ const chatSlice = createSlice({
       state.pendingToolCalls = [];
       state.isExecutingTools = false;
       state.toolCallIteration = 0;
+      state.awaitingApproval = [];
     },
     setError: (state, action: PayloadAction<string | null>) => {
       state.error = action.payload;
@@ -288,6 +304,7 @@ const chatSlice = createSlice({
       state.isExecutingTools = false;
       state.pendingToolCalls = [];
       state.toolCallIteration = 0;
+      state.awaitingApproval = [];
     },
     // Tool calling actions
     setToolCalls: (state, action: PayloadAction<ToolCall[]>) => {
@@ -303,6 +320,16 @@ const chatSlice = createSlice({
     },
     incrementToolIteration: (state) => {
       state.toolCallIteration += 1;
+    },
+    /** A tool call waits for the user, or how they decided. */
+    setToolApproval: (state, action: PayloadAction<{ callId: string; approval: NonNullable<ToolCall['approval']> }>) => {
+      const { callId, approval } = action.payload;
+      for (const message of state.messages) {
+        const call = message.toolCalls?.find((c) => c.id === callId);
+        if (call) call.approval = approval;
+      }
+      state.awaitingApproval = state.awaitingApproval.filter((id) => id !== callId);
+      if (approval === 'pending') state.awaitingApproval.push(callId);
     },
     addToolCallMessage: (state, action: PayloadAction<Message>) => {
       state.messages.push(action.payload);
@@ -437,6 +464,7 @@ export const {
   setEditingMessage,
   setCompacting,
   setCompaction,
+  setToolApproval,
 } = chatSlice.actions;
 
 // Thunk for sending streaming message
@@ -520,6 +548,71 @@ export const sendStreamingMessage = createAsyncThunk(
         conversationOptions(state)
       );
     });
+  }
+);
+
+/** A tool call that did not run, with the reason for the model. */
+function notRun(call: ToolCall, name: string, serverId: string, reason: string): ToolResult {
+  return { tool_call_id: call.id, role: 'tool', name, content: JSON.stringify({ error: reason }), isError: true, serverId };
+}
+
+/**
+ * Run a reply's tool calls in parallel, each by its tool's policy: allowed
+ * ones run, blocked ones are refused, and the rest wait for the user's
+ * approval first (Stop refuses those still waiting).
+ */
+async function runToolCalls(
+  calls: ToolCall[],
+  getState: () => unknown,
+  dispatch: (action: UnknownAction) => unknown,
+  signal: AbortSignal
+): Promise<ToolResult[]> {
+  return Promise.all(
+    calls.map(async (call) => {
+      const mcp = (getState() as RootState).mcp;
+      const target = ToolIntegrationService.resolveTool(call.function.name, mcp);
+      if (target) {
+        const policy = ToolIntegrationService.policyFor(target, mcp);
+        if (policy === 'block') {
+          return notRun(call, target.tool, target.serverId, "This tool is blocked in Claudia's settings, so it was not run.");
+        }
+        if (policy === 'ask') {
+          dispatch(setToolApproval({ callId: call.id, approval: 'pending' }));
+          const decision = await waitForApproval(call.id, target, signal);
+          if (decision === 'deny' || decision === 'stopped') {
+            dispatch(setToolApproval({ callId: call.id, approval: 'rejected' }));
+            const reason = decision === 'deny' ? 'The user denied this tool call.' : 'Stopped by the user before the tool ran.';
+            return notRun(call, target.tool, target.serverId, reason);
+          }
+          dispatch(setToolApproval({ callId: call.id, approval: 'approved' }));
+        }
+      }
+      return ToolIntegrationService.executeToolCall(call, (getState() as RootState).mcp, undefined, target);
+    })
+  );
+}
+
+/**
+ * The user's answer to a tool call waiting for approval. "Always allow" saves
+ * the tool as allowed on its server, and lets the other waiting calls to it run too.
+ */
+export const answerToolApproval = createAsyncThunk(
+  'chat/answerToolApproval',
+  async ({ callId, decision }: { callId: string; decision: ApprovalDecision }, { getState, dispatch }) => {
+    const target = approvalTarget(callId);
+    if (!target) return;
+    if (decision !== 'always') {
+      answerApproval(callId, decision);
+      return;
+    }
+    const mcp = (getState() as RootState).mcp;
+    const config = mcp.servers[target.serverId];
+    if (config) {
+      const tool = mcp.serverStates[target.serverId]?.tools?.find((t) => t.name === target.tool) ?? { name: target.tool };
+      // (if saving fails, this call still runs: it was allowed)
+      await dispatch(saveMCPServer(withToolPolicy(config, tool, 'allow')));
+    }
+    for (const id of waitingCallsFor(target)) answerApproval(id, 'always');
   }
 );
 
@@ -689,14 +782,16 @@ export const sendStreamingMessageWithTools = createAsyncThunk(
             return;
           }
 
-          // Execute tools
+          // Execute tools (those that ask wait for the user first)
           dispatch(setExecutingTools(true));
-          const toolResults = await ToolIntegrationService.executeToolCalls(
-            assistantToolCalls,
-            mcpState,
-            undefined
-          );
+          const toolResults = await runToolCalls(assistantToolCalls, getState, dispatch, abortController.signal);
           dispatch(setExecutingTools(false));
+
+          // The chat was cleared or switched while they ran: nothing to add the results to
+          if (abortController.signal.aborted && !(getState() as RootState).chat.messages.some((m) => m.id === assistantMessageId)) {
+            dispatch(clearToolCalls());
+            return;
+          }
 
           // Update the assistant message with tool results
           dispatch(updateMessageToolResults({
