@@ -235,6 +235,8 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
       .where(eq(users.id, id))
       .returning();
     if (body.password || body.active === false) await revokeAllSessions(ctx, id);
+    // A deactivated user's open browser pages go too
+    if (body.active === false) await ctx.browser.closeUser(id);
     if (body.role || body.name) {
       void ctx.webhooks.emit('user.updated', { user: webhookUser(row), previousRole: existing.role });
     }
@@ -261,6 +263,7 @@ export async function adminUserRoutes(app: FastifyInstance, ctx: ServerContext):
     // Sessions, chats, folders, connections, models and memberships cascade
     await ctx.db.delete(users).where(eq(users.id, id));
     await ctx.access.removePrincipal('user', id);
+    await ctx.browser.closeUser(id);
     return { ok: true };
   });
 

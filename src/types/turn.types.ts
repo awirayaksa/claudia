@@ -29,6 +29,12 @@ export interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed';
 }
 
+/** An image a tool returned, stored as one of the user's files. */
+export interface ToolImage {
+  fileId: string;
+  mime: string;
+}
+
 /** A tool call that needed the user's approval: waiting, or how it was decided. */
 export type ToolApproval = 'pending' | 'approved' | 'rejected' | 'expired';
 
@@ -44,8 +50,19 @@ export type MessagePart =
    * change data elsewhere).
    */
   | { type: 'tool_call'; callId: string; alias: string; serverId: string; tool: string; args: string; approval?: ToolApproval }
-  /** `content` is what the model sees; `uiResource` is rendered for the user. */
-  | { type: 'tool_result'; callId: string; content: string; isError?: boolean; uiResource?: UIResourceContent }
+  /**
+   * `content` is what the model sees; `uiResource` is rendered for the user.
+   * `images` (web): pictures the tool returned (a browser screenshot), kept as
+   * the user's files; the model sees them too, if it can read images.
+   */
+  | {
+      type: 'tool_result';
+      callId: string;
+      content: string;
+      isError?: boolean;
+      uiResource?: UIResourceContent;
+      images?: ToolImage[];
+    }
   | { type: 'citation'; index: number; source: CitationSource }
   /** A file a tool wrote in the user's workspace (web), by its path there ("reports/q3.md"). */
   | { type: 'workspace_file'; path: string; size?: number }

@@ -137,6 +137,7 @@ describe('normalizeToolResult', () => {
     ).toEqual({
       content: 'line 1\n[Image: image/png]\nfile body\n[Resource: file:///b.bin]\n{"type":"audio","data":"x"}',
       isError: false,
+      images: [{ mime: 'image/png', data: 'AA' }],
     });
   });
 

@@ -51,6 +51,7 @@ export interface ToolResult {
   uiResource?: UIResourceContent; // Separate UI resource for rendering
   serverId?: string; // MCP server that produced this result
   files?: ToolFile[]; // Files a built-in server wrote (desktop)
+  images?: Array<{ url: string; mime: string }>; // Pictures the tool returned, e.g. a browser screenshot (web)
 }
 
 export interface Message {

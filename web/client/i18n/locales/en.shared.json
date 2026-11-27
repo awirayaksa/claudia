@@ -307,6 +307,8 @@
     "error": "Error",
     "errorLabel": "Error:",
     "expired": "Not approved in time",
+    "imageAlt": "Image from {{tool}}",
+    "openImage": "Open full size",
     "rejected": "Declined",
     "result": "Result:",
     "running": "Executing...",

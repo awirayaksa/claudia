@@ -370,6 +370,8 @@ within about a minute and the branch can be answered again.
 | `CLAUDIA_ADMIN_EMAIL`, `CLAUDIA_ADMIN_PASSWORD` | — | Create the first admin on first boot |
 | `CLAUDIA_ALLOW_STDIO_MCP` | `false` | Allow admins to configure stdio MCP servers (they run commands on the host, with only their own environment variables) |
 | `CLAUDIA_CODE_DOCKER` | — | Docker Engine API for server-side code runs: `unix:///var/run/docker.sock`, `tcp://host:2375` or `https://host:2376` (see [Code runs on the server](#code-runs-on-the-server)) |
+| `CLAUDIA_BROWSER_WS` | — | A Playwright browser server for the Web browser built-in, e.g. `ws://browser:3000/<secret>` (see [Web browser](#web-browser)). Unset: Chromium starts inside the app, if installed |
+| `CLAUDIA_BROWSER_EGRESS_LISTEN`, `CLAUDIA_BROWSER_EGRESS_URL` | `127.0.0.1:<free port>` | Where the browser's egress proxy listens, and the address the remote browser reaches it at (both required with `CLAUDIA_BROWSER_WS`) |
 | `CLAUDIA_MEMORY_IDLE_SECONDS` | `120` | How long a chat stays quiet before it is read for memories to learn |
 | `ENABLE_LDAP` | — | Directory sign-in on/off; overrides the admin setting |
 | `LDAP_URL`, `LDAP_START_TLS` | — | `ldap://host:389` or `ldaps://host:636`; StartTLS for `ldap://` |
@@ -443,6 +445,55 @@ claudia-sandbox web/docker/sandbox`) for numpy, pandas, matplotlib,
 scikit-learn and more, plus Node.js, and set both images to
 `claudia-sandbox`. **Test the sandbox** pulls missing images and runs a test
 program. To run the real-Docker tests: `CLAUDIA_TEST_DOCKER=unix:///var/run/docker.sock npm test -- server/code`.
+
+## Web browser
+
+The **Web browser** built-in lets the model open public web pages in a
+headless Chromium on the server, read them, click, type, choose options and
+take screenshots, with nothing to install for users. Turn it on under
+**Admin → Settings → Built-in tools**; a **Web browser** card then sets the
+sites it may open, its limits and whether clicks wait for approval. Users
+switch it on under Tools, like the other built-ins.
+
+- **One private browser per chat.** Cookies and sign-ins last as long as the
+  chat's session (closed after the idle time, the maximum age, or when the
+  chat or user is deleted) and never touch the disk. Downloads, uploads,
+  service workers and permission prompts are off; dialogs are dismissed and
+  the model is told.
+- **Public sites only.** Every connection goes through Claudia's egress
+  proxy, which applies the SSRF guard (private, loopback and metadata
+  addresses are refused; `net.allowlist` lets chosen ones through), the
+  browser's allowed and blocked sites, and connects to exactly the address it
+  checked, so redirects, scripts and DNS rebinding can't reach your network.
+- **Approval.** Opening, reading, scrolling and screenshots run at once;
+  clicks, typing, choices and key presses wait for the user's OK (an admin
+  can turn that off). Page text reaches the model marked as content from the
+  website, not instructions.
+- **Screenshots** are kept as the user's files, shown under the tool call,
+  and sent to the model (Anthropic inside the tool result, OpenAI-style
+  APIs as a picture after it). Only the newest two go with each request. Mark
+  a connection **These models can't read images** to leave them out; a
+  provider that rejects images gets the request again without them.
+- Browsing takes many tool rounds: raise **Tool rounds per reply**
+  (`limits.maxToolIterations`) if replies stop early.
+
+Where Chromium runs:
+
+- **A container of its own (recommended):**
+  `CLAUDIA_BROWSER_SECRET=$(openssl rand -hex 24) docker compose -f docker-compose.yml -f compose.browser.yml up -d`.
+  The browser sits on an internal network with the app only (no route out,
+  no secrets, read-only, limited memory and processes), and reaches the web
+  through the app's proxy.
+- **Inside the app:** `CLAUDIA_BROWSER_IN_APP=1 docker compose up -d --build`
+  installs Chromium in the image (about 300 MB more). Simpler, but a page
+  that escapes Chromium's sandbox lands next to the app's secrets.
+- **Development:** `npx playwright install chromium` in `web/`.
+
+**Test the browser** on the card checks that it starts. With several
+instances, a chat's browser lives on the instance that opened it; a reply
+handled by another instance starts a fresh one (each result names the page
+it's on, so the model notices). The browser tests run when Chromium is
+installed: `npm test -- server/browser`.
 
 ## OpenAI-compatible API
 

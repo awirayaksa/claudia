@@ -148,6 +148,18 @@ http
         'A counter:\n\n```jsx\nimport { useState } from "react";\nexport default function ClickCounter() {\n  const [n, setN] = useState(0);\n  return <button id="counter" onClick={() => setN(n + 1)}>Clicked {n} times</button>;\n}\n```\n'
       );
     }
+    // "browse blank" with the browser offered: open about:blank, screenshot it, try a click (needs approval), answer
+    const called = (id: string) => json.messages.some((m: any) => m.role === 'tool' && m.tool_call_id === id);
+    if (final?.role === 'user' && prompt.includes('browse blank') && offered('browser_navigate')) return toolCall('browser_navigate', { url: 'about:blank' });
+    if (final?.role === 'tool' && final.tool_call_id === 'call_browser_navigate') return toolCall('browser_screenshot', {});
+    // The screenshot comes back as a user message with the picture, after the tool result
+    if (called('call_browser_screenshot') && !called('call_browser_click')) {
+      const sawImage = json.messages.some((m: any) => Array.isArray(m.content) && m.content.some((p: any) => p.type === 'image_url'));
+      return toolCall('browser_click', { element: sawImage ? 'the blank page (screenshot seen)' : 'the blank page', ref: 'e1' });
+    }
+    if (final?.role === 'tool' && final.tool_call_id === 'call_browser_click') {
+      return say(/declined/.test(String(final.content)) ? 'Browsing done; you declined the click.' : 'Browsing done.');
+    }
     if (final?.role === 'tool') {
       res.write(chunk({ content: `Saved: ${String(final.content).slice(0, 200)}` }));
       res.write(`data: ${JSON.stringify({ id: 'c', choices: [{ index: 0, delta: {}, finish_reason: 'stop' }] })}\n\n`);

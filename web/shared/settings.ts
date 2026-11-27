@@ -109,5 +109,19 @@ export const AppSettingsResponse = z.object({
     network: z.boolean(),
     runtime: z.string().nullable(),
   }),
+  browser: z.object({
+    allowedDomains: z.array(z.string()),
+    blockedDomains: z.array(z.string()),
+    navigationTimeoutSeconds: z.number(),
+    actionTimeoutSeconds: z.number(),
+    idleMinutes: z.number(),
+    maxSessionMinutes: z.number(),
+    maxSessions: z.number(),
+    maxSessionsPerUser: z.number(),
+    maxTabs: z.number(),
+    snapshotMaxChars: z.number(),
+    screenshots: z.boolean(),
+    approval: z.enum(['interactions', 'none']),
+  }),
 });
 export type AppSettingsResponse = z.infer<typeof AppSettingsResponse>;

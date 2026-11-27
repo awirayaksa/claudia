@@ -17,6 +17,8 @@ export interface ConnectionQuirks {
    * CA). Admin connections only; user-owned ones always verify.
    */
   insecureTls?: boolean;
+  /** The models can't read images (tool screenshots are left out). */
+  noVision?: boolean;
 }
 
 /** A configured LLM endpoint. owner_id null = global (admin-managed). */

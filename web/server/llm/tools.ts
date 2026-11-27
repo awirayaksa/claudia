@@ -13,6 +13,17 @@ export interface ToolExecution {
   result: PartOf<'tool_result'>;
   /** Parts shown after the result (e.g. generated images as files). */
   extraParts?: MessagePart[];
+  /** Images the tool returned; the run stores them and links them in `result.images`. */
+  images?: Array<{ mime: string; data: Buffer }>;
+}
+
+/** Where in the conversation a call is made (set by the server, never by the model). */
+export interface ToolCallContext {
+  /**
+   * One key per chat (and per model answering side by side): tools that keep
+   * state between calls, like the browser, keep one session per key.
+   */
+  sessionKey?: string;
 }
 
 export interface RunToolset {
@@ -24,7 +35,7 @@ export interface RunToolset {
   locate(alias: string): { serverId: string; tool: string } | null;
   /** The user approves this call before it runs (default: never). */
   needsApproval?(alias: string): boolean;
-  execute(call: ToolCall, signal: AbortSignal): Promise<ToolExecution>;
+  execute(call: ToolCall, signal: AbortSignal, context?: ToolCallContext): Promise<ToolExecution>;
 }
 
 export const NO_TOOLS: RunToolset = {

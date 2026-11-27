@@ -98,6 +98,7 @@ export function toDisplayMessage(node: MessageNode): Message {
       hasUI: !!r.uiResource,
       uiResource: r.uiResource,
       serverId: call?.serverId,
+      ...(r.images?.length ? { images: r.images.map((img) => ({ url: `/api/files/${img.fileId}/content`, mime: img.mime })) } : {}),
     };
   });
 

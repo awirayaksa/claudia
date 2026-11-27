@@ -5,8 +5,10 @@ import type { AppSettingsResponse } from '@shared/settings';
 import {
   errorMessage,
   useAppSettingsQuery,
+  useBrowserStatusQuery,
   useCodeStatusQuery,
   useModelsQuery,
+  useTestBrowserMutation,
   useTestCodeSandboxMutation,
   useUpdateAppSettingMutation,
 } from '../../api/rtk-api';
@@ -23,6 +25,7 @@ const BUILTIN_IDS = [
   'builtin-diagram-001',
   'builtin-fetch-001',
   'builtin-azdo-001',
+  'builtin-browser-001',
 ] as const;
 
 export function AdminSettingsPage() {
@@ -286,6 +289,12 @@ export function AdminSettingsPage() {
         <CodeSettings value={draft.code} onChange={(code) => set('code', code)} />
       </Card>
 
+      {draft['mcp.builtins'].enabled.includes('builtin-browser-001') && (
+        <Card title={t('admin.browser')}>
+          <BrowserSettings value={draft.browser} onChange={(browser) => set('browser', browser)} />
+        </Card>
+      )}
+
       <Card title={t('admin.builtinTools')}>
         <p className="mb-2 text-sm text-text-secondary">{t('admin.builtinToolsHelp')}</p>
         <div className="grid gap-1 sm:grid-cols-2">
@@ -449,6 +458,110 @@ function CodeSettings({ value, onChange }: { value: AppSettingsResponse['code'];
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+/** The Web browser built-in: where it runs, which sites it may open, its limits. */
+function BrowserSettings({ value, onChange }: { value: AppSettingsResponse['browser']; onChange: (v: AppSettingsResponse['browser']) => void }) {
+  const { t } = useTranslation();
+  const { data: status } = useBrowserStatusQuery();
+  const [test, testState] = useTestBrowserMutation();
+  const [allowed, setAllowed] = useState(value.allowedDomains.join('\n'));
+  const [blocked, setBlocked] = useState(value.blockedDomains.join('\n'));
+  const field = 'w-full rounded border border-border bg-background px-2 py-1';
+  const lines = (text: string) =>
+    text
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const num = (
+    key: 'navigationTimeoutSeconds' | 'actionTimeoutSeconds' | 'idleMinutes' | 'maxSessions' | 'maxSessionsPerUser' | 'maxTabs',
+    min: number,
+    max: number
+  ) => (
+    <label className="block text-sm">
+      <span className="mb-1 block">{t(`admin.browser_${key}`)}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        className={field}
+        value={value[key]}
+        onChange={(e) => onChange({ ...value, [key]: Math.min(max, Math.max(min, Math.round(Number(e.target.value)) || min)) })}
+        data-testid={`browser-${key}`}
+      />
+    </label>
+  );
+  return (
+    <div className="space-y-3">
+      <p className="text-sm text-text-secondary">{t('admin.browserHelp')}</p>
+      {status && (
+        <p className="text-xs text-text-secondary" data-testid="browser-status">
+          {t(status.engine === 'remote' ? 'admin.browserRemote' : 'admin.browserLocal', { sessions: status.sessions })}
+          {status.error && <span className="block text-error">{status.error}</span>}
+        </p>
+      )}
+      <div className="grid gap-3 sm:grid-cols-2">
+        <label className="block text-sm">
+          <span className="mb-1 block">{t('admin.browserAllowed')}</span>
+          <textarea
+            className={`${field} font-mono text-xs`}
+            rows={3}
+            placeholder={'example.com\n*.docs.example.org'}
+            value={allowed}
+            onChange={(e) => {
+              setAllowed(e.target.value);
+              onChange({ ...value, allowedDomains: lines(e.target.value) });
+            }}
+          />
+          <span className="mt-1 block text-xs text-text-secondary">{t('admin.browserAllowedHelp')}</span>
+        </label>
+        <label className="block text-sm">
+          <span className="mb-1 block">{t('admin.browserBlocked')}</span>
+          <textarea
+            className={`${field} font-mono text-xs`}
+            rows={3}
+            value={blocked}
+            onChange={(e) => {
+              setBlocked(e.target.value);
+              onChange({ ...value, blockedDomains: lines(e.target.value) });
+            }}
+          />
+        </label>
+      </div>
+      <label className="flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-0.5"
+          checked={value.approval === 'interactions'}
+          onChange={(e) => onChange({ ...value, approval: e.target.checked ? 'interactions' : 'none' })}
+          data-testid="browser-approval"
+        />
+        <span>
+          {t('admin.browserApproval')}
+          <span className="block text-xs text-text-secondary">{t('admin.browserApprovalHelp')}</span>
+        </span>
+      </label>
+      <label className="flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={value.screenshots} onChange={(e) => onChange({ ...value, screenshots: e.target.checked })} />
+        {t('admin.browserScreenshots')}
+      </label>
+      <div className="grid gap-3 sm:grid-cols-3">
+        {num('navigationTimeoutSeconds', 5, 120)}
+        {num('actionTimeoutSeconds', 1, 60)}
+        {num('idleMinutes', 1, 240)}
+        {num('maxSessions', 1, 200)}
+        {num('maxSessionsPerUser', 1, 20)}
+        {num('maxTabs', 1, 20)}
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button size="sm" variant="secondary" disabled={testState.isLoading} onClick={() => void test()}>
+          {testState.isLoading ? t('admin.browserTesting') : t('admin.browserTest')}
+        </Button>
+        {testState.data?.ok && <span className="text-sm text-success">{t('admin.browserTestOk', { version: testState.data.version ?? '?' })}</span>}
+        {testState.data && !testState.data.ok && <span className="text-sm text-error">{testState.data.error}</span>}
+      </div>
     </div>
   );
 }

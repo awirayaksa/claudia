@@ -13,6 +13,7 @@
 import { and, eq, isNull } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import { MCPClientManager } from '../../../electron/services/mcp.service';
+import { SESSION_META } from '../../../electron/services/builtin-mcp/browser.server';
 import { aliasesToOpenAI, buildToolAliases, normalizeToolResult, resolveToolAlias, type ToolSource } from '../../../src/services/mcp/tool-format';
 import { uiResourceConfirmation } from '../../../src/services/chat/message-builder';
 import type { MCPServerConfig, MCPServerStatus, MCPTool } from '../../../src/types/mcp.types';
@@ -42,8 +43,10 @@ const WRITING_BUILTINS = new Set([
   'builtin-diagram-001',
 ]);
 const READ_ONLY_TOOL = /^(read|get|list|search)_/;
+/** The web browser built-in: its clicks and typing wait for approval unless the admin turns that off. */
+export const BROWSER_BUILTIN_ID = 'builtin-browser-001';
 /** Built-ins whose tools wait for the user's approval, unless marked read-only. */
-const APPROVAL_BUILTINS = new Set(['builtin-azdo-001']);
+const APPROVAL_BUILTINS = new Set(['builtin-azdo-001', BROWSER_BUILTIN_ID]);
 
 /** What is stored (encrypted) for a configured server. */
 export interface StoredMcpConfig {
@@ -386,8 +389,8 @@ export class McpPools {
     return this.deps.db.select().from(toolServers).where(eq(toolServers.enabled, true));
   }
 
-  /** Call a tool on a server this user may use. */
-  async callTool(userId: string, serverId: string, tool: string, args: Record<string, unknown>) {
+  /** Call a tool on a server this user may use (`sessionKey`: built-ins that keep state per chat). */
+  async callTool(userId: string, serverId: string, tool: string, args: Record<string, unknown>, sessionKey?: string) {
     const api = (await this.openApiRows()).find((r) => r.id === serverId);
     if (api) {
       const op = api.operations.find((o) => o.name === tool);
@@ -397,7 +400,8 @@ export class McpPools {
       return { content: [{ type: 'text', text: r.content }], ...(r.isError ? { isError: true } : {}) };
     }
     const manager = await this.managerFor(userId, serverId);
-    const result = await manager.callTool(serverId, tool, args);
+    const meta = sessionKey && isBuiltinId(serverId) ? { [SESSION_META]: sessionKey } : undefined;
+    const result = await manager.callTool(serverId, tool, args, undefined, meta);
     return isBuiltinId(serverId) ? redactWorkspacePath(result, userWorkspace(this.deps.dataDir, userId)) : result;
   }
 
@@ -428,6 +432,9 @@ export class McpPools {
     const ready = (await this.serversFor(userId)).filter((s) => usable(s) && s.status === 'ready');
     const sources: ToolSource[] = ready.map((s) => ({ id: s.id, name: s.name, tools: s.tools }));
     const aliases = buildToolAliases(sources);
+    const browserApproval = aliases.some((a) => a.serverId === BROWSER_BUILTIN_ID)
+      ? (await this.deps.settings.get('browser')).approval
+      : 'interactions';
     // Workspace files already shown under this reply (a document edited five times is shown once)
     const shown = new Set<string>();
 
@@ -441,10 +448,11 @@ export class McpPools {
       needsApproval: (alias) => {
         const a = resolveToolAlias(alias, aliases);
         if (!a || !APPROVAL_BUILTINS.has(a.serverId)) return false;
+        if (a.serverId === BROWSER_BUILTIN_ID && browserApproval === 'none') return false;
         const tool = ready.find((s) => s.id === a.serverId)?.tools.find((t) => t.name === a.tool);
         return tool?.annotations?.readOnlyHint !== true;
       },
-      execute: async (call, signal): Promise<ToolExecution> => {
+      execute: async (call, signal, context): Promise<ToolExecution> => {
         const a = resolveToolAlias(call.function.name, aliases);
         const fail = (message: string): ToolExecution => ({
           serverId: a?.serverId ?? '',
@@ -467,7 +475,7 @@ export class McpPools {
           // Files a built-in writes are shown under the reply, as links to the workspace
           const workspace = WRITING_BUILTINS.has(a.serverId) && !READ_ONLY_TOOL.test(a.tool) ? userWorkspace(this.deps.dataDir, userId) : null;
           const before = workspace ? await snapshotWorkspace(workspace) : null;
-          const raw = await Promise.race([this.callTool(userId, a.serverId, a.tool, args), timeout]);
+          const raw = await Promise.race([this.callTool(userId, a.serverId, a.tool, args, context?.sessionKey), timeout]);
           const normalized = normalizeToolResult(raw as Parameters<typeof normalizeToolResult>[0]);
           const after = workspace && before && !normalized.isError ? await snapshotWorkspace(workspace) : null;
           const written = before && after ? changedFiles(before, after).filter((f) => !shown.has(f.path)) : [];
@@ -484,6 +492,9 @@ export class McpPools {
               ...(normalized.uiResource ? { uiResource: normalized.uiResource } : {}),
             },
             ...(written.length ? { extraParts: written.map((f) => ({ type: 'workspace_file' as const, path: f.path, size: f.size })) } : {}),
+            ...(normalized.images && !normalized.uiResource
+              ? { images: normalized.images.map((img) => ({ mime: img.mime, data: Buffer.from(img.data, 'base64') })) }
+              : {}),
           };
         } catch (err) {
           return fail(err instanceof Error ? err.message : String(err));

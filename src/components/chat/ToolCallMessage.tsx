@@ -117,6 +117,22 @@ export function ToolCallMessage({ toolCall, result, hideUIResource = false }: To
         </span>
       </button>
 
+      {/* Pictures the tool returned (a screenshot), shown even when collapsed */}
+      {result?.images && result.images.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2" data-testid="tool-images">
+          {result.images.map((img) => (
+            <a key={img.url} href={img.url} target="_blank" rel="noreferrer" title={t('tool.openImage', 'Open full size')}>
+              <img
+                src={img.url}
+                alt={t('tool.imageAlt', 'Image from {{tool}}', { tool: toolCall.function.name })}
+                loading="lazy"
+                className="max-h-48 max-w-full rounded border border-border object-contain"
+              />
+            </a>
+          ))}
+        </div>
+      )}
+
       {/* Expanded content */}
       {isExpanded && (
         <div className="mt-3 w-full space-y-3 border-t border-border pt-3">

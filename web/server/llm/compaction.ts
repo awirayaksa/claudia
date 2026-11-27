@@ -43,7 +43,10 @@ export function transcriptOf(nodes: MessageNode[]): string {
       if (p.type === 'text' && p.text.trim()) pieces.push(p.text.trim());
       else if (p.type === 'file') pieces.push(`[attached file: ${p.name}]`);
       else if (p.type === 'tool_call') pieces.push(`[called ${p.tool || p.alias}(${clip(p.args, TRANSCRIPT_TOOL_CHARS)})]`);
-      else if (p.type === 'tool_result') pieces.push(`[${p.isError ? 'tool error' : 'tool result'}: ${clip(p.content, TRANSCRIPT_TOOL_CHARS)}]`);
+      else if (p.type === 'tool_result') {
+        const shots = p.images?.length ? ` (+${p.images.length} image${p.images.length === 1 ? '' : 's'})` : '';
+        pieces.push(`[${p.isError ? 'tool error' : 'tool result'}: ${clip(p.content, TRANSCRIPT_TOOL_CHARS)}${shots}]`);
+      }
     }
     if (pieces.length > 0) lines.push(`${who}: ${pieces.join('\n')}`);
   }

@@ -273,6 +273,7 @@
     "modelFilter": "النماذج المعروضة",
     "modelFilterHelp": "معرّفات النماذج مفصولة بفواصل. فارغ = كل ما تعرضه نقطة النهاية.",
     "toolsFirstTurnOnly": "عرض الأدوات في الطلب الأول فقط (تحتاجه بعض الوسائط)",
+    "noVision": "هذه النماذج لا تستطيع قراءة الصور (تُحذف لقطات الشاشة من الأدوات)",
     "apiCompatibility": "نمط API",
     "enabled": "مفعّل",
     "test": "اختبار",
@@ -332,7 +333,8 @@
       "builtin-pdf-001": "مستندات PDF",
       "builtin-diagram-001": "المخططات",
       "builtin-fetch-001": "جلب صفحات الويب",
-      "builtin-azdo-001": "Azure DevOps (عناصر العمل)"
+      "builtin-azdo-001": "Azure DevOps (عناصر العمل)",
+      "builtin-browser-001": "متصفح الويب (فتح الصفحات والنقر والكتابة ولقطات الشاشة)"
     },
     "network": "الشبكة",
     "netAllowlist": "العناوين الخاصة التي يمكن للمستخدمين الوصول إليها",
@@ -416,7 +418,26 @@
     "codeNetworkHelp": "متوقف افتراضيًا. عند تفعيله يمكن للشيفرة تنزيل الحزم، لكنها تصل أيضًا إلى كل ما تصل إليه شبكة هذا الخادم.",
     "codeTest": "اختبر البيئة المعزولة",
     "codeTesting": "جارٍ الاختبار… (قد تُنزَّل الصور)",
-    "codeTestOk": "تعمل (Docker {{version}})."
+    "codeTestOk": "تعمل (Docker {{version}}).",
+    "browser": "متصفح الويب",
+    "browserHelp": "متصفح Chromium بدون واجهة على الخادم يستطيع النموذج التحكم به: فتح الصفحات العامة وقراءتها والنقر والكتابة والتقاط لقطات الشاشة. لكل محادثة متصفحها الخاص (دون حفظ ملفات تعريف الارتباط). تبقى العناوين الخاصة محظورة ما لم تُذكر في قسم الشبكة.",
+    "browserLocal": "يعمل على هذا الخادم · {{sessions}} مفتوح",
+    "browserRemote": "يعمل في خدمة المتصفح (CLAUDIA_BROWSER_WS) · {{sessions}} مفتوح",
+    "browserAllowed": "هذه المواقع فقط (موقع في كل سطر)",
+    "browserAllowedHelp": "فارغ: أي موقع عام. «example.com» يشمل نطاقاته الفرعية؛ «*.example.com» نطاقاته الفرعية فقط.",
+    "browserBlocked": "ليس هذه المواقع أبدًا",
+    "browserApproval": "اسأل المستخدم قبل النقر والكتابة والاختيار وضغط المفاتيح",
+    "browserApprovalHelp": "الفتح والقراءة والتمرير ولقطات الشاشة لا تحتاج إلى موافقة.",
+    "browserScreenshots": "السماح للنموذج بالتقاط لقطات الشاشة (يراها إن كان يقرأ الصور)",
+    "browser_navigationTimeoutSeconds": "حد تحميل الصفحة (ثوانٍ)",
+    "browser_actionTimeoutSeconds": "حد الإجراء (ثوانٍ)",
+    "browser_idleMinutes": "الإغلاق بعد الخمول (دقائق)",
+    "browser_maxSessions": "المتصفحات المفتوحة معًا",
+    "browser_maxSessionsPerUser": "لكل مستخدم",
+    "browser_maxTabs": "علامات التبويب لكل متصفح",
+    "browserTest": "اختبر المتصفح",
+    "browserTesting": "جارٍ التشغيل…",
+    "browserTestOk": "يعمل (Chromium {{version}})."
   },
   "notFound": {
     "title": "الصفحة غير موجودة",
@@ -1371,7 +1392,11 @@
       "azdo_update_work_item": "تعديل عنصر عمل",
       "azdo_resolve_work_item": "حلّ عنصر عمل",
       "azdo_add_comment": "التعليق على عنصر عمل",
-      "azdo_link_work_items": "ربط عناصر العمل"
+      "azdo_link_work_items": "ربط عناصر العمل",
+      "browser_click": "النقر في صفحة ويب",
+      "browser_type": "الكتابة في صفحة ويب",
+      "browser_select": "اختيار خيار في صفحة ويب",
+      "browser_press_key": "ضغط مفتاح في صفحة ويب"
     }
   }
 }

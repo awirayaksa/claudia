@@ -61,6 +61,22 @@ COPY --from=build --chown=node:node /app/web/package.json ./package.json
 COPY --from=build --chown=node:node /app/web/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/web/dist ./dist
 
+# Chromium for the Web browser built-in, started inside this container:
+#   docker build --build-arg BROWSER=1 …
+# About 300 MB more (the headless shell, its libraries and fonts). For
+# production prefer the separate browser container (compose.browser.yml):
+# a compromised page then lands next to nothing of the app's. Without
+# either, the browser tools say they aren't available.
+ARG BROWSER=
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN case "$BROWSER" in \
+      "") ;; \
+      1|true) node node_modules/playwright-core/cli.js install --with-deps --only-shell chromium \
+        && rm -rf /var/lib/apt/lists/* \
+        && chmod -R a+rX /ms-playwright ;; \
+      *) echo "BROWSER must be 1 or empty, not '$BROWSER'" >&2; exit 1 ;; \
+    esac
+
 RUN mkdir -p /data && chown node:node /data
 VOLUME ["/data"]
 USER node

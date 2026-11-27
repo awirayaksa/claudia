@@ -1,0 +1,3 @@
+# Build context for web/docker/browser/Dockerfile: only the server script
+**
+!web/docker/browser/server.mjs

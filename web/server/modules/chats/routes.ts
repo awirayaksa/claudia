@@ -146,6 +146,8 @@ export async function chatRoutes(app: FastifyInstance, ctx: ServerContext): Prom
     const chat = await repo.getOwned(me.id, id);
     for (const run of await ctx.runs.activeForChat(chat.id)) await ctx.runs.stop(run);
     await ctx.db.delete(chats).where(eq(chats.id, chat.id));
+    // Its browser pages, if the model opened any
+    await ctx.browser.closeChat(me.id, chat.id);
     return { ok: true };
   });
 

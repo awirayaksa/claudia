@@ -35,7 +35,7 @@ type Block =
   | { type: 'text'; text: string }
   | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } | { type: 'url'; url: string } }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
-  | { type: 'tool_result'; tool_use_id: string; content: string; is_error?: boolean };
+  | { type: 'tool_result'; tool_use_id: string; content: string | Block[]; is_error?: boolean };
 
 interface AnthropicMessage {
   role: 'user' | 'assistant';
@@ -75,7 +75,9 @@ export function toAnthropicMessages(messages: ChatMessage[]): { system: string; 
   for (const m of messages) {
     if (m.role === 'system') continue;
     if (m.role === 'tool') {
-      push('user', [{ type: 'tool_result', tool_use_id: m.tool_call_id ?? '', content: textOf(m.content) || '(empty)' }]);
+      // A result with pictures (a screenshot) keeps them as image blocks
+      const blocks = Array.isArray(m.content) && m.content.some((p) => p.type === 'image_url') ? partsToBlocks(m.content) : null;
+      push('user', [{ type: 'tool_result', tool_use_id: m.tool_call_id ?? '', content: blocks ?? (textOf(m.content) || '(empty)') }]);
     } else if (m.role === 'assistant') {
       const blocks = partsToBlocks(m.content);
       for (const c of m.tool_calls ?? []) {

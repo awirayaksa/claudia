@@ -6,6 +6,7 @@
  *   built with LibreOffice sets it);
  * - fetch goes through the SSRF guard;
  * - azure devops reaches the admin's collections, signed in with the user's token;
+ * - the web browser runs in a headless Chromium behind the egress proxy (one session per chat);
  * - documents are parsed, and diagrams and PDFs rendered, in the worker pool.
  */
 import fs from 'node:fs';
@@ -17,6 +18,7 @@ import type { AzdoClient, AzdoRequest } from '../../../electron/services/builtin
 import type { MCPServerConfig } from '../../../src/types/mcp.types';
 import type { ExtractPool } from '../extract/pool';
 import type { AzdoService } from '../azdo/azdo-service';
+import type { BrowserService } from '../browser/browser-service';
 import { readBodyLimited, safeFetch, type SafeFetchPolicy } from '../net/safe-fetch';
 
 export interface BuiltinInfo {
@@ -34,6 +36,8 @@ const WEB_DESCRIPTIONS: Record<string, string> = {
   'builtin-pdf-001': 'Create PDFs from Markdown or HTML, and convert Office files to PDF, in your private workspace.',
   'builtin-azdo-001':
     'Find, read, create and update work items on your Azure DevOps Server: tasks, bugs, comments and links. Changes wait for your approval.',
+  'builtin-browser-001':
+    'Let the model open public web pages in a private browser on the server, read them, click, type and take screenshots. Clicks and typing wait for your approval.',
 };
 
 export function builtinServers(): BuiltinInfo[] {
@@ -108,6 +112,8 @@ export interface BuiltinDeps {
   extract: ExtractPool;
   netPolicy: () => SafeFetchPolicy;
   azdo: AzdoService;
+  /** The Web browser built-in (without it, its tools say it isn't available). */
+  browser?: BrowserService;
 }
 
 /** Config for one built-in server instance belonging to one user. */
@@ -143,6 +149,8 @@ export function builtinConfigFor(userId: string, builtinId: string, deps: Builti
         request: (serverId: string, req: AzdoRequest) => deps.azdo.request(userId, serverId, req),
       } satisfies AzdoClient,
     },
+    // The user is fixed here; the chat comes with each call (request _meta)
+    'builtin-browser-001': deps.browser ? { browser: deps.browser.hostFor(userId) } : {},
   };
 
   return {

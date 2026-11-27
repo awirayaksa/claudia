@@ -29,6 +29,7 @@ import type { Webhooks } from './admin/webhooks';
 import type { OidcService } from './auth/providers/oidc';
 import type { CloudFiles } from './cloud/cloud-files';
 import type { AzdoService } from './azdo/azdo-service';
+import type { BrowserService } from './browser/browser-service';
 import type { ScheduleRunner } from './modules/schedules/service';
 import type { MemoryStore } from './modules/memories/store';
 import type { MemoryLearner } from './modules/memories/learn';
@@ -85,6 +86,8 @@ export interface ServerContext {
   /** Google Drive / OneDrive. */
   cloud: CloudFiles;
   azdo: AzdoService;
+  /** The Web browser built-in's headless Chromium (one session per chat). */
+  browser: BrowserService;
   /** Scheduled prompts (runs due ones every 30 s). */
   schedules: ScheduleRunner;
   log: FastifyBaseLogger;
